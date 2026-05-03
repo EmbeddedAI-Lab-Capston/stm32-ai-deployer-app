@@ -31,8 +31,19 @@ set(PROJECT_SOURCES
     src/modules/flash/FlashManager.h
     src/modules/flash/FlashManager.cpp
 
+    src/modules/serial/PacketParser.h
+    src/modules/serial/PacketParser.cpp
+
     src/modules/serial/SerialWorker.h
     src/modules/serial/SerialWorker.cpp
+
+    src/modules/serial/SerialManager.h
+    src/modules/serial/SerialManager.cpp
+
+    src/modules/serial/CircularBuffer.h
+
+    src/modules/serial/SerialSimulator.h
+    src/modules/serial/SerialSimulator.cpp
 
     src/modules/analysis/AnalysisManager.h
     src/modules/analysis/AnalysisManager.cpp

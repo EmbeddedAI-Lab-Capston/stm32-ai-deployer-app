@@ -168,6 +168,11 @@ void MainWindow::setupCentralWidget()
         s->standardIcon(QStyle::SP_ArrowUp),            tr("Model & Flash"));
     m_tabWidget->addTab(m_monitorTab,
         s->standardIcon(QStyle::SP_FileDialogDetailedView), tr("UART Monitör"));
+
+    connect(m_monitorTab, &MonitorTab::connectionStatusChanged,
+            this, &MainWindow::onConnectionStatusChanged);
+    connect(m_monitorTab, &MonitorTab::inferenceMetricUpdated,
+            this, &MainWindow::onInferenceMetricUpdated);
     m_tabWidget->addTab(m_analysisTab,
         s->standardIcon(QStyle::SP_FileDialogInfoView), tr("Analiz"));
 
@@ -216,4 +221,32 @@ void MainWindow::onAboutTriggered()
 void MainWindow::onExitTriggered()
 {
     close();
+}
+
+void MainWindow::onConnectionStatusChanged(bool connected, const QString &info)
+{
+    if (connected) {
+        const QString port = info.section('@', 0, 0).trimmed();
+        const QString baud = info.section('@', 1).trimmed();
+        m_sbConnLabel->setText(tr("● Bağlı"));
+        m_sbConnLabel->setStyleSheet("color: #A6E3A1; font-weight: bold;");
+        m_sbPortLabel->setText(tr("Port : ") + port);
+        m_sbBaudLabel->setText(tr("Baud : ") + baud);
+        m_connectionLabel->setText(tr("  ● Bağlı — ") + info + tr("  "));
+        m_connectionLabel->setStyleSheet("color: #A6E3A1;");
+    } else {
+        m_sbConnLabel->setText(tr("● Bağlantı Yok"));
+        m_sbConnLabel->setStyleSheet("color: #F38BA8;");
+        m_sbPortLabel->setText(tr("Port : --"));
+        m_sbBaudLabel->setText(tr("Baud : 115200"));
+        m_connectionLabel->setText(tr("  ● Bağlantı Yok  "));
+        m_connectionLabel->setStyleSheet("color: #F38BA8;");
+    }
+}
+
+void MainWindow::onInferenceMetricUpdated(const QString &model, double ms, int accPct)
+{
+    m_sbSessionLabel->setText(model);
+    m_sbMetricLabel->setText(
+        QString("%1 ms · %2%").arg(ms, 0, 'f', 1).arg(accPct));
 }

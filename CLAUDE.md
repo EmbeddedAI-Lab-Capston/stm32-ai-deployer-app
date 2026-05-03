@@ -286,10 +286,10 @@ AppSettings::CliAutoDetected     // "tools/cli_auto_detected"
 | Aşama | Başlık                  | Durum       |
 |-------|-------------------------|-------------|
 | 0     | Protokol standardı      | ✅ Tamamlandı |
-| 1     | Qt proje iskeleti       | 🔄 Aktif     |
-| 2     | Ana UI iskeleti         | ⏳ Bekliyor  |
-| 3     | Serial port modülü      | ⏳ Bekliyor  |
-| 4     | Flash modülü            | ⏳ Bekliyor  |
+| 1     | Qt proje iskeleti       | ✅ Tamamlandı |
+| 2     | Ana UI iskeleti         | ✅ Tamamlandı |
+| 3     | Serial port modülü      | ✅ Tamamlandı |
+| 4     | Flash modülü            | 🔄 Aktif     |
 | 5     | Veritabanı ve kayıt     | ⏳ Bekliyor  |
 | 6     | Canlı dashboard         | ⏳ Bekliyor  |
 | 7     | Model karşılaştırma     | ⏳ Bekliyor  |

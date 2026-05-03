@@ -24,6 +24,9 @@ private slots:
     void onAboutTriggered();
     void onExitTriggered();
 
+    void onConnectionStatusChanged(bool connected, const QString &info);
+    void onInferenceMetricUpdated(const QString &model, double ms, int accPct);
+
 private:
     void setupMenuBar();
     void setupCentralWidget();
