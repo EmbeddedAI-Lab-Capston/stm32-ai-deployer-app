@@ -68,10 +68,10 @@ void MonitorTab::setupUi()
     m_portCombo->setFixedWidth(140);
     connLayout->addWidget(m_portCombo);
 
-    auto *refreshBtn = new QPushButton("⟳", this);
-    refreshBtn->setFixedSize(32, 32);
-    refreshBtn->setToolTip(tr("Port listesini yenile"));
-    connLayout->addWidget(refreshBtn);
+    m_refreshBtn = new QPushButton(tr("⟳  Yenile"), this);
+    m_refreshBtn->setFixedWidth(90);
+    m_refreshBtn->setToolTip(tr("Port listesini yenile — kartı taktıktan sonra buraya bas"));
+    connLayout->addWidget(m_refreshBtn);
 
     connLayout->addSpacing(12);
     connLayout->addWidget(new QLabel(tr("Baud:"), this));
@@ -172,7 +172,7 @@ void MonitorTab::setupUi()
 
     // ── Button connections ─────────────────────────────────────────────────
     connect(m_connectBtn, &QPushButton::clicked, this, &MonitorTab::onConnectClicked);
-    connect(refreshBtn,   &QPushButton::clicked, this, &MonitorTab::onRefreshPortsClicked);
+    connect(m_refreshBtn, &QPushButton::clicked, this, &MonitorTab::onRefreshPortsClicked);
     connect(clearBtn,     &QPushButton::clicked, this, &MonitorTab::onClearClicked);
     connect(saveBtn,      &QPushButton::clicked, this, &MonitorTab::onSaveClicked);
     connect(m_simCheck,   &QCheckBox::toggled,   this, &MonitorTab::onSimulationToggled);
@@ -261,6 +261,7 @@ void MonitorTab::onSimulationToggled(bool checked)
         m_connectBtn->setEnabled(false);
         m_portCombo->setEnabled(false);
         m_baudCombo->setEnabled(false);
+        m_refreshBtn->setEnabled(false);
 
         onConnectionChanged(true, "Simülasyon @ 115200");
         m_simulator->start(800);
@@ -269,6 +270,7 @@ void MonitorTab::onSimulationToggled(bool checked)
         m_connectBtn->setEnabled(true);
         m_portCombo->setEnabled(true);
         m_baudCombo->setEnabled(true);
+        m_refreshBtn->setEnabled(true);
 
         onConnectionChanged(false, QString());
         onClearClicked();

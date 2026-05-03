@@ -60,6 +60,7 @@ private:
     QComboBox   *m_portCombo  = nullptr;
     QComboBox   *m_baudCombo  = nullptr;
     QPushButton *m_connectBtn = nullptr;
+    QPushButton *m_refreshBtn = nullptr;
     QLabel      *m_connStatus = nullptr;
     QCheckBox   *m_simCheck   = nullptr;
 
