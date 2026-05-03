@@ -14,6 +14,8 @@
 #include <QRadioButton>
 #include <QButtonGroup>
 #include <QScrollBar>
+#include <QScrollArea>
+#include <QFrame>
 #include <QFileDialog>
 #include <QFile>
 #include <QFileInfo>
@@ -142,7 +144,18 @@ void FlashTab::refreshXCubeAIStatus()
 
 void FlashTab::setupUi()
 {
-    auto *mainLayout = new QVBoxLayout(this);
+    auto *rootLayout = new QVBoxLayout(this);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto *scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    rootLayout->addWidget(scrollArea);
+
+    auto *contentWidget = new QWidget(scrollArea);
+    scrollArea->setWidget(contentWidget);
+
+    auto *mainLayout = new QVBoxLayout(contentWidget);
     mainLayout->setContentsMargins(12, 12, 12, 12);
     mainLayout->setSpacing(10);
 
@@ -192,7 +205,10 @@ void FlashTab::setupUi()
     auto *modelBox  = new QGroupBox(tr("Model Bilgileri"), m_hexPanel);
     auto *modelForm = new QFormLayout(modelBox);
     modelForm->setSpacing(10);
-    modelForm->setLabelAlignment(Qt::AlignRight);
+    modelForm->setHorizontalSpacing(12);
+    modelForm->setRowWrapPolicy(QFormLayout::DontWrapRows);
+    modelForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    modelForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     m_modelNameEdit = new QLineEdit(m_hexPanel);
     m_modelNameEdit->setPlaceholderText(tr("örn. MLP_INT8_HAR"));
@@ -281,7 +297,10 @@ void FlashTab::setupUi()
     auto *aiBox  = new QGroupBox(tr("AI Model Bilgileri"), m_aiPanel);
     auto *aiForm = new QFormLayout(aiBox);
     aiForm->setSpacing(10);
-    aiForm->setLabelAlignment(Qt::AlignRight);
+    aiForm->setHorizontalSpacing(12);
+    aiForm->setRowWrapPolicy(QFormLayout::DontWrapRows);
+    aiForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    aiForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     // Model file
     auto *aiFileRow    = new QWidget(m_aiPanel);
