@@ -6,7 +6,6 @@
 #include <QGroupBox>
 #include <QLabel>
 #include <QPushButton>
-#include <QButtonGroup>
 #include <QComboBox>
 #include <QLineEdit>
 #include <QDialog>
@@ -14,22 +13,18 @@
 #include <QSpinBox>
 #include <QMessageBox>
 
-#include "modules/board/BoardManager.h"
-
-namespace {
-struct BoardPreset { QString name; int flashKb; int ramKb; int clockMhz; };
-const BoardPreset kPresets[] = {
-    { "STM32F4", 1024,  192,  168 },
-    { "STM32H7", 2048, 1024,  480 },
-    { "STM32N6", 4096, 4096,  800 },
-};
-}
-
-BoardTab::BoardTab(QWidget *parent)
+BoardTab::BoardTab(AppState *state, QWidget *parent)
     : QWidget(parent)
-    , m_boardManager(new BoardManager(this))
+    , m_appState(state)
 {
     setupUi();
+
+    // React to board changes from AppState (driven by Sidebar)
+    connect(m_appState, &AppState::activeBoardChanged,
+            this, &BoardTab::onBoardChanged);
+
+    // Show the current board immediately
+    onBoardChanged(m_appState->activeBoard());
 }
 
 BoardTab::~BoardTab() = default;
@@ -40,44 +35,12 @@ void BoardTab::setupUi()
     mainLayout->setContentsMargins(12, 12, 12, 12);
     mainLayout->setSpacing(12);
 
-    // ── Card selection ─────────────────────────────────────────────────────
-    auto *selBox = new QGroupBox(tr("Kart Seçimi"), this);
-    auto *selLayout = new QHBoxLayout(selBox);
-    selLayout->setSpacing(10);
-
-    m_boardGroup = new QButtonGroup(this);
-    m_boardGroup->setExclusive(true);
-
-    auto makeCardBtn = [&](const QString &name, const QString &chip, int id) -> QPushButton * {
-        auto *btn = new QPushButton(name + "\n" + chip, this);
-        btn->setCheckable(true);
-        btn->setObjectName("boardBtn");
-        btn->setMinimumSize(150, 64);
-        m_boardGroup->addButton(btn, id);
-        return btn;
-    };
-
-    m_btnF4 = makeCardBtn("STM32F4", "168 MHz · 1 MB Flash", 0);
-    m_btnH7 = makeCardBtn("STM32H7", "480 MHz · 2 MB Flash", 1);
-    m_btnN6 = makeCardBtn("STM32N6", "800 MHz · 4 MB Flash", 2);
-    m_btnF4->setChecked(true);
-
-    selLayout->addWidget(m_btnF4);
-    selLayout->addWidget(m_btnH7);
-    selLayout->addWidget(m_btnN6);
-    selLayout->addStretch();
-
-    auto *addCustomBtn = new QPushButton(tr("＋  Özel Kart Ekle"), this);
-    selLayout->addWidget(addCustomBtn);
-
-    mainLayout->addWidget(selBox);
-
     // ── Bottom: info panel + sensor config ────────────────────────────────
     auto *bottomLayout = new QHBoxLayout;
     bottomLayout->setSpacing(12);
 
-    // Card info
-    auto *infoBox = new QGroupBox(tr("Seçili Kart Bilgileri"), this);
+    // ── Card info (read-only, driven by AppState) ─────────────────────────
+    auto *infoBox  = new QGroupBox(tr("Aktif Kart Bilgileri"), this);
     auto *infoForm = new QFormLayout(infoBox);
     infoForm->setSpacing(10);
     infoForm->setLabelAlignment(Qt::AlignRight);
@@ -88,19 +51,24 @@ void BoardTab::setupUi()
         return lbl;
     };
 
-    infoForm->addRow(tr("Model :"), makeVal(m_infoModel,  "STM32F4"));
-    infoForm->addRow(tr("Flash :"), makeVal(m_infoFlash,  "1024 KB"));
-    infoForm->addRow(tr("RAM   :"), makeVal(m_infoRam,    "192 KB"));
-    infoForm->addRow(tr("Hız   :"), makeVal(m_infoClock,  "168 MHz"));
+    infoForm->addRow(tr("Model :"), makeVal(m_infoModel,  "--"));
+    infoForm->addRow(tr("Flash :"), makeVal(m_infoFlash,  "--"));
+    infoForm->addRow(tr("RAM   :"), makeVal(m_infoRam,    "--"));
+    infoForm->addRow(tr("Hız   :"), makeVal(m_infoClock,  "--"));
 
     m_infoStatus = new QLabel(tr("● Uyumlu"), this);
     m_infoStatus->setObjectName("statusOk");
     infoForm->addRow(tr("Durum :"), m_infoStatus);
 
+    auto *noteLabel = new QLabel(
+        tr("<i>Kartı değiştirmek için sol paneli kullanın.</i>"), this);
+    noteLabel->setObjectName("sidebarValueLabel");
+    infoForm->addRow(noteLabel);
+
     bottomLayout->addWidget(infoBox, 1);
 
-    // Sensor config
-    auto *sensorBox = new QGroupBox(tr("Sensör Konfigürasyonu"), this);
+    // ── Sensor config ──────────────────────────────────────────────────────
+    auto *sensorBox     = new QGroupBox(tr("Sensör Konfigürasyonu"), this);
     auto *sensorVLayout = new QVBoxLayout(sensorBox);
     sensorVLayout->setSpacing(8);
 
@@ -114,7 +82,7 @@ void BoardTab::setupUi()
     sensorForm->addRow(tr("Sensör :"), m_sensorCombo);
     sensorVLayout->addLayout(sensorForm);
 
-    // Dynamic pin fields — hidden until sensor is selected
+    // Dynamic pin fields — hidden until a sensor is selected
     m_pinWidget = new QWidget(this);
     auto *pinForm = new QFormLayout(m_pinWidget);
     pinForm->setContentsMargins(0, 4, 0, 0);
@@ -135,6 +103,9 @@ void BoardTab::setupUi()
 
     sensorVLayout->addStretch();
 
+    auto *addCustomBtn  = new QPushButton(tr("＋  Özel Kart Ekle"), this);
+    sensorVLayout->addWidget(addCustomBtn);
+
     auto *saveConfigBtn = new QPushButton(tr("Konfigürasyonu Kaydet"), this);
     saveConfigBtn->setObjectName("primaryButton");
     sensorVLayout->addWidget(saveConfigBtn);
@@ -143,35 +114,27 @@ void BoardTab::setupUi()
     mainLayout->addLayout(bottomLayout, 1);
 
     // ── Connections ────────────────────────────────────────────────────────
-    connect(m_boardGroup,  &QButtonGroup::idClicked,
-            this, &BoardTab::onBoardSelected);
-    connect(m_sensorCombo, &QComboBox::currentIndexChanged,
+    connect(m_sensorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &BoardTab::onSensorChanged);
-    connect(addCustomBtn,  &QPushButton::clicked,
+    connect(addCustomBtn, &QPushButton::clicked,
             this, &BoardTab::onAddCustomBoardClicked);
     // TODO(asama-5): connect saveConfigBtn to Database::saveConfig
 }
 
-void BoardTab::onBoardSelected(int id)
-{
-    updateBoardInfo(id);
-}
+// ── Slots ──────────────────────────────────────────────────────────────────
 
-void BoardTab::updateBoardInfo(int idx)
+void BoardTab::onBoardChanged(const BoardInfo &board)
 {
-    if (idx < 0 || idx > 2) return;
-    const auto &p = kPresets[idx];
-    m_infoModel->setText(p.name);
-    m_infoFlash->setText(QString::number(p.flashKb) + " KB");
-    m_infoRam->setText(QString::number(p.ramKb) + " KB");
-    m_infoClock->setText(QString::number(p.clockMhz) + " MHz");
+    if (board.isNull()) return;
+    m_infoModel->setText(board.name);
+    m_infoFlash->setText(QString::number(board.flashKb) + " KB");
+    m_infoRam->setText(  QString::number(board.ramKb)   + " KB");
+    m_infoClock->setText(QString::number(board.clockMhz)+ " MHz");
     // TODO(asama-3): compare against loaded model RAM requirement
     m_infoStatus->setText(tr("● Uyumlu"));
     m_infoStatus->setObjectName("statusOk");
     m_infoStatus->style()->unpolish(m_infoStatus);
     m_infoStatus->style()->polish(m_infoStatus);
-
-    emit boardChanged(p.name, p.flashKb, p.ramKb, p.clockMhz);
 }
 
 void BoardTab::onSensorChanged(int index)
@@ -205,8 +168,8 @@ void BoardTab::onAddCustomBoardClicked()
     dlg->setMinimumWidth(360);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
 
-    auto *layout  = new QVBoxLayout(dlg);
-    auto *form    = new QFormLayout;
+    auto *layout    = new QVBoxLayout(dlg);
+    auto *form      = new QFormLayout;
     auto *nameEdit  = new QLineEdit(dlg);
     auto *flashSpin = new QSpinBox(dlg);
     auto *ramSpin   = new QSpinBox(dlg);
@@ -223,15 +186,26 @@ void BoardTab::onAddCustomBoardClicked()
     form->addRow(tr("Saat Hızı :"), clockSpin);
     layout->addLayout(form);
 
-    auto *btns = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dlg);
+    auto *btns = new QDialogButtonBox(
+        QDialogButtonBox::Save | QDialogButtonBox::Cancel, dlg);
     layout->addWidget(btns);
     connect(btns, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
     connect(btns, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
 
     if (dlg->exec() == QDialog::Accepted) {
-        // TODO(asama-5): save to SQLite via Database
-        const QString name = nameEdit->text().isEmpty() ? tr("Yeni Kart") : nameEdit->text();
+        BoardInfo custom;
+        custom.name     = nameEdit->text().isEmpty() ? tr("Yeni Kart") : nameEdit->text();
+        custom.flashKb  = flashSpin->value();
+        custom.ramKb    = ramSpin->value();
+        custom.clockMhz = clockSpin->value();
+        custom.isPreset = false;
+
+        // Push into AppState — Sidebar and other tabs will react via signal
+        m_appState->setActiveBoard(custom);
+
         QMessageBox::information(this, tr("Kart Eklendi"),
-            tr("'%1' kaydedildi.\nVeritabanı bağlantısı Aşama 5'te eklenecek.").arg(name));
+            tr("'%1' aktif kart olarak ayarlandı.\n"
+               "Veritabanı desteği Aşama 5'te eklenecek.")
+            .arg(custom.name));
     }
 }

@@ -25,6 +25,11 @@ set(PROJECT_SOURCES
     src/core/AppSettings.h
     src/core/AppSettings.cpp
 
+    src/core/AppState.h
+    src/core/AppState.cpp
+
+    src/modules/board/BoardPresets.h
+
     src/modules/board/BoardManager.h
     src/modules/board/BoardManager.cpp
 
@@ -62,6 +67,9 @@ set(PROJECT_SOURCES
 
     src/ui/AnalysisTab.h
     src/ui/AnalysisTab.cpp
+
+    src/ui/Sidebar.h
+    src/ui/Sidebar.cpp
 
     src/ui/SettingsDialog.h
     src/ui/SettingsDialog.cpp

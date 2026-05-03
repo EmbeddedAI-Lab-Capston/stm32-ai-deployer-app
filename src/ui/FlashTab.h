@@ -2,6 +2,7 @@
 
 #include <QWidget>
 #include "modules/flash/FlashManager.h"
+#include "core/AppState.h"
 
 class QLineEdit;
 class QComboBox;
@@ -16,7 +17,7 @@ class FlashTab : public QWidget
     Q_OBJECT
 
 public:
-    explicit FlashTab(QWidget *parent = nullptr);
+    explicit FlashTab(AppState *state, QWidget *parent = nullptr);
     ~FlashTab() override;
 
     // Called by MainWindow after construction — wires up FlashManager signals
@@ -36,9 +37,14 @@ private slots:
     void appendErrorLine(const QString &line);
     void showSuccessBanner(const FlashConfig &config);
 
+    // AppState reactions
+    void onBoardChanged(const BoardInfo &board);
+    void onConnectionChanged(bool connected, const QString &info);
+
 private:
     void setupUi();
 
+    AppState     *m_appState     = nullptr;
     FlashManager *m_flashManager = nullptr;
 
     // CLI status bar

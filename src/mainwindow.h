@@ -3,14 +3,16 @@
 #include <QMainWindow>
 #include <QLabel>
 #include <QTabWidget>
-#include <QFrame>
 
+class AppState;
+class Sidebar;
 class BoardTab;
 class FlashTab;
 class MonitorTab;
 class AnalysisTab;
 class SettingsDialog;
 class FlashManager;
+class SerialManager;
 
 class MainWindow : public QMainWindow
 {
@@ -25,39 +27,27 @@ private slots:
     void onAboutTriggered();
     void onExitTriggered();
 
-    void onConnectionStatusChanged(bool connected, const QString &info);
-    void onInferenceMetricUpdated(const QString &model, double ms, int accPct);
-    void onBoardChanged(const QString &name, int flashKb, int ramKb, int clockMhz);
-
 private:
     void setupMenuBar();
     void setupCentralWidget();
-    void setupSidebar();
     void setupStatusBar();
-    QFrame *createSidebarSeparator();
+    void setupConnections();
 
-    QTabWidget     *m_tabWidget      = nullptr;
-    BoardTab       *m_boardTab       = nullptr;
-    FlashTab       *m_flashTab       = nullptr;
-    MonitorTab     *m_monitorTab     = nullptr;
-    AnalysisTab    *m_analysisTab    = nullptr;
+    // ── Core state & managers ────────────────────────────────────────────
+    AppState      *m_appState      = nullptr;
+    SerialManager *m_serialManager = nullptr;
+    FlashManager  *m_flashManager  = nullptr;
+
+    // ── UI ───────────────────────────────────────────────────────────────
+    Sidebar        *m_sidebar       = nullptr;
+    QTabWidget     *m_tabWidget     = nullptr;
+    BoardTab       *m_boardTab      = nullptr;
+    FlashTab       *m_flashTab      = nullptr;
+    MonitorTab     *m_monitorTab    = nullptr;
+    AnalysisTab    *m_analysisTab   = nullptr;
     SettingsDialog *m_settingsDialog = nullptr;
-    FlashManager   *m_flashManager   = nullptr;
 
-    // Sidebar
-    QFrame *m_sidebar = nullptr;
-
-    // Sidebar value labels (updated in Phase 3+)
-    QLabel *m_sbConnLabel    = nullptr;
-    QLabel *m_sbPortLabel    = nullptr;
-    QLabel *m_sbBaudLabel    = nullptr;
-    QLabel *m_sbBoardLabel   = nullptr;
-    QLabel *m_sbFlashLabel   = nullptr;
-    QLabel *m_sbRamLabel     = nullptr;
-    QLabel *m_sbSessionLabel = nullptr;
-    QLabel *m_sbMetricLabel  = nullptr;
-
-    // Status bar
+    // Status bar labels (updated via AppState signals)
     QLabel *m_connectionLabel = nullptr;
     QLabel *m_boardLabel      = nullptr;
     QLabel *m_versionLabel    = nullptr;

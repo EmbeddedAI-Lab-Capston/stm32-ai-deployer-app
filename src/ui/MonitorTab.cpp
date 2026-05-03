@@ -4,7 +4,6 @@
 #include <QHBoxLayout>
 #include <QGroupBox>
 #include <QLabel>
-#include <QComboBox>
 #include <QPushButton>
 #include <QTextEdit>
 #include <QSplitter>
@@ -15,19 +14,22 @@
 #include <QTextStream>
 #include <QDateTime>
 #include <QFont>
+#include <QFrame>
 
+#include "core/AppState.h"
 #include "modules/serial/SerialManager.h"
 #include "modules/serial/SerialSimulator.h"
 
-MonitorTab::MonitorTab(QWidget *parent)
+MonitorTab::MonitorTab(AppState *state, SerialManager *serial, QWidget *parent)
     : QWidget(parent)
-    , m_serialManager(new SerialManager(this))
+    , m_appState(state)
+    , m_serialManager(serial)
     , m_simParser(new PacketParser(this))
     , m_simulator(new SerialSimulator(m_simParser, this))
 {
     setupUi();
 
-    // --- SerialManager → UI connections ---
+    // ── SerialManager → UI ────────────────────────────────────────────────
     connect(m_serialManager, &SerialManager::connectionChanged,
             this, &MonitorTab::onConnectionChanged);
     connect(m_serialManager, &SerialManager::rawLineReceived,
@@ -39,7 +41,7 @@ MonitorTab::MonitorTab(QWidget *parent)
     connect(m_serialManager, &SerialManager::errorOccurred,
             this, &MonitorTab::onSerialError);
 
-    // --- Simulator parser → same UI slots ---
+    // ── Simulator parser → same UI slots ──────────────────────────────────
     connect(m_simParser, &PacketParser::rawLineReceived,
             this, &MonitorTab::appendRawLog);
     connect(m_simParser, &PacketParser::inferenceReceived,
@@ -47,7 +49,21 @@ MonitorTab::MonitorTab(QWidget *parent)
     connect(m_simParser, &PacketParser::sysReceived,
             this, &MonitorTab::onSysReceived);
 
-    refreshPorts();
+    // ── AppState reactions ────────────────────────────────────────────────
+    connect(m_appState, &AppState::connectionChanged,
+            this, &MonitorTab::onConnectionChanged);
+    connect(m_appState, &AppState::activeBoardChanged,
+            this, &MonitorTab::onBoardChanged);
+    connect(m_appState, &AppState::lastModelChanged,
+            this, [this](const QString &name, double infMs, quint8 acc) {
+                // Update sidebar through AppState — already handled there.
+                // Here we can update bottom info if desired.
+                Q_UNUSED(name); Q_UNUSED(infMs); Q_UNUSED(acc);
+            });
+
+    // Show initial state
+    onConnectionChanged(m_appState->isConnected(), m_appState->connectionInfo());
+    onBoardChanged(m_appState->activeBoard());
 }
 
 MonitorTab::~MonitorTab() = default;
@@ -58,47 +74,22 @@ void MonitorTab::setupUi()
     mainLayout->setContentsMargins(12, 12, 12, 12);
     mainLayout->setSpacing(8);
 
-    // ── Connection panel ───────────────────────────────────────────────────
-    auto *connBox    = new QGroupBox(tr("Bağlantı"), this);
-    auto *connLayout = new QHBoxLayout(connBox);
-    connLayout->setSpacing(8);
+    // ── Readonly status bar ────────────────────────────────────────────────
+    auto *statusFrame  = new QFrame(this);
+    statusFrame->setObjectName("monitorStatusBar");
+    statusFrame->setFrameShape(QFrame::StyledPanel);
+    auto *statusLayout = new QHBoxLayout(statusFrame);
+    statusLayout->setContentsMargins(8, 4, 8, 4);
+    statusLayout->setSpacing(16);
 
-    connLayout->addWidget(new QLabel(tr("Port:"), this));
-    m_portCombo = new QComboBox(this);
-    m_portCombo->setFixedWidth(140);
-    connLayout->addWidget(m_portCombo);
-
-    m_refreshBtn = new QPushButton(tr("⟳  Yenile"), this);
-    m_refreshBtn->setFixedWidth(90);
-    m_refreshBtn->setToolTip(tr("Port listesini yenile — kartı taktıktan sonra buraya bas"));
-    connLayout->addWidget(m_refreshBtn);
-
-    connLayout->addSpacing(12);
-    connLayout->addWidget(new QLabel(tr("Baud:"), this));
-
-    m_baudCombo = new QComboBox(this);
-    m_baudCombo->addItems({"9600", "38400", "115200", "230400", "921600"});
-    m_baudCombo->setCurrentText("115200");
-    m_baudCombo->setFixedWidth(100);
-    connLayout->addWidget(m_baudCombo);
-
-    connLayout->addSpacing(16);
-
-    m_connectBtn = new QPushButton(tr("Bağlan"), this);
-    m_connectBtn->setObjectName("primaryButton");
-    m_connectBtn->setFixedWidth(130);
-    connLayout->addWidget(m_connectBtn);
-
-    m_connStatus = new QLabel(tr("  ● Bağlantı Yok"), this);
-    m_connStatus->setObjectName("connStatusDisconnected");
-    connLayout->addWidget(m_connStatus);
-
-    connLayout->addStretch();
+    m_statusBar = new QLabel(tr("Bağlantı: ● Bağlantı Yok    Kart: --"), this);
+    m_statusBar->setObjectName("sidebarValueLabel");
+    statusLayout->addWidget(m_statusBar, 1);
 
     m_simCheck = new QCheckBox(tr("Simülasyon Modu"), this);
-    connLayout->addWidget(m_simCheck);
+    statusLayout->addWidget(m_simCheck);
 
-    mainLayout->addWidget(connBox);
+    mainLayout->addWidget(statusFrame);
 
     // ── Splitter: terminal (left) | metrics (right) ────────────────────────
     auto *splitter = new QSplitter(Qt::Horizontal, this);
@@ -141,8 +132,8 @@ void MonitorTab::setupUi()
     };
 
     metricsLayout->addWidget(makeCard(tr("Inference (ms)"), m_metricInfValue));
-    metricsLayout->addWidget(makeCard(tr("RAM Kullanımı"),   m_metricRamValue));
-    metricsLayout->addWidget(makeCard(tr("Son Tahmin"),      m_metricLabelValue));
+    metricsLayout->addWidget(makeCard(tr("RAM Kullanımı"),  m_metricRamValue));
+    metricsLayout->addWidget(makeCard(tr("Son Tahmin"),     m_metricLabelValue));
     metricsLayout->addStretch();
     splitter->addWidget(metricsWidget);
 
@@ -171,33 +162,12 @@ void MonitorTab::setupUi()
     mainLayout->addWidget(bottomRow);
 
     // ── Button connections ─────────────────────────────────────────────────
-    connect(m_connectBtn, &QPushButton::clicked, this, &MonitorTab::onConnectClicked);
-    connect(m_refreshBtn, &QPushButton::clicked, this, &MonitorTab::onRefreshPortsClicked);
-    connect(clearBtn,     &QPushButton::clicked, this, &MonitorTab::onClearClicked);
-    connect(saveBtn,      &QPushButton::clicked, this, &MonitorTab::onSaveClicked);
-    connect(m_simCheck,   &QCheckBox::toggled,   this, &MonitorTab::onSimulationToggled);
+    connect(clearBtn,   &QPushButton::clicked, this, &MonitorTab::onClearClicked);
+    connect(saveBtn,    &QPushButton::clicked, this, &MonitorTab::onSaveClicked);
+    connect(m_simCheck, &QCheckBox::toggled,   this, &MonitorTab::onSimulationToggled);
 }
 
-void MonitorTab::refreshPorts()
-{
-    m_portCombo->clear();
-
-    QSerialPortInfo stlink = SerialManager::findStLink();
-    if (!stlink.isNull()) {
-        m_portCombo->addItem(
-            QString("★ %1 (ST-Link)").arg(stlink.portName()),
-            stlink.portName());
-    }
-
-    for (const QSerialPortInfo &info : SerialManager::availablePorts()) {
-        if (!stlink.isNull() && info.portName() == stlink.portName())
-            continue;
-        m_portCombo->addItem(info.portName(), info.portName());
-    }
-
-    if (m_portCombo->count() == 0)
-        m_portCombo->addItem(tr("Port bulunamadı"), QString());
-}
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 void MonitorTab::appendHtmlLine(const QString &color, const QString &text)
 {
@@ -212,25 +182,6 @@ void MonitorTab::appendHtmlLine(const QString &color, const QString &text)
 }
 
 // ── Slots ──────────────────────────────────────────────────────────────────
-
-void MonitorTab::onConnectClicked()
-{
-    if (m_simCheck->isChecked()) return; // simulation mode manages its own state
-
-    if (m_connected) {
-        m_serialManager->disconnectPort();
-    } else {
-        const QString port = m_portCombo->currentData().toString();
-        const qint32  baud = m_baudCombo->currentText().toInt();
-        if (port.isEmpty()) return;
-        m_serialManager->connectToPort(port, baud);
-    }
-}
-
-void MonitorTab::onRefreshPortsClicked()
-{
-    refreshPorts();
-}
 
 void MonitorTab::onClearClicked()
 {
@@ -258,20 +209,10 @@ void MonitorTab::onSaveClicked()
 void MonitorTab::onSimulationToggled(bool checked)
 {
     if (checked) {
-        m_connectBtn->setEnabled(false);
-        m_portCombo->setEnabled(false);
-        m_baudCombo->setEnabled(false);
-        m_refreshBtn->setEnabled(false);
-
         onConnectionChanged(true, "Simülasyon @ 115200");
         m_simulator->start(800);
     } else {
         m_simulator->stop();
-        m_connectBtn->setEnabled(true);
-        m_portCombo->setEnabled(true);
-        m_baudCombo->setEnabled(true);
-        m_refreshBtn->setEnabled(true);
-
         onConnectionChanged(false, QString());
         onClearClicked();
     }
@@ -279,24 +220,28 @@ void MonitorTab::onSimulationToggled(bool checked)
 
 void MonitorTab::onConnectionChanged(bool connected, const QString &info)
 {
-    m_connected = connected;
-
+    // Update status bar label
+    const QString board = m_appState->activeBoard().name;
     if (connected) {
-        m_connectBtn->setText(tr("Bağlantıyı Kes"));
-        m_connStatus->setText(tr("  ● ") + info);
-        m_connStatus->setObjectName("connStatusConnected");
+        m_statusBar->setText(
+            QString("Bağlantı: ● %1    Kart: %2")
+                .arg(info.isEmpty() ? "Bağlı" : info, board));
         appendHtmlLine("#A6E3A1", tr("Bağlantı kuruldu: ") + info);
     } else {
-        m_connectBtn->setText(tr("Bağlan"));
-        m_connStatus->setText(tr("  ● Bağlantı Yok"));
-        m_connStatus->setObjectName("connStatusDisconnected");
+        m_statusBar->setText(
+            QString("Bağlantı: ● Bağlantı Yok    Kart: %1").arg(board));
         if (!info.isEmpty())
             appendHtmlLine("#6C7086", tr("Bağlantı kesildi."));
     }
-    m_connStatus->style()->unpolish(m_connStatus);
-    m_connStatus->style()->polish(m_connStatus);
+}
 
-    emit connectionStatusChanged(connected, info);
+void MonitorTab::onBoardChanged(const BoardInfo &board)
+{
+    // Refresh status bar with new board name
+    const bool connected = m_appState->isConnected();
+    const QString info   = m_appState->connectionInfo();
+    onConnectionChanged(connected, info);
+    Q_UNUSED(board)
 }
 
 void MonitorTab::appendRawLog(const QString &line)
@@ -309,10 +254,8 @@ void MonitorTab::onInferenceReceived(const InferenceData &data)
     const double ms    = data.inf_us / 1000.0;
     const double ramKb = data.ram_b  / 1024.0;
 
-    m_metricInfValue->setText(
-        QString("%1 ms").arg(ms, 0, 'f', 1));
-    m_metricRamValue->setText(
-        QString("%1 KB").arg(ramKb, 0, 'f', 1));
+    m_metricInfValue->setText(QString("%1 ms").arg(ms, 0, 'f', 1));
+    m_metricRamValue->setText(QString("%1 KB").arg(ramKb, 0, 'f', 1));
     m_metricLabelValue->setText(
         QString("%1\n%2%").arg(data.label).arg(data.acc_pct));
 
@@ -326,10 +269,11 @@ void MonitorTab::onInferenceReceived(const InferenceData &data)
 
     m_infBuffer.push(data);
 
+    // Push to AppState so Sidebar's "Son Model" section updates
+    m_appState->setLastModel(data.model, ms, data.acc_pct);
+
     // TODO(asama-5): SQLite'a yaz
     // TODO(asama-6): Grafik güncelle
-
-    emit inferenceMetricUpdated(data.model, ms, data.acc_pct);
 }
 
 void MonitorTab::onSysReceived(const SysData &data)
@@ -353,7 +297,5 @@ void MonitorTab::onSysReceived(const SysData &data)
 void MonitorTab::onSerialError(const QString &msg)
 {
     appendHtmlLine("#F38BA8", tr("HATA: ") + msg);
-
-    // Port disconnected — reset UI state
     onConnectionChanged(false, QString());
 }

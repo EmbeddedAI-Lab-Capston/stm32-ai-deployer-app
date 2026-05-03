@@ -18,12 +18,24 @@
 #include <QMessageBox>
 
 #include "core/AppSettings.h"
+#include "core/AppState.h"
 #include "SettingsDialog.h"
 
-FlashTab::FlashTab(QWidget *parent)
+FlashTab::FlashTab(AppState *state, QWidget *parent)
     : QWidget(parent)
+    , m_appState(state)
 {
     setupUi();
+
+    // React to AppState changes
+    connect(m_appState, &AppState::activeBoardChanged,
+            this, &FlashTab::onBoardChanged);
+    connect(m_appState, &AppState::connectionChanged,
+            this, &FlashTab::onConnectionChanged);
+
+    // Show current state
+    onBoardChanged(m_appState->activeBoard());
+    onConnectionChanged(m_appState->isConnected(), m_appState->connectionInfo());
 }
 
 FlashTab::~FlashTab() = default;
@@ -254,10 +266,10 @@ void FlashTab::onFlashClicked()
     config.quantization   = m_quantCombo->currentText();
     config.hexPath        = m_filePathEdit->text().trimmed();
     config.simulationMode = m_simModeCheck->isChecked();
-    // TODO(asama-5): Read active board from BoardTab / AppSettings
-    config.targetBoard = AppSettings().lastBoard().isEmpty()
+    // Read active board from AppState (set via Sidebar)
+    config.targetBoard = m_appState->activeBoard().isNull()
                              ? "STM32F4"
-                             : AppSettings().lastBoard();
+                             : m_appState->activeBoard().name;
 
     // In sim mode, fill in a placeholder model name if empty
     if (config.simulationMode && config.modelName.isEmpty())
@@ -340,4 +352,22 @@ void FlashTab::showSuccessBanner(const FlashConfig &config)
                  config.quantization);
 
     appendOutputLine(banner);
+}
+
+void FlashTab::onBoardChanged(const BoardInfo &board)
+{
+    if (board.isNull()) return;
+    m_targetLabel->setText(
+        QString("Hedef Kart:  <b>%1</b>").arg(board.name));
+}
+
+void FlashTab::onConnectionChanged(bool connected, const QString &/*info*/)
+{
+    if (connected) {
+        m_stlinkLabel->setText(tr("●  ST-Link: Bağlı"));
+        m_stlinkLabel->setStyleSheet("color: #A6E3A1;");
+    } else {
+        m_stlinkLabel->setText(tr("●  ST-Link: Bağlı Değil"));
+        m_stlinkLabel->setStyleSheet("color: #F38BA8;");
+    }
 }
