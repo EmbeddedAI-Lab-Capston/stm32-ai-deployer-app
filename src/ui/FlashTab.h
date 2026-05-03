@@ -33,6 +33,7 @@ public:
 private slots:
     // Hex firmware panel
     void onBrowseClicked();
+    void onHexFileSelected(const QString &path);
     void onFlashClicked();
     void onCancelClicked();
     void onSettingsClicked();
@@ -74,6 +75,7 @@ private:
     QComboBox   *m_archCombo      = nullptr;
     QComboBox   *m_quantCombo     = nullptr;
     QLineEdit   *m_filePathEdit   = nullptr;
+    QLabel      *m_fileInfoLabel  = nullptr;
     QCheckBox   *m_simModeCheck   = nullptr;
 
     QPushButton *m_flashBtn  = nullptr;

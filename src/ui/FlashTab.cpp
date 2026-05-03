@@ -218,14 +218,34 @@ void FlashTab::setupUi()
     fileLayout->addWidget(m_filePathEdit);
     fileLayout->addWidget(browseBtn);
 
+    // File info label — shown after a file is selected
+    m_fileInfoLabel = new QLabel(m_hexPanel);
+    m_fileInfoLabel->setTextFormat(Qt::RichText);
+    m_fileInfoLabel->setVisible(false);
+
     m_simModeCheck = new QCheckBox(
         tr("Simülasyon Modu  (gerçek flash atılmaz)"), m_hexPanel);
     m_simModeCheck->setChecked(true);
 
+    // Format hint note
+    auto *formatNote = new QLabel(
+        "<small style='color:#6C7086;'>"
+        "Desteklenen: "
+        "<span style='color:#A6E3A1;'>.hex</span> · "
+        "<span style='color:#89B4FA;'>.elf</span> · "
+        "<span style='color:#F9E2AF;'>.bin</span>"
+        "&nbsp;&nbsp;|&nbsp;&nbsp;"
+        "STM32CubeIDE çıktısı genellikle <b>.elf</b> formatındadır."
+        "</small>",
+        m_hexPanel);
+    formatNote->setTextFormat(Qt::RichText);
+
     modelForm->addRow(tr("Model Adı    :"), m_modelNameEdit);
     modelForm->addRow(tr("Mimari       :"), m_archCombo);
     modelForm->addRow(tr("Quantization :"), m_quantCombo);
-    modelForm->addRow(tr(".hex / .bin  :"), fileRow);
+    modelForm->addRow(tr("Firmware     :"), fileRow);
+    modelForm->addRow(QString(), m_fileInfoLabel);
+    modelForm->addRow(QString(), formatNote);
     modelForm->addRow(QString(), m_simModeCheck);
 
     hexPanelLayout->addWidget(modelBox);
@@ -460,11 +480,52 @@ void FlashTab::onSourceModeChanged(int id, bool checked)
 
 void FlashTab::onBrowseClicked()
 {
+    AppSettings settings;
+    const QString lastDir = settings.lastFirmwareDir();
+
     const QString path = QFileDialog::getOpenFileName(
-        this, tr("Firmware Dosyası Seç"), {},
-        tr("Firmware Files (*.hex *.bin);;All Files (*)"));
-    if (!path.isEmpty())
-        m_filePathEdit->setText(path);
+        this,
+        tr("Firmware Dosyası Seç"),
+        lastDir,
+        tr("Firmware Files (*.hex *.bin *.elf);;"
+           "Intel HEX (*.hex);;"
+           "ELF (*.elf);;"
+           "Binary (*.bin);;"
+           "All Files (*)"));
+
+    if (!path.isEmpty()) {
+        settings.setLastFirmwareDir(QFileInfo(path).absolutePath());
+        onHexFileSelected(path);
+    }
+}
+
+void FlashTab::onHexFileSelected(const QString &path)
+{
+    m_filePathEdit->setText(path);
+
+    const QFileInfo fi(path);
+    const QString ext  = fi.suffix().toUpper();
+    const QString size = QString::number(fi.size() / 1024.0, 'f', 1) + " KB";
+
+    QString color, note;
+    if (ext == "HEX") {
+        color = "#A6E3A1";
+        note  = tr("Intel HEX — adres bilgisi içeriyor");
+    } else if (ext == "ELF") {
+        color = "#89B4FA";
+        note  = tr("ELF — adres ve sembol bilgisi içeriyor");
+    } else if (ext == "BIN") {
+        color = "#F9E2AF";
+        note  = tr("Binary — flash adresi 0x08000000 kullanılacak");
+    } else {
+        color = "#CDD6F4";
+        note  = tr("Bilinmeyen format");
+    }
+
+    m_fileInfoLabel->setText(
+        QString("<span style='color:%1;'>%2 · %3 · %4</span>")
+            .arg(color, ext, size, note));
+    m_fileInfoLabel->setVisible(true);
 }
 
 void FlashTab::onFlashClicked()

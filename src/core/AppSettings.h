@@ -29,10 +29,15 @@ public:
     QString xcubeAICliPath() const;
     void    setXCubeAICliPath(const QString &path);
 
+    // Last directory used in the firmware file picker
+    QString lastFirmwareDir() const;
+    void    setLastFirmwareDir(const QString &dir);
+
 private:
     static constexpr auto kKeyCliPath       = "programmer/cli_path";
     static constexpr auto kKeyComPort       = "serial/last_com_port";
     static constexpr auto kKeyBoard         = "board/last_board";
     static constexpr auto kKeyTheme         = "ui/theme";
     static constexpr auto kKeyXCubeAIPath   = "tools/xcubeai_cli_path";
+    static constexpr auto kKeyFirmwareDir   = "flash/last_firmware_dir";
 };

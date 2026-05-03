@@ -66,8 +66,9 @@ bool FlashManager::validateConfig(const FlashConfig &config,
         return false;
     }
     const QString ext = fi.suffix().toLower();
-    if (ext != "hex" && ext != "bin") {
-        errorMsg = tr("Geçersiz dosya türü — .hex veya .bin seçin.");
+    const QStringList validExts = {"hex", "bin", "elf"};
+    if (!validExts.contains(ext)) {
+        errorMsg = tr("Geçersiz dosya türü — .hex, .bin veya .elf seçin.");
         return false;
     }
     if (m_runner->cliPath().isEmpty()) {
@@ -109,17 +110,40 @@ void FlashManager::cancel()
 
 QStringList FlashManager::buildArgs(const FlashConfig &config) const
 {
-    return {
-        "-c", "port=SWD",
-        "-d", config.hexPath,
-        "-rst"
-    };
+    QStringList args = {"-c", "port=SWD"};
+
+    // .bin files don't carry address info — provide the default STM32 flash base.
+    // .hex and .elf embed address information, so the CLI parses it automatically.
+    if (config.hexPath.endsWith(".bin", Qt::CaseInsensitive)) {
+        args << "-d" << config.hexPath << "0x08000000";
+    } else {
+        args << "-d" << config.hexPath;
+    }
+
+    args << "-rst";
+    return args;
 }
 
 void FlashManager::runSimulation(const FlashConfig &config)
 {
-    const QString fileName = QFileInfo(
-        config.hexPath.isEmpty() ? "test_model.hex" : config.hexPath).fileName();
+    const QString filePath = config.hexPath.isEmpty()
+                                 ? "firmware.elf"
+                                 : config.hexPath;
+    const QString fileName = QFileInfo(filePath).fileName();
+    const QString fileExt  = QFileInfo(fileName).suffix().toUpper();
+
+    QString parseMsg;
+    QString addrMsg;
+    if (fileExt == "ELF") {
+        parseMsg = "> Opening and parsing file: " + fileName + " (ELF)";
+        addrMsg  = "> Address: parsed from ELF header";
+    } else if (fileExt == "HEX") {
+        parseMsg = "> Opening and parsing file: " + fileName + " (Intel HEX)";
+        addrMsg  = "> Address: parsed from Intel HEX";
+    } else {
+        parseMsg = "> Opening and parsing file: " + fileName + " (Binary)";
+        addrMsg  = "> Address: 0x08000000 (default)";
+    }
 
     const QStringList fakeOutput = {
         "> [Simülasyon Modu] Gerçek flash atılmıyor.",
@@ -135,9 +159,9 @@ void FlashManager::runSimulation(const FlashConfig &config)
         "> Reset: Enabled",
         "> -------------------------------------------",
         "> Memory Programming...",
-        "> File: " + fileName,
+        parseMsg,
         "> Size: 96.0 KB",
-        "> Address: 0x08000000",
+        addrMsg,
         "> Erasing memory corresponding to sector ...",
         "> Download in Progress:",
         "> [====================] 100%",

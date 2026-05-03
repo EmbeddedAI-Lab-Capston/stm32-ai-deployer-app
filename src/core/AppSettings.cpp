@@ -1,5 +1,6 @@
 #include "AppSettings.h"
 
+#include <QDir>
 #include <QSettings>
 
 AppSettings::AppSettings() = default;
@@ -62,4 +63,16 @@ void AppSettings::setXCubeAICliPath(const QString &path)
 {
     QSettings s;
     s.setValue(kKeyXCubeAIPath, path);
+}
+
+QString AppSettings::lastFirmwareDir() const
+{
+    QSettings s;
+    return s.value(kKeyFirmwareDir, QDir::homePath()).toString();
+}
+
+void AppSettings::setLastFirmwareDir(const QString &dir)
+{
+    QSettings s;
+    s.setValue(kKeyFirmwareDir, dir);
 }
