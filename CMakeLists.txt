@@ -28,6 +28,9 @@ set(PROJECT_SOURCES
     src/modules/board/BoardManager.h
     src/modules/board/BoardManager.cpp
 
+    src/modules/flash/CliRunner.h
+    src/modules/flash/CliRunner.cpp
+
     src/modules/flash/FlashManager.h
     src/modules/flash/FlashManager.cpp
 

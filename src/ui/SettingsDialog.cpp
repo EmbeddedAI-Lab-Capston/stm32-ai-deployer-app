@@ -8,6 +8,9 @@
 #include <QPushButton>
 #include <QFileDialog>
 #include <QDialogButtonBox>
+#include <QProcess>
+#include <QFile>
+#include <QMessageBox>
 #include "core/AppSettings.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
@@ -46,8 +49,13 @@ void SettingsDialog::setupUi()
     m_browseButton->setFixedWidth(80);
     connect(m_browseButton, &QPushButton::clicked, this, &SettingsDialog::onBrowseClicked);
 
+    m_testButton = new QPushButton(tr("Test Et"), this);
+    m_testButton->setFixedWidth(80);
+    connect(m_testButton, &QPushButton::clicked, this, &SettingsDialog::onTestCliClicked);
+
     cliRow->addWidget(m_cliPathEdit);
     cliRow->addWidget(m_browseButton);
+    cliRow->addWidget(m_testButton);
 
     formLayout->addRow(tr("CLI Yolu:"), cliRow);
     mainLayout->addLayout(formLayout);
@@ -77,6 +85,35 @@ void SettingsDialog::loadCurrentValues()
 {
     AppSettings settings;
     m_cliPathEdit->setText(settings.programmerCliPath());
+}
+
+void SettingsDialog::onTestCliClicked()
+{
+    const QString path = m_cliPathEdit->text().trimmed();
+    if (path.isEmpty() || !QFile::exists(path)) {
+        QMessageBox::warning(this, tr("Hata"),
+            tr("Dosya bulunamadı:\n") + path);
+        return;
+    }
+
+    QProcess proc;
+    proc.start(path, {"--version"});
+    proc.waitForFinished(5000);
+
+    const QString out  = QString::fromLocal8Bit(proc.readAllStandardOutput());
+    const QString err  = QString::fromLocal8Bit(proc.readAllStandardError());
+    const QString all  = out + err;
+
+    if (all.contains("STM32CubeProgrammer", Qt::CaseInsensitive) ||
+        all.contains("STM32_Programmer",    Qt::CaseInsensitive) ||
+        proc.exitCode() == 0) {
+        QMessageBox::information(this, tr("CLI Testi Başarılı"),
+            tr("CLI çalışıyor.\n\n") + all.trimmed().left(400));
+    } else {
+        QMessageBox::warning(this, tr("CLI Testi"),
+            tr("CLI çalıştı fakat beklenen çıktı gelmedi.\n\n")
+            + all.trimmed().left(400));
+    }
 }
 
 void SettingsDialog::onBrowseClicked()

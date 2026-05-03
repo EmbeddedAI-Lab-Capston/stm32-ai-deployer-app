@@ -9,6 +9,7 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QStyle>
+#include <QFile>
 
 #include "ui/BoardTab.h"
 #include "ui/FlashTab.h"
@@ -16,6 +17,7 @@
 #include "ui/AnalysisTab.h"
 #include "ui/SettingsDialog.h"
 #include "core/AppSettings.h"
+#include "modules/flash/FlashManager.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -161,6 +163,30 @@ void MainWindow::setupCentralWidget()
     m_monitorTab  = new MonitorTab(this);
     m_analysisTab = new AnalysisTab(this);
 
+    // Create FlashManager, detect CLI path, initialize FlashTab
+    m_flashManager = new FlashManager(this);
+    {
+        AppSettings settings;
+        QString cliPath = settings.programmerCliPath();
+        if (cliPath.isEmpty() || !QFile::exists(cliPath)) {
+            cliPath = FlashManager::detectCliPath();
+            if (!cliPath.isEmpty())
+                settings.setProgrammerCliPath(cliPath);
+        }
+        m_flashManager->setCliPath(cliPath);
+    }
+    m_flashTab->initialize(m_flashManager);
+
+    connect(m_flashManager, &FlashManager::flashFinished,
+            this, [this](bool success, const FlashConfig &config) {
+                if (success) {
+                    m_sbSessionLabel->setText(config.modelName);
+                    m_sbMetricLabel->setText(
+                        config.architecture + " / " + config.quantization);
+                    // TODO(asama-5): Oturumu SQLite'a kaydet
+                }
+            });
+
     auto *s = m_tabWidget->style();
     m_tabWidget->addTab(m_boardTab,
         s->standardIcon(QStyle::SP_ComputerIcon),       tr("Kart Yönetimi"));
@@ -198,10 +224,18 @@ void MainWindow::setupStatusBar()
 
 void MainWindow::onSettingsTriggered()
 {
-    if (!m_settingsDialog) {
+    if (!m_settingsDialog)
         m_settingsDialog = new SettingsDialog(this);
+
+    if (m_settingsDialog->exec() == QDialog::Accepted) {
+        // Propagate new CLI path to FlashManager + FlashTab status label
+        if (m_flashManager) {
+            AppSettings settings;
+            m_flashManager->setCliPath(settings.programmerCliPath());
+        }
+        if (m_flashTab)
+            m_flashTab->refreshCliStatus();
     }
-    m_settingsDialog->exec();
 }
 
 void MainWindow::onAboutTriggered()

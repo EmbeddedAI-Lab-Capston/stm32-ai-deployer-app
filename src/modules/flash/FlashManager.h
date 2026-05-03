@@ -1,39 +1,50 @@
 #pragma once
 
 #include <QObject>
-#include <QString>
+#include <QFileInfo>
+#include "CliRunner.h"
 
-// Handles firmware flashing via STM32_Programmer_CLI (QProcess).
+struct FlashConfig {
+    QString hexPath;
+    QString modelName;
+    QString architecture;
+    QString quantization;
+    QString targetBoard;
+    bool    simulationMode = false;
+};
+
+// Coordinates firmware flashing: validates input, builds CLI arguments,
+// drives CliRunner for real flashing or a QTimer for simulation mode.
 class FlashManager : public QObject
 {
     Q_OBJECT
 
 public:
     explicit FlashManager(QObject *parent = nullptr);
-    ~FlashManager() override;
 
-    // TODO: Validate that the CLI executable exists at the configured path
-    // bool isCliAvailable() const;
+    void    setCliPath(const QString &path);
+    QString cliPath() const;
 
-    // TODO: Start async flash of the given .hex/.bin file to the connected board
-    // void flashFile(const QString &filePath, const QString &boardTarget);
+    // Searches well-known install paths for STM32_Programmer_CLI.exe
+    static QString detectCliPath();
 
-    // TODO: Abort an in-progress flash operation
-    // void cancelFlash();
+    bool validateConfig(const FlashConfig &config, QString &errorMsg) const;
 
-    // TODO: Return true if a flash operation is currently running
-    // bool isFlashing() const;
+public slots:
+    void flash(const FlashConfig &config);
+    void cancel();
 
 signals:
-    // TODO: Emitted when flash progress changes (0–100)
-    // void progressChanged(int percent);
+    void outputLine(const QString &line);
+    void errorLine(const QString &line);
+    void progressChanged(int percent);
+    void flashStarted(const FlashConfig &config);
+    void flashFinished(bool success, const FlashConfig &config);
 
-    // TODO: Emitted when flash completes successfully
-    // void flashSucceeded();
+private:
+    CliRunner   *m_runner = nullptr;
+    FlashConfig  m_currentConfig;
 
-    // TODO: Emitted when flash fails with an error message
-    // void flashFailed(const QString &errorMessage);
-
-    // TODO: Emitted with a line of raw CLI output (for log display)
-    // void cliOutputLine(const QString &line);
+    QStringList buildArgs(const FlashConfig &config) const;
+    void        runSimulation(const FlashConfig &config);
 };

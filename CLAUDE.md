@@ -289,7 +289,8 @@ AppSettings::CliAutoDetected     // "tools/cli_auto_detected"
 | 1     | Qt proje iskeleti       | ✅ Tamamlandı |
 | 2     | Ana UI iskeleti         | ✅ Tamamlandı |
 | 3     | Serial port modülü      | ✅ Tamamlandı |
-| 4     | Flash modülü            | 🔄 Aktif     |
+| 4     | Flash modülü            | ✅ Tamamlandı |
+
 | 5     | Veritabanı ve kayıt     | ⏳ Bekliyor  |
 | 6     | Canlı dashboard         | ⏳ Bekliyor  |
 | 7     | Model karşılaştırma     | ⏳ Bekliyor  |

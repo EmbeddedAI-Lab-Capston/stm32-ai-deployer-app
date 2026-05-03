@@ -17,6 +17,7 @@ public:
 
 private slots:
     void onBrowseClicked();
+    void onTestCliClicked();
     void onSaveClicked();
     void onCancelClicked();
 
@@ -26,6 +27,7 @@ private:
 
     QLineEdit   *m_cliPathEdit   = nullptr;
     QPushButton *m_browseButton  = nullptr;
+    QPushButton *m_testButton    = nullptr;
     QPushButton *m_saveButton    = nullptr;
     QPushButton *m_cancelButton  = nullptr;
 };

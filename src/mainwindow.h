@@ -10,6 +10,7 @@ class FlashTab;
 class MonitorTab;
 class AnalysisTab;
 class SettingsDialog;
+class FlashManager;
 
 class MainWindow : public QMainWindow
 {
@@ -40,6 +41,7 @@ private:
     MonitorTab     *m_monitorTab     = nullptr;
     AnalysisTab    *m_analysisTab    = nullptr;
     SettingsDialog *m_settingsDialog = nullptr;
+    FlashManager   *m_flashManager   = nullptr;
 
     // Sidebar
     QFrame *m_sidebar = nullptr;
