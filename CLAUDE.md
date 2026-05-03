@@ -9,7 +9,7 @@ Projeye yeni başlarken veya bağlamı kaybettiğinde bu dosyayı referans al.
 
 **Uygulama adı:** STM32 AI Deployer
 **Tür:** Windows masaüstü uygulaması
-**Framework:** Qt 6.5+ / C++17 / CMake
+**Framework:** Qt 6.11.0 / C++17 / CMake
 **Amaç:** STM32 mikrodenetleyicilerde çalışan yapay zeka modellerini
 karta yüklemek, UART üzerinden gelen inference metriklerini gerçek
 zamanlı izlemek ve modelleri karşılaştırmalı olarak analiz etmek.
@@ -38,8 +38,9 @@ zamanlı izlemek ve modelleri karşılaştırmalı olarak analiz etmek.
 
 | Bileşen          | Teknoloji                       |
 |------------------|---------------------------------|
-| Framework        | Qt 6.5+ (LTS)                   |
-| Derleme sistemi  | CMake 3.21+ (QMake kullanılmaz) |
+| Framework        | Qt 6.11.0 (mingw_64)            |
+| Derleyici        | MinGW 13.1.0 (GCC)              |
+| Derleme sistemi  | CMake 3.30.5 (QMake kullanılmaz)|
 | Dil              | C++17                           |
 | Veritabanı       | SQLite — Qt SQL modülü          |
 | Seri port        | Qt Serial Port modülü           |
@@ -298,15 +299,24 @@ AppSettings::CliAutoDetected     // "tools/cli_auto_detected"
 
 ## Sık Kullanılan Komutlar
 
-```bash
-# Projeyi yapılandır (Qt yolu kendi kurulumuna göre ayarla)
-cmake -B build -S . -DCMAKE_PREFIX_PATH="C:/Qt/6.5.x/msvc2019_64"
+```powershell
+# CMake yolu (Qt ile birlikte gelir)
+$env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\mingw1310_64\bin;$env:PATH"
+
+# Projeyi yapılandır
+cmake -B build -S . `
+  -DCMAKE_PREFIX_PATH="C:/Qt/6.11.0/mingw_64" `
+  -DCMAKE_BUILD_TYPE=Release `
+  -G "MinGW Makefiles"
 
 # Derle
-cmake --build build --config Release
+cmake --build build
 
 # Temizle
 cmake --build build --target clean
+
+# Doğrudan çalıştır
+.\build\stm32-ai-deployer.exe
 ```
 
 ---
