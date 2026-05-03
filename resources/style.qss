@@ -109,6 +109,15 @@ QLabel#statusConnectionLabel {
     color: #F38BA8;
 }
 
+QLabel#statusBoardLabel {
+    color: #CDD6F4;
+}
+
+QLabel#statusVersionLabel {
+    color: #6C7086;
+    border-right: none;
+}
+
 /* --- Buttons ------------------------------------------------------- */
 QPushButton {
     background-color: #313244;
@@ -149,6 +158,43 @@ QPushButton#primaryButton:pressed {
     background-color: #74A8F5;
 }
 
+QPushButton#dangerBtn {
+    background-color: #F38BA8;
+    color: #1E1E2E;
+    border: none;
+    font-weight: bold;
+}
+
+QPushButton#dangerBtn:hover {
+    background-color: #FF9DB8;
+}
+
+QPushButton#dangerBtn:pressed {
+    background-color: #E07090;
+}
+
+/* --- Board selection buttons -------------------------------------- */
+QPushButton#boardBtn {
+    background-color: #313244;
+    color: #CDD6F4;
+    border: 1px solid #45475A;
+    border-radius: 8px;
+    padding: 8px 12px;
+    text-align: center;
+}
+
+QPushButton#boardBtn:hover {
+    background-color: #45475A;
+    border-color: #89B4FA;
+}
+
+QPushButton#boardBtn:checked {
+    background-color: #1C3A5E;
+    color: #89B4FA;
+    border: 2px solid #89B4FA;
+    font-weight: bold;
+}
+
 /* --- Line edit ----------------------------------------------------- */
 QLineEdit {
     background-color: #181825;
@@ -167,6 +213,11 @@ QLineEdit:focus {
 QLineEdit:disabled {
     background-color: #1E1E2E;
     color: #585B70;
+}
+
+QLineEdit:read-only {
+    background-color: #252535;
+    color: #A6ADC8;
 }
 
 /* --- ComboBox ------------------------------------------------------ */
@@ -194,6 +245,30 @@ QComboBox QAbstractItemView {
     color: #CDD6F4;
     selection-background-color: #313244;
     selection-color: #89B4FA;
+}
+
+/* --- SpinBox ------------------------------------------------------- */
+QSpinBox {
+    background-color: #181825;
+    color: #CDD6F4;
+    border: 1px solid #45475A;
+    border-radius: 6px;
+    padding: 5px 8px;
+    min-height: 28px;
+}
+
+QSpinBox:focus {
+    border-color: #89B4FA;
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    background-color: #313244;
+    border: none;
+    width: 18px;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background-color: #45475A;
 }
 
 /* --- Scroll bars --------------------------------------------------- */
@@ -259,6 +334,80 @@ QGroupBox::title {
     color: #89B4FA;
 }
 
+/* --- Plain/Text edit ---------------------------------------------- */
+QPlainTextEdit, QTextEdit {
+    background-color: #181825;
+    color: #CDD6F4;
+    border: 1px solid #45475A;
+    border-radius: 6px;
+    font-family: Consolas;
+    font-size: 10pt;
+    padding: 4px;
+}
+
+QTextEdit#flashOutput {
+    background-color: #0F0F1A;
+    border-color: #313244;
+    font-family: Consolas;
+    font-size: 10pt;
+}
+
+QTextEdit#terminalOutput {
+    background-color: #0F0F1A;
+    border-color: #313244;
+    font-family: Consolas;
+    font-size: 10pt;
+}
+
+/* --- Splitter ------------------------------------------------------ */
+QSplitter::handle {
+    background-color: #313244;
+}
+
+QSplitter::handle:horizontal {
+    width: 5px;
+    background-color: #313244;
+}
+
+QSplitter::handle:horizontal:hover {
+    background-color: #45475A;
+}
+
+/* --- Table --------------------------------------------------------- */
+QTableView, QTableWidget {
+    background-color: #181825;
+    alternate-background-color: #252535;
+    border: 1px solid #313244;
+    border-radius: 6px;
+    gridline-color: #313244;
+    selection-background-color: #313244;
+    selection-color: #89B4FA;
+}
+
+QTableWidget::item {
+    padding: 4px 8px;
+    border: none;
+}
+
+QTableWidget::item:selected {
+    background-color: #313244;
+    color: #89B4FA;
+}
+
+QHeaderView::section {
+    background-color: #313244;
+    color: #89B4FA;
+    border: none;
+    border-right: 1px solid #45475A;
+    border-bottom: 1px solid #45475A;
+    padding: 6px 10px;
+    font-weight: bold;
+}
+
+QHeaderView::section:last {
+    border-right: none;
+}
+
 /* --- Dialog -------------------------------------------------------- */
 QDialog {
     background-color: #1E1E2E;
@@ -272,12 +421,120 @@ QLabel#settingsSectionLabel {
     border-bottom: 1px solid #313244;
 }
 
-/* --- Placeholder labels ------------------------------------------- */
-QLabel#placeholderLabel {
-    color: #585B70;
-    font-size: 14px;
-    padding: 60px;
-    qproperty-alignment: AlignCenter;
+QDialogButtonBox QPushButton {
+    min-width: 80px;
+}
+
+/* --- Sidebar ------------------------------------------------------- */
+QFrame#sidebar {
+    background-color: #181825;
+    border-right: 1px solid #313244;
+}
+
+QLabel#sidebarTitle {
+    color: #89B4FA;
+    font-size: 13pt;
+    font-weight: bold;
+    padding: 0 12px;
+}
+
+QLabel#sidebarVersionLabel {
+    color: #6C7086;
+    font-size: 9pt;
+    padding: 0 12px 4px 12px;
+}
+
+QLabel#sidebarSectionLabel {
+    color: #6C7086;
+    font-size: 8pt;
+    font-weight: bold;
+    padding: 4px 12px 2px 12px;
+    letter-spacing: 1px;
+}
+
+QLabel#sidebarValueLabel {
+    color: #A6ADC8;
+    font-size: 10pt;
+    padding: 1px 12px;
+}
+
+QLabel#sidebarBoardLabel {
+    color: #CDD6F4;
+    font-size: 11pt;
+    font-weight: bold;
+    padding: 1px 12px;
+}
+
+QLabel#sidebarConnLabel {
+    color: #F38BA8;
+    font-size: 10pt;
+    padding: 1px 12px;
+}
+
+QFrame#sidebarSeparator {
+    color: #313244;
+    background-color: #313244;
+    max-height: 1px;
+    margin: 2px 8px;
+}
+
+/* --- Status labels ------------------------------------------------- */
+QLabel#statusOk {
+    color: #A6E3A1;
+    font-weight: bold;
+}
+
+QLabel#statusError {
+    color: #F38BA8;
+    font-weight: bold;
+}
+
+QLabel#stlinkConnected {
+    color: #A6E3A1;
+    font-weight: bold;
+}
+
+QLabel#stlinkDisconnected {
+    color: #F38BA8;
+    font-weight: bold;
+}
+
+QLabel#flashStatusLabel {
+    color: #CDD6F4;
+    font-size: 11pt;
+}
+
+/* --- Connection status labels (MonitorTab) ------------------------- */
+QLabel#connStatusConnected {
+    color: #A6E3A1;
+    font-weight: bold;
+}
+
+QLabel#connStatusDisconnected {
+    color: #F38BA8;
+}
+
+/* --- Metric cards -------------------------------------------------- */
+QGroupBox#metricCard {
+    background-color: #252535;
+    border: 1px solid #45475A;
+    border-radius: 8px;
+}
+
+QGroupBox#metricCard::title {
+    background-color: #252535;
+    color: #89B4FA;
+}
+
+QLabel#metricValue {
+    color: #CDD6F4;
+    background-color: transparent;
+}
+
+/* --- Info value labels --------------------------------------------- */
+QLabel#infoValue {
+    color: #CDD6F4;
+    background-color: transparent;
 }
 
 /* --- Progress bar -------------------------------------------------- */
@@ -295,25 +552,12 @@ QProgressBar::chunk {
     border-radius: 5px;
 }
 
-/* --- Table / List -------------------------------------------------- */
-QTableView, QListView, QTreeView {
-    background-color: #181825;
-    alternate-background-color: #1E1E2E;
-    border: 1px solid #313244;
-    border-radius: 6px;
-    gridline-color: #313244;
-    selection-background-color: #313244;
-    selection-color: #89B4FA;
-}
-
-QHeaderView::section {
-    background-color: #181825;
-    color: #A6ADC8;
-    border: none;
-    border-right: 1px solid #313244;
-    border-bottom: 1px solid #313244;
-    padding: 6px 10px;
-    font-weight: bold;
+/* --- Placeholder labels ------------------------------------------- */
+QLabel#placeholderLabel {
+    color: #585B70;
+    font-size: 14px;
+    padding: 60px;
+    qproperty-alignment: AlignCenter;
 }
 
 /* --- Tooltip ------------------------------------------------------- */

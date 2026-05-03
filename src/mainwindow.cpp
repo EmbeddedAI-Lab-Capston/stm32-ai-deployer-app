@@ -1,13 +1,14 @@
 #include "mainwindow.h"
 
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
 #include <QStatusBar>
-#include <QLabel>
-#include <QTabWidget>
 #include <QMessageBox>
 #include <QTimer>
+#include <QStyle>
 
 #include "ui/BoardTab.h"
 #include "ui/FlashTab.h"
@@ -20,14 +21,13 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle("STM32 AI Deployer");
-    setMinimumSize(1024, 700);
+    setMinimumSize(1100, 700);
     resize(1280, 800);
 
     setupMenuBar();
     setupCentralWidget();
     setupStatusBar();
 
-    // Show settings dialog on first launch if CLI path is not set
     AppSettings settings;
     if (settings.programmerCliPath().isEmpty()) {
         QTimer::singleShot(200, this, &MainWindow::onSettingsTriggered);
@@ -38,27 +38,121 @@ MainWindow::~MainWindow() = default;
 
 void MainWindow::setupMenuBar()
 {
-    // Dosya menu
     QMenu *fileMenu = menuBar()->addMenu(tr("Dosya"));
     QAction *exitAction = fileMenu->addAction(tr("Çıkış"));
     exitAction->setShortcut(QKeySequence::Quit);
     connect(exitAction, &QAction::triggered, this, &MainWindow::onExitTriggered);
 
-    // Araçlar menu
     QMenu *toolsMenu = menuBar()->addMenu(tr("Araçlar"));
     QAction *settingsAction = toolsMenu->addAction(tr("Ayarlar"));
     settingsAction->setShortcut(QKeySequence("Ctrl+,"));
     connect(settingsAction, &QAction::triggered, this, &MainWindow::onSettingsTriggered);
 
-    // Yardım menu
     QMenu *helpMenu = menuBar()->addMenu(tr("Yardım"));
     QAction *aboutAction = helpMenu->addAction(tr("Hakkında"));
     connect(aboutAction, &QAction::triggered, this, &MainWindow::onAboutTriggered);
 }
 
+QFrame *MainWindow::createSidebarSeparator()
+{
+    auto *sep = new QFrame(m_sidebar);
+    sep->setFrameShape(QFrame::HLine);
+    sep->setObjectName("sidebarSeparator");
+    return sep;
+}
+
+void MainWindow::setupSidebar()
+{
+    m_sidebar = new QFrame;
+    m_sidebar->setObjectName("sidebar");
+    m_sidebar->setFixedWidth(220);
+    m_sidebar->setFrameShape(QFrame::NoFrame);
+
+    auto *layout = new QVBoxLayout(m_sidebar);
+    layout->setContentsMargins(0, 10, 0, 10);
+    layout->setSpacing(2);
+
+    auto *titleLabel = new QLabel("STM32 AI Deployer", m_sidebar);
+    titleLabel->setObjectName("sidebarTitle");
+    layout->addWidget(titleLabel);
+
+    auto *versionLabel = new QLabel("v0.1.0", m_sidebar);
+    versionLabel->setObjectName("sidebarVersionLabel");
+    layout->addWidget(versionLabel);
+
+    layout->addSpacing(6);
+    layout->addWidget(createSidebarSeparator());
+    layout->addSpacing(6);
+
+    // Connection section
+    auto *connSection = new QLabel("BAĞLANTI", m_sidebar);
+    connSection->setObjectName("sidebarSectionLabel");
+    layout->addWidget(connSection);
+
+    m_sbConnLabel = new QLabel("● Bağlantı Yok", m_sidebar);
+    m_sbConnLabel->setObjectName("sidebarConnLabel");
+    layout->addWidget(m_sbConnLabel);
+
+    m_sbPortLabel = new QLabel("Port : --", m_sidebar);
+    m_sbPortLabel->setObjectName("sidebarValueLabel");
+    layout->addWidget(m_sbPortLabel);
+
+    m_sbBaudLabel = new QLabel("Baud : 115200", m_sidebar);
+    m_sbBaudLabel->setObjectName("sidebarValueLabel");
+    layout->addWidget(m_sbBaudLabel);
+
+    layout->addSpacing(6);
+    layout->addWidget(createSidebarSeparator());
+    layout->addSpacing(6);
+
+    // Active board section
+    auto *boardSection = new QLabel("AKTİF KART", m_sidebar);
+    boardSection->setObjectName("sidebarSectionLabel");
+    layout->addWidget(boardSection);
+
+    m_sbBoardLabel = new QLabel("STM32F4", m_sidebar);
+    m_sbBoardLabel->setObjectName("sidebarBoardLabel");
+    layout->addWidget(m_sbBoardLabel);
+
+    m_sbFlashLabel = new QLabel("Flash: 1024 KB", m_sidebar);
+    m_sbFlashLabel->setObjectName("sidebarValueLabel");
+    layout->addWidget(m_sbFlashLabel);
+
+    m_sbRamLabel = new QLabel("RAM  : 192 KB", m_sidebar);
+    m_sbRamLabel->setObjectName("sidebarValueLabel");
+    layout->addWidget(m_sbRamLabel);
+
+    layout->addSpacing(6);
+    layout->addWidget(createSidebarSeparator());
+    layout->addSpacing(6);
+
+    // Last session section
+    auto *sessionSection = new QLabel("SON OTURUM", m_sidebar);
+    sessionSection->setObjectName("sidebarSectionLabel");
+    layout->addWidget(sessionSection);
+
+    m_sbSessionLabel = new QLabel("MLP_INT8", m_sidebar);
+    m_sbSessionLabel->setObjectName("sidebarValueLabel");
+    layout->addWidget(m_sbSessionLabel);
+
+    m_sbMetricLabel = new QLabel("8.2 ms · 96%", m_sidebar);
+    m_sbMetricLabel->setObjectName("sidebarValueLabel");
+    layout->addWidget(m_sbMetricLabel);
+
+    layout->addStretch();
+}
+
 void MainWindow::setupCentralWidget()
 {
-    m_tabWidget = new QTabWidget(this);
+    auto *container = new QWidget(this);
+    auto *hLayout = new QHBoxLayout(container);
+    hLayout->setContentsMargins(0, 0, 0, 0);
+    hLayout->setSpacing(0);
+
+    setupSidebar();
+    hLayout->addWidget(m_sidebar);
+
+    m_tabWidget = new QTabWidget(container);
     m_tabWidget->setTabPosition(QTabWidget::North);
     m_tabWidget->setDocumentMode(false);
 
@@ -67,28 +161,34 @@ void MainWindow::setupCentralWidget()
     m_monitorTab  = new MonitorTab(this);
     m_analysisTab = new AnalysisTab(this);
 
-    m_tabWidget->addTab(m_boardTab,    tr("Kart Yönetimi"));
-    m_tabWidget->addTab(m_flashTab,    tr("Model & Flash"));
-    m_tabWidget->addTab(m_monitorTab,  tr("UART Monitör"));
-    m_tabWidget->addTab(m_analysisTab, tr("Analiz"));
+    auto *s = m_tabWidget->style();
+    m_tabWidget->addTab(m_boardTab,
+        s->standardIcon(QStyle::SP_ComputerIcon),       tr("Kart Yönetimi"));
+    m_tabWidget->addTab(m_flashTab,
+        s->standardIcon(QStyle::SP_ArrowUp),            tr("Model & Flash"));
+    m_tabWidget->addTab(m_monitorTab,
+        s->standardIcon(QStyle::SP_FileDialogDetailedView), tr("UART Monitör"));
+    m_tabWidget->addTab(m_analysisTab,
+        s->standardIcon(QStyle::SP_FileDialogInfoView), tr("Analiz"));
 
-    setCentralWidget(m_tabWidget);
+    hLayout->addWidget(m_tabWidget, 1);
+    setCentralWidget(container);
 }
 
 void MainWindow::setupStatusBar()
 {
-    m_connectionLabel = new QLabel(tr("  Bağlantı yok  "));
+    m_connectionLabel = new QLabel(tr("  ● Bağlantı Yok  "));
     m_connectionLabel->setObjectName("statusConnectionLabel");
 
-    m_portLabel = new QLabel(tr("  Port: —  "));
-    m_portLabel->setObjectName("statusPortLabel");
-
-    m_boardLabel = new QLabel(tr("  Kart: —  "));
+    m_boardLabel = new QLabel(tr("  Kart: STM32F4  "));
     m_boardLabel->setObjectName("statusBoardLabel");
 
+    m_versionLabel = new QLabel(tr("  STM32 AI Deployer v0.1.0  "));
+    m_versionLabel->setObjectName("statusVersionLabel");
+
     statusBar()->addWidget(m_connectionLabel);
-    statusBar()->addWidget(m_portLabel);
-    statusBar()->addPermanentWidget(m_boardLabel);
+    statusBar()->addWidget(m_boardLabel);
+    statusBar()->addPermanentWidget(m_versionLabel);
 }
 
 void MainWindow::onSettingsTriggered()
@@ -103,11 +203,11 @@ void MainWindow::onAboutTriggered()
 {
     QMessageBox::about(this,
         tr("STM32 AI Deployer Hakkında"),
-        tr("<b>STM32 AI Deployer</b> v1.0.0<br><br>"
+        tr("<b>STM32 AI Deployer</b> v0.1.0<br><br>"
            "STM32 serisi kartlara AI modeli yükleme ve<br>"
            "gerçek zamanlı metrik izleme uygulaması.<br><br>"
            "Marmara Üniversitesi Bilgisayar Mühendisliği<br>"
-           "Bitirme Projesi — 2025<br><br>"
+           "Bitirme Projesi — 2025-2026<br><br>"
            "Muhammet Ali Şeker<br>"
            "Furkan Talha Kasım<br>"
            "Kadir Mert Abatay"));
