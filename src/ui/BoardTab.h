@@ -18,6 +18,9 @@ public:
     explicit BoardTab(QWidget *parent = nullptr);
     ~BoardTab() override;
 
+signals:
+    void boardChanged(const QString &name, int flashKb, int ramKb, int clockMhz);
+
 private slots:
     void onBoardSelected(int id);
     void onSensorChanged(int index);

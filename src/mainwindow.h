@@ -27,6 +27,7 @@ private slots:
 
     void onConnectionStatusChanged(bool connected, const QString &info);
     void onInferenceMetricUpdated(const QString &model, double ms, int accPct);
+    void onBoardChanged(const QString &name, int flashKb, int ramKb, int clockMhz);
 
 private:
     void setupMenuBar();

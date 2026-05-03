@@ -170,6 +170,8 @@ void BoardTab::updateBoardInfo(int idx)
     m_infoStatus->setObjectName("statusOk");
     m_infoStatus->style()->unpolish(m_infoStatus);
     m_infoStatus->style()->polish(m_infoStatus);
+
+    emit boardChanged(p.name, p.flashKb, p.ramKb, p.clockMhz);
 }
 
 void BoardTab::onSensorChanged(int index)

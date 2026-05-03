@@ -199,6 +199,8 @@ void MainWindow::setupCentralWidget()
             this, &MainWindow::onConnectionStatusChanged);
     connect(m_monitorTab, &MonitorTab::inferenceMetricUpdated,
             this, &MainWindow::onInferenceMetricUpdated);
+    connect(m_boardTab, &BoardTab::boardChanged,
+            this, &MainWindow::onBoardChanged);
     m_tabWidget->addTab(m_analysisTab,
         s->standardIcon(QStyle::SP_FileDialogInfoView), tr("Analiz"));
 
@@ -283,4 +285,13 @@ void MainWindow::onInferenceMetricUpdated(const QString &model, double ms, int a
     m_sbSessionLabel->setText(model);
     m_sbMetricLabel->setText(
         QString("%1 ms · %2%").arg(ms, 0, 'f', 1).arg(accPct));
+}
+
+void MainWindow::onBoardChanged(const QString &name, int flashKb, int ramKb, int clockMhz)
+{
+    m_sbBoardLabel->setText(name);
+    m_sbFlashLabel->setText(QString("Flash: %1 KB").arg(flashKb));
+    m_sbRamLabel->setText(QString("RAM  : %1 KB").arg(ramKb));
+    m_boardLabel->setText(QString("  Kart: %1  ").arg(name));
+    Q_UNUSED(clockMhz)
 }
