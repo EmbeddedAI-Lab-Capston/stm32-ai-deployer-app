@@ -2,5 +2,6 @@
     <qresource prefix="/">
         <file>style.qss</file>
         <file>app_icon.png</file>
+        <file>splash.png</file>
     </qresource>
 </RCC>

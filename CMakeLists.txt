@@ -66,6 +66,8 @@ set(PROJECT_SOURCES
     src/ui/SettingsDialog.h
     src/ui/SettingsDialog.cpp
 
+    src/ui/SplashScreen.h
+
     resources/app.qrc
     resources/app.rc
 )

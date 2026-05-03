@@ -2,8 +2,10 @@
 #include <QFile>
 #include <QStyleFactory>
 #include <QIcon>
+#include <QTimer>
 #include "mainwindow.h"
 #include "core/AppSettings.h"
+#include "ui/SplashScreen.h"
 
 int main(int argc, char *argv[])
 {
@@ -22,8 +24,23 @@ int main(int argc, char *argv[])
         styleFile.close();
     }
 
-    MainWindow window;
-    window.show();
+    // Show splash screen
+    SplashScreen *splash = new SplashScreen();
+    splash->show();
+    app.processEvents();
+
+    // Create main window (hidden for now)
+    MainWindow *window = new MainWindow();
+
+    // When splash is done, show main window
+    QObject::connect(splash, &SplashScreen::done, [splash, window]() {
+        window->show();
+        splash->hide();
+        splash->deleteLater();
+    });
+
+    // Start the closing sequence after 3.5 seconds
+    splash->startClosingSequence(3500);
 
     return app.exec();
 }
