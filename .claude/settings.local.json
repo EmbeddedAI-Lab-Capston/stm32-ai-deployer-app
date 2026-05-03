@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(cmake --version 2>&1)"
+      "PowerShell(cmake --version 2>&1)",
+      "PowerShell(Get-Content \"C:\\\\Users\\\\KADIRM~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-kadirmert-Desktop-bitirme-projesi-stm32-ai-deployer-app\\\\abc5dd90-d424-4a64-a7e6-d66c206bc3f5\\\\tasks\\\\br81mm8th.output\" -Wait -Tail 50)",
+      "PowerShell(cmd /c \"dir /b /s `\"C:\\\\Users\\\\kadirmert\\\\STM32Cube\\\\Repository\\\\Packs\\\\STMicroelectronics\\\\X-CUBE-AI\\\\10.2.0\\\\Utilities`\" 2>nul | findstr /i \\\\.exe\")"
     ]
   }
 }

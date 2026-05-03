@@ -39,6 +39,9 @@ set(PROJECT_SOURCES
     src/modules/flash/FlashManager.h
     src/modules/flash/FlashManager.cpp
 
+    src/modules/flash/XCubeAIRunner.h
+    src/modules/flash/XCubeAIRunner.cpp
+
     src/modules/serial/PacketParser.h
     src/modules/serial/PacketParser.cpp
 

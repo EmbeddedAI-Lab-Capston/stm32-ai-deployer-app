@@ -51,3 +51,15 @@ void AppSettings::setTheme(const QString &theme)
     QSettings s;
     s.setValue(kKeyTheme, theme);
 }
+
+QString AppSettings::xcubeAICliPath() const
+{
+    QSettings s;
+    return s.value(kKeyXCubeAIPath, QString{}).toString();
+}
+
+void AppSettings::setXCubeAICliPath(const QString &path)
+{
+    QSettings s;
+    s.setValue(kKeyXCubeAIPath, path);
+}

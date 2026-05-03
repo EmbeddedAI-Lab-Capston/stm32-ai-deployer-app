@@ -11,11 +11,17 @@
 #include <QTextEdit>
 #include <QProgressBar>
 #include <QCheckBox>
+#include <QRadioButton>
+#include <QButtonGroup>
 #include <QScrollBar>
 #include <QFileDialog>
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
 #include <QProcess>
 #include <QMessageBox>
+#include <QDesktopServices>
+#include <QUrl>
 
 #include "core/AppSettings.h"
 #include "core/AppState.h"
@@ -24,16 +30,15 @@
 FlashTab::FlashTab(AppState *state, QWidget *parent)
     : QWidget(parent)
     , m_appState(state)
+    , m_xcubeRunner(new XCubeAIRunner(this))
 {
     setupUi();
 
-    // React to AppState changes
     connect(m_appState, &AppState::activeBoardChanged,
             this, &FlashTab::onBoardChanged);
     connect(m_appState, &AppState::connectionChanged,
             this, &FlashTab::onConnectionChanged);
 
-    // Show current state
     onBoardChanged(m_appState->activeBoard());
     onConnectionChanged(m_appState->isConnected(), m_appState->connectionInfo());
 }
@@ -44,7 +49,6 @@ void FlashTab::initialize(FlashManager *manager)
 {
     m_flashManager = manager;
 
-    // Wire manager signals to UI
     connect(m_flashManager, &FlashManager::outputLine,
             this, &FlashTab::appendOutputLine);
     connect(m_flashManager, &FlashManager::errorLine,
@@ -78,6 +82,7 @@ void FlashTab::initialize(FlashManager *manager)
             });
 
     refreshCliStatus();
+    refreshXCubeAIStatus();
 }
 
 void FlashTab::refreshCliStatus()
@@ -105,14 +110,70 @@ void FlashTab::refreshCliStatus()
     }
 }
 
+void FlashTab::refreshXCubeAIStatus()
+{
+    AppSettings settings;
+    QString path = settings.xcubeAICliPath();
+
+    if (path.isEmpty()) {
+        path = XCubeAIRunner::detectCliPath();
+        if (!path.isEmpty())
+            settings.setXCubeAICliPath(path);
+    }
+
+    m_xcubeRunner->setCliPath(path);
+
+    const bool available = !path.isEmpty() &&
+                           (path == "stm32ai" || QFile::exists(path));
+
+    if (available) {
+        m_xcubeStatusLabel->setText(tr("✓ stedgeai hazır"));
+        m_xcubeStatusLabel->setStyleSheet("color: #A6E3A1;");
+        m_modelRadio->setEnabled(true);
+    } else {
+        m_xcubeStatusLabel->setText(
+            tr("⚠ stedgeai bulunamadı — Ayarlar menüsünden yolu girin"));
+        m_xcubeStatusLabel->setStyleSheet("color: #F9E2AF;");
+        // Keep AI option accessible so the user can still try after configuring
+    }
+}
+
+// ── setupUi ────────────────────────────────────────────────────────────────
+
 void FlashTab::setupUi()
 {
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(12, 12, 12, 12);
     mainLayout->setSpacing(10);
 
-    // ── CLI status row ─────────────────────────────────────────────────────
-    auto *cliRow    = new QWidget(this);
+    // ── Source selection ───────────────────────────────────────────────────
+    auto *sourceBox    = new QGroupBox(tr("Firmware Kaynağı"), this);
+    auto *sourceLayout = new QVBoxLayout(sourceBox);
+    sourceLayout->setSpacing(6);
+
+    m_hexRadio   = new QRadioButton(tr("Hazır Firmware (.hex / .bin)"), this);
+    m_modelRadio = new QRadioButton(tr("AI Modelinden Üret (.tflite / .h5)"), this);
+    m_hexRadio->setChecked(true);
+
+    auto *srcGroup = new QButtonGroup(this);
+    srcGroup->addButton(m_hexRadio,   0);
+    srcGroup->addButton(m_modelRadio, 1);
+
+    sourceLayout->addWidget(m_hexRadio);
+    sourceLayout->addWidget(m_modelRadio);
+    mainLayout->addWidget(sourceBox);
+
+    connect(srcGroup, &QButtonGroup::idToggled,
+            this, &FlashTab::onSourceModeChanged);
+
+    // ── Hex firmware panel ─────────────────────────────────────────────────
+    m_hexPanel = new QWidget(this);
+    auto *hexPanelLayout = new QVBoxLayout(m_hexPanel);
+    hexPanelLayout->setContentsMargins(0, 0, 0, 0);
+    hexPanelLayout->setSpacing(8);
+
+    // CLI status row
+    auto *cliRow    = new QWidget(m_hexPanel);
     auto *cliLayout = new QHBoxLayout(cliRow);
     cliLayout->setContentsMargins(4, 0, 4, 0);
     cliLayout->setSpacing(8);
@@ -120,45 +181,46 @@ void FlashTab::setupUi()
     m_cliStatusLabel = new QLabel(tr("● CLI durumu kontrol ediliyor..."), this);
     m_cliStatusLabel->setStyleSheet("color: #6C7086;");
 
-    auto *settingsBtn = new QPushButton(tr("Ayarlar"), this);
+    auto *settingsBtn = new QPushButton(tr("Ayarlar"), m_hexPanel);
     settingsBtn->setFixedWidth(80);
 
     cliLayout->addWidget(m_cliStatusLabel, 1);
     cliLayout->addWidget(settingsBtn);
-    mainLayout->addWidget(cliRow);
+    hexPanelLayout->addWidget(cliRow);
 
-    // ── Model info form ────────────────────────────────────────────────────
-    auto *modelBox  = new QGroupBox(tr("Model Bilgileri"), this);
+    // Model info form
+    auto *modelBox  = new QGroupBox(tr("Model Bilgileri"), m_hexPanel);
     auto *modelForm = new QFormLayout(modelBox);
     modelForm->setSpacing(10);
     modelForm->setLabelAlignment(Qt::AlignRight);
 
-    m_modelNameEdit = new QLineEdit(this);
+    m_modelNameEdit = new QLineEdit(m_hexPanel);
     m_modelNameEdit->setPlaceholderText(tr("örn. MLP_INT8_HAR"));
 
-    m_archCombo = new QComboBox(this);
+    m_archCombo = new QComboBox(m_hexPanel);
     m_archCombo->addItems({"MLP", "1D CNN", "LSTM", "TC-ResNet", tr("Özel")});
 
-    m_quantCombo = new QComboBox(this);
+    m_quantCombo = new QComboBox(m_hexPanel);
     m_quantCombo->addItems({"INT8", "Dynamic Q", "Float32"});
 
-    auto *fileRow    = new QWidget(this);
+    auto *fileRow    = new QWidget(m_hexPanel);
     auto *fileLayout = new QHBoxLayout(fileRow);
     fileLayout->setContentsMargins(0, 0, 0, 0);
     fileLayout->setSpacing(6);
 
-    m_filePathEdit = new QLineEdit(this);
+    m_filePathEdit = new QLineEdit(m_hexPanel);
     m_filePathEdit->setReadOnly(true);
     m_filePathEdit->setPlaceholderText(tr("Firmware dosyası seçin (.hex / .bin)"));
 
-    auto *browseBtn = new QPushButton(tr("Gözat"), this);
+    auto *browseBtn = new QPushButton(tr("Gözat"), m_hexPanel);
     browseBtn->setFixedWidth(80);
 
     fileLayout->addWidget(m_filePathEdit);
     fileLayout->addWidget(browseBtn);
 
-    m_simModeCheck = new QCheckBox(tr("Simülasyon Modu  (gerçek flash atılmaz)"), this);
-    m_simModeCheck->setChecked(true); // default: checked since no .hex yet
+    m_simModeCheck = new QCheckBox(
+        tr("Simülasyon Modu  (gerçek flash atılmaz)"), m_hexPanel);
+    m_simModeCheck->setChecked(true);
 
     modelForm->addRow(tr("Model Adı    :"), m_modelNameEdit);
     modelForm->addRow(tr("Mimari       :"), m_archCombo);
@@ -166,9 +228,110 @@ void FlashTab::setupUi()
     modelForm->addRow(tr(".hex / .bin  :"), fileRow);
     modelForm->addRow(QString(), m_simModeCheck);
 
-    mainLayout->addWidget(modelBox);
+    hexPanelLayout->addWidget(modelBox);
 
-    // ── Status row ─────────────────────────────────────────────────────────
+    // Flash action row
+    auto *hexActionRow    = new QWidget(m_hexPanel);
+    auto *hexActionLayout = new QHBoxLayout(hexActionRow);
+    hexActionLayout->setContentsMargins(0, 0, 0, 0);
+    hexActionLayout->setSpacing(8);
+
+    m_flashBtn = new QPushButton(tr("  Karta Yükle (Flash)  "), m_hexPanel);
+    m_flashBtn->setObjectName("primaryButton");
+    m_flashBtn->setMinimumHeight(44);
+
+    m_cancelBtn = new QPushButton(tr("İptal"), m_hexPanel);
+    m_cancelBtn->setObjectName("dangerBtn");
+    m_cancelBtn->setFixedWidth(80);
+    m_cancelBtn->setVisible(false);
+
+    hexActionLayout->addWidget(m_flashBtn, 1);
+    hexActionLayout->addWidget(m_cancelBtn);
+    hexPanelLayout->addWidget(hexActionRow);
+
+    mainLayout->addWidget(m_hexPanel);
+
+    // ── AI model panel ─────────────────────────────────────────────────────
+    m_aiPanel = new QWidget(this);
+    m_aiPanel->setVisible(false);
+    auto *aiPanelLayout = new QVBoxLayout(m_aiPanel);
+    aiPanelLayout->setContentsMargins(0, 0, 0, 0);
+    aiPanelLayout->setSpacing(8);
+
+    auto *aiBox  = new QGroupBox(tr("AI Model Bilgileri"), m_aiPanel);
+    auto *aiForm = new QFormLayout(aiBox);
+    aiForm->setSpacing(10);
+    aiForm->setLabelAlignment(Qt::AlignRight);
+
+    // Model file
+    auto *aiFileRow    = new QWidget(m_aiPanel);
+    auto *aiFileLayout = new QHBoxLayout(aiFileRow);
+    aiFileLayout->setContentsMargins(0, 0, 0, 0);
+    aiFileLayout->setSpacing(6);
+
+    m_aiModelPathEdit = new QLineEdit(m_aiPanel);
+    m_aiModelPathEdit->setReadOnly(true);
+    m_aiModelPathEdit->setPlaceholderText(tr("model.tflite veya model.h5"));
+
+    auto *aiModelBrowseBtn = new QPushButton(tr("Gözat"), m_aiPanel);
+    aiModelBrowseBtn->setFixedWidth(80);
+
+    aiFileLayout->addWidget(m_aiModelPathEdit);
+    aiFileLayout->addWidget(aiModelBrowseBtn);
+
+    // Quantization
+    m_aiQuantCombo = new QComboBox(m_aiPanel);
+    m_aiQuantCombo->addItems({"Float32", "INT8", "Dynamic Q"});
+    m_aiQuantCombo->setCurrentText("INT8");
+
+    // Output directory
+    auto *aiOutRow    = new QWidget(m_aiPanel);
+    auto *aiOutLayout = new QHBoxLayout(aiOutRow);
+    aiOutLayout->setContentsMargins(0, 0, 0, 0);
+    aiOutLayout->setSpacing(6);
+
+    m_aiOutputDirEdit = new QLineEdit(m_aiPanel);
+    m_aiOutputDirEdit->setPlaceholderText(tr("Boş bırakılırsa otomatik oluşturulur"));
+
+    auto *aiOutDirBtn = new QPushButton(tr("Seç"), m_aiPanel);
+    aiOutDirBtn->setFixedWidth(80);
+
+    aiOutLayout->addWidget(m_aiOutputDirEdit);
+    aiOutLayout->addWidget(aiOutDirBtn);
+
+    // X-CUBE-AI CLI status
+    m_xcubeStatusLabel = new QLabel(tr("● stedgeai durumu kontrol ediliyor..."), this);
+    m_xcubeStatusLabel->setStyleSheet("color: #6C7086;");
+
+    aiForm->addRow(tr("Model Dosyası :"), aiFileRow);
+    aiForm->addRow(tr("Quantization  :"), m_aiQuantCombo);
+    aiForm->addRow(tr("Çıktı Klasörü :"), aiOutRow);
+    aiForm->addRow(tr("CLI Durumu    :"), m_xcubeStatusLabel);
+
+    aiPanelLayout->addWidget(aiBox);
+
+    // Generate action row
+    auto *genActionRow    = new QWidget(m_aiPanel);
+    auto *genActionLayout = new QHBoxLayout(genActionRow);
+    genActionLayout->setContentsMargins(0, 0, 0, 0);
+    genActionLayout->setSpacing(8);
+
+    m_generateBtn = new QPushButton(tr("  X-CUBE-AI ile C Kodu Üret  "), m_aiPanel);
+    m_generateBtn->setObjectName("primaryButton");
+    m_generateBtn->setMinimumHeight(44);
+
+    m_aiCancelBtn = new QPushButton(tr("İptal"), m_aiPanel);
+    m_aiCancelBtn->setObjectName("dangerBtn");
+    m_aiCancelBtn->setFixedWidth(80);
+    m_aiCancelBtn->setVisible(false);
+
+    genActionLayout->addWidget(m_generateBtn, 1);
+    genActionLayout->addWidget(m_aiCancelBtn);
+    aiPanelLayout->addWidget(genActionRow);
+
+    mainLayout->addWidget(m_aiPanel);
+
+    // ── Shared: status row ─────────────────────────────────────────────────
     auto *statusRow    = new QWidget(this);
     auto *statusLayout = new QHBoxLayout(statusRow);
     statusLayout->setContentsMargins(4, 0, 4, 0);
@@ -182,37 +345,17 @@ void FlashTab::setupUi()
     statusLayout->addWidget(m_targetLabel);
     statusLayout->addStretch();
     statusLayout->addWidget(m_stlinkLabel);
-
     mainLayout->addWidget(statusRow);
 
-    // ── Progress bar ───────────────────────────────────────────────────────
+    // ── Shared: progress bar ───────────────────────────────────────────────
     m_progressBar = new QProgressBar(this);
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
     m_progressBar->setVisible(false);
     mainLayout->addWidget(m_progressBar);
 
-    // ── Action row ─────────────────────────────────────────────────────────
-    auto *actionRow    = new QWidget(this);
-    auto *actionLayout = new QHBoxLayout(actionRow);
-    actionLayout->setContentsMargins(0, 0, 0, 0);
-    actionLayout->setSpacing(8);
-
-    m_flashBtn = new QPushButton(tr("  Karta Yükle (Flash)  "), this);
-    m_flashBtn->setObjectName("primaryButton");
-    m_flashBtn->setMinimumHeight(44);
-
-    m_cancelBtn = new QPushButton(tr("İptal"), this);
-    m_cancelBtn->setObjectName("dangerBtn");
-    m_cancelBtn->setFixedWidth(80);
-    m_cancelBtn->setVisible(false);
-
-    actionLayout->addWidget(m_flashBtn, 1);
-    actionLayout->addWidget(m_cancelBtn);
-    mainLayout->addWidget(actionRow);
-
-    // ── Output area ────────────────────────────────────────────────────────
-    auto *outputBox    = new QGroupBox(tr("Flash Çıktısı"), this);
+    // ── Shared: output area ────────────────────────────────────────────────
+    auto *outputBox    = new QGroupBox(tr("Çıktı Terminali"), this);
     auto *outputLayout = new QVBoxLayout(outputBox);
 
     auto *outputToolRow    = new QWidget(outputBox);
@@ -231,21 +374,89 @@ void FlashTab::setupUi()
     m_outputEdit->setMinimumHeight(180);
     m_outputEdit->append(
         "<span style='color:#6C7086;'>"
-        "[Hazır — flash başlatmak için butona basın]"
+        "[Hazır — işlem başlatmak için butona basın]"
         "</span>");
-
     outputLayout->addWidget(m_outputEdit);
+
+    // Result buttons row (hidden until generation succeeds)
+    auto *resultRow    = new QWidget(outputBox);
+    auto *resultLayout = new QHBoxLayout(resultRow);
+    resultLayout->setContentsMargins(0, 4, 0, 0);
+    resultLayout->setSpacing(8);
+
+    m_openDirBtn = new QPushButton(tr("Klasörü Aç"), resultRow);
+    m_openDirBtn->setVisible(false);
+
+    m_nextStepBtn = new QPushButton(tr("Sonraki Adımı Göster"), resultRow);
+    m_nextStepBtn->setVisible(false);
+
+    resultLayout->addWidget(m_openDirBtn);
+    resultLayout->addWidget(m_nextStepBtn);
+    resultLayout->addStretch();
+    outputLayout->addWidget(resultRow);
+
     mainLayout->addWidget(outputBox, 1);
 
-    // ── Connections ────────────────────────────────────────────────────────
-    connect(browseBtn,     &QPushButton::clicked, this, &FlashTab::onBrowseClicked);
-    connect(m_flashBtn,    &QPushButton::clicked, this, &FlashTab::onFlashClicked);
-    connect(m_cancelBtn,   &QPushButton::clicked, this, &FlashTab::onCancelClicked);
-    connect(settingsBtn,   &QPushButton::clicked, this, &FlashTab::onSettingsClicked);
-    connect(clearOutputBtn,&QPushButton::clicked, this, &FlashTab::onClearOutputClicked);
+    // ── Signal connections ─────────────────────────────────────────────────
+    connect(browseBtn,         &QPushButton::clicked, this, &FlashTab::onBrowseClicked);
+    connect(m_flashBtn,        &QPushButton::clicked, this, &FlashTab::onFlashClicked);
+    connect(m_cancelBtn,       &QPushButton::clicked, this, &FlashTab::onCancelClicked);
+    connect(settingsBtn,       &QPushButton::clicked, this, &FlashTab::onSettingsClicked);
+    connect(clearOutputBtn,    &QPushButton::clicked, this, &FlashTab::onClearOutputClicked);
+
+    connect(aiModelBrowseBtn,  &QPushButton::clicked, this, &FlashTab::onAIModelBrowseClicked);
+    connect(aiOutDirBtn,       &QPushButton::clicked, this, &FlashTab::onAIOutputDirClicked);
+    connect(m_generateBtn,     &QPushButton::clicked, this, &FlashTab::onGenerateClicked);
+    connect(m_aiCancelBtn,     &QPushButton::clicked, this, [this]() { m_xcubeRunner->cancel(); });
+
+    // XCubeAIRunner signals
+    connect(m_xcubeRunner, &XCubeAIRunner::outputLine,
+            this, &FlashTab::appendOutputLine);
+    connect(m_xcubeRunner, &XCubeAIRunner::errorLine,
+            this, &FlashTab::appendErrorLine);
+    connect(m_xcubeRunner, &XCubeAIRunner::progressChanged,
+            m_progressBar, &QProgressBar::setValue);
+
+    connect(m_xcubeRunner, &XCubeAIRunner::started,
+            this, [this]() {
+                m_generateBtn->setEnabled(false);
+                m_generateBtn->setText(tr("Üretiliyor..."));
+                m_aiCancelBtn->setVisible(true);
+                m_progressBar->setValue(0);
+                m_progressBar->setVisible(true);
+                m_outputEdit->clear();
+                m_openDirBtn->setVisible(false);
+                m_nextStepBtn->setVisible(false);
+            });
+
+    connect(m_xcubeRunner, &XCubeAIRunner::finished,
+            this, [this](const XCubeAIResult &result) {
+                m_generateBtn->setEnabled(true);
+                m_generateBtn->setText(tr("  X-CUBE-AI ile C Kodu Üret  "));
+                m_aiCancelBtn->setVisible(false);
+
+                if (result.success) {
+                    m_progressBar->setValue(100);
+                    showGenerationResult(result);
+                } else {
+                    m_progressBar->setVisible(false);
+                    appendErrorLine(tr("✗ C kodu üretilemedi."));
+                    if (!result.errorMessage.isEmpty())
+                        appendErrorLine(result.errorMessage);
+                }
+            });
 }
 
-// ── Slots ──────────────────────────────────────────────────────────────────
+// ── Slots: source mode ─────────────────────────────────────────────────────
+
+void FlashTab::onSourceModeChanged(int id, bool checked)
+{
+    if (!checked) return;
+    m_hexPanel->setVisible(id == 0);
+    m_aiPanel->setVisible(id == 1);
+}
+
+// ── Slots: hex firmware panel ──────────────────────────────────────────────
 
 void FlashTab::onBrowseClicked()
 {
@@ -266,12 +477,10 @@ void FlashTab::onFlashClicked()
     config.quantization   = m_quantCombo->currentText();
     config.hexPath        = m_filePathEdit->text().trimmed();
     config.simulationMode = m_simModeCheck->isChecked();
-    // Read active board from AppState (set via Sidebar)
-    config.targetBoard = m_appState->activeBoard().isNull()
-                             ? "STM32F4"
-                             : m_appState->activeBoard().name;
+    config.targetBoard    = m_appState->activeBoard().isNull()
+                                ? "STM32F4"
+                                : m_appState->activeBoard().name;
 
-    // In sim mode, fill in a placeholder model name if empty
     if (config.simulationMode && config.modelName.isEmpty())
         config.modelName = m_archCombo->currentText() + "_INT8";
 
@@ -287,8 +496,10 @@ void FlashTab::onCancelClicked()
 void FlashTab::onSettingsClicked()
 {
     SettingsDialog dlg(this);
-    if (dlg.exec() == QDialog::Accepted)
+    if (dlg.exec() == QDialog::Accepted) {
         refreshCliStatus();
+        refreshXCubeAIStatus();
+    }
 }
 
 void FlashTab::onClearOutputClicked()
@@ -296,18 +507,137 @@ void FlashTab::onClearOutputClicked()
     m_outputEdit->clear();
     m_progressBar->setValue(0);
     m_progressBar->setVisible(false);
+    m_openDirBtn->setVisible(false);
+    m_nextStepBtn->setVisible(false);
 }
+
+// ── Slots: AI model panel ──────────────────────────────────────────────────
+
+void FlashTab::onAIModelBrowseClicked()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        tr("AI Model Seç"),
+        QDir::homePath(),
+        tr("AI Modeller (*.tflite *.h5 *.keras);;"
+           "TFLite (*.tflite);;"
+           "Keras (*.h5 *.keras);;Tüm Dosyalar (*)"));
+    if (!path.isEmpty())
+        m_aiModelPathEdit->setText(path);
+}
+
+void FlashTab::onAIOutputDirClicked()
+{
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, tr("Çıktı Klasörü Seç"));
+    if (!dir.isEmpty())
+        m_aiOutputDirEdit->setText(dir);
+}
+
+void FlashTab::onGenerateClicked()
+{
+    const QString modelPath = m_aiModelPathEdit->text().trimmed();
+
+    if (modelPath.isEmpty()) {
+        appendErrorLine(tr("Model dosyası seçilmedi."));
+        return;
+    }
+    if (!QFile::exists(modelPath)) {
+        appendErrorLine(tr("Dosya bulunamadı: ") + modelPath);
+        return;
+    }
+
+    QString outputDir = m_aiOutputDirEdit->text().trimmed();
+    if (outputDir.isEmpty()) {
+        outputDir = QFileInfo(modelPath).absolutePath() + "/xcubeai_output";
+        m_aiOutputDirEdit->setText(outputDir);
+    }
+
+    const QString board = m_appState->activeBoard().isNull()
+                              ? "STM32F4"
+                              : m_appState->activeBoard().name;
+    const QString quant = m_aiQuantCombo->currentText();
+
+    m_xcubeRunner->generate(modelPath, board, quant, outputDir);
+}
+
+// ── Generation result ──────────────────────────────────────────────────────
+
+void FlashTab::showGenerationResult(const XCubeAIResult &result)
+{
+    const QString fileList = result.generatedFiles.isEmpty()
+                                 ? tr("(dosya listesi alınamadı)")
+                                 : result.generatedFiles.join(", ");
+
+    const QString banner =
+        QString(
+            "┌─────────────────────────────────────────┐\n"
+            "│  ✓ C KODU ÜRETİLDİ                     │\n"
+            "│                                         │\n"
+            "│  Dosyalar : %1\n"
+            "│                                         │\n"
+            "│  Flash    : %2 KB                       │\n"
+            "│  RAM      : %3 KB                       │\n"
+            "│  MACC     : %4                          │\n"
+            "│                                         │\n"
+            "│  Sonraki adım: STM32CubeIDE'de derle   │\n"
+            "└─────────────────────────────────────────┘")
+            .arg(fileList.leftJustified(31))
+            .arg(result.flashKb)
+            .arg(result.ramKb, 0, 'f', 1)
+            .arg(result.macc);
+
+    appendOutputLine(banner);
+
+    // Show result action buttons
+    m_openDirBtn->setVisible(true);
+    m_openDirBtn->disconnect();
+    connect(m_openDirBtn, &QPushButton::clicked,
+            this, [result]() {
+                QDesktopServices::openUrl(
+                    QUrl::fromLocalFile(result.outputDir));
+            });
+
+    m_nextStepBtn->setVisible(true);
+    m_nextStepBtn->disconnect();
+    connect(m_nextStepBtn, &QPushButton::clicked,
+            this, &FlashTab::showNextStepDialog);
+}
+
+void FlashTab::showNextStepDialog()
+{
+    QMessageBox dlg(this);
+    dlg.setWindowTitle(tr("Sonraki Adım — CubeIDE ile Derleme"));
+    dlg.setIcon(QMessageBox::Information);
+    dlg.setText(
+        tr("<b>C kodu hazır. Şimdi ne yapmalısınız?</b><br><br>"
+           "1. STM32CubeIDE'yi açın<br>"
+           "2. Projenize <b>network.c</b> ve <b>network.h</b> "
+           "dosyalarını ekleyin<br>"
+           "3. X-CUBE-AI middleware'ini projeye dahil edin<br>"
+           "4. <b>Release</b> modda derleyin<br>"
+           "5. Üretilen <b>.hex</b> dosyasını bu uygulamaya "
+           "geri getirin<br><br>"
+           "Derleme tamamlandığında:<br>"
+           "Kaynak olarak <b>'Hazır Firmware'</b> seçin "
+           "ve .hex dosyasını yükleyin."));
+    dlg.setStandardButtons(QMessageBox::Ok);
+    dlg.exec();
+}
+
+// ── Output helpers ─────────────────────────────────────────────────────────
 
 void FlashTab::appendOutputLine(const QString &line)
 {
     QString color = "#CDD6F4";
 
-    if (line.contains("complete", Qt::CaseInsensitive)  ||
-        line.contains("successful", Qt::CaseInsensitive)||
-        line.contains("verified", Qt::CaseInsensitive)  ||
+    if (line.contains("complete", Qt::CaseInsensitive)   ||
+        line.contains("successful", Qt::CaseInsensitive) ||
+        line.contains("verified", Qt::CaseInsensitive)   ||
+        line.contains("Done", Qt::CaseInsensitive)       ||
         line.startsWith("✓")) {
         color = "#A6E3A1";
-    } else if (line.contains("Error", Qt::CaseSensitive) ||
+    } else if (line.contains("Error", Qt::CaseSensitive)   ||
                line.contains("failed", Qt::CaseInsensitive) ||
                line.startsWith("✗")) {
         color = "#F38BA8";
@@ -353,6 +683,8 @@ void FlashTab::showSuccessBanner(const FlashConfig &config)
 
     appendOutputLine(banner);
 }
+
+// ── AppState reactions ─────────────────────────────────────────────────────
 
 void FlashTab::onBoardChanged(const BoardInfo &board)
 {

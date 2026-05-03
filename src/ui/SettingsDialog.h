@@ -18,6 +18,8 @@ public:
 private slots:
     void onBrowseClicked();
     void onTestCliClicked();
+    void onBrowseXCubeAIClicked();
+    void onTestXCubeAIClicked();
     void onSaveClicked();
     void onCancelClicked();
 
@@ -25,9 +27,16 @@ private:
     void setupUi();
     void loadCurrentValues();
 
-    QLineEdit   *m_cliPathEdit   = nullptr;
-    QPushButton *m_browseButton  = nullptr;
-    QPushButton *m_testButton    = nullptr;
-    QPushButton *m_saveButton    = nullptr;
-    QPushButton *m_cancelButton  = nullptr;
+    // STM32 Programmer CLI
+    QLineEdit   *m_cliPathEdit    = nullptr;
+    QPushButton *m_browseButton   = nullptr;
+    QPushButton *m_testButton     = nullptr;
+
+    // X-CUBE-AI CLI
+    QLineEdit   *m_xcubePathEdit      = nullptr;
+    QPushButton *m_xcubeBrowseButton  = nullptr;
+    QPushButton *m_xcubeTestButton    = nullptr;
+
+    QPushButton *m_saveButton   = nullptr;
+    QPushButton *m_cancelButton = nullptr;
 };

@@ -290,6 +290,7 @@ AppSettings::CliAutoDetected     // "tools/cli_auto_detected"
 | 2     | Ana UI iskeleti         | ✅ Tamamlandı |
 | 3     | Serial port modülü      | ✅ Tamamlandı |
 | 4     | Flash modülü            | ✅ Tamamlandı |
+| 4.6   | X-CUBE-AI CLI entegrasyonu | ✅ Tamamlandı |
 
 | 5     | Veritabanı ve kayıt     | ⏳ Bekliyor  |
 | 6     | Canlı dashboard         | ⏳ Bekliyor  |

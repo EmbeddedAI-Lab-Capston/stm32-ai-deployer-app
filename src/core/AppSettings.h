@@ -25,9 +25,14 @@ public:
     QString theme() const;
     void    setTheme(const QString &theme);
 
+    // stm32ai.exe full path (X-CUBE-AI CLI)
+    QString xcubeAICliPath() const;
+    void    setXCubeAICliPath(const QString &path);
+
 private:
-    static constexpr auto kKeyCliPath  = "programmer/cli_path";
-    static constexpr auto kKeyComPort  = "serial/last_com_port";
-    static constexpr auto kKeyBoard    = "board/last_board";
-    static constexpr auto kKeyTheme    = "ui/theme";
+    static constexpr auto kKeyCliPath       = "programmer/cli_path";
+    static constexpr auto kKeyComPort       = "serial/last_com_port";
+    static constexpr auto kKeyBoard         = "board/last_board";
+    static constexpr auto kKeyTheme         = "ui/theme";
+    static constexpr auto kKeyXCubeAIPath   = "tools/xcubeai_cli_path";
 };

@@ -2,8 +2,10 @@
 
 #include <QWidget>
 #include "modules/flash/FlashManager.h"
+#include "modules/flash/XCubeAIRunner.h"
 #include "core/AppState.h"
 
+class QButtonGroup;
 class QLineEdit;
 class QComboBox;
 class QTextEdit;
@@ -11,6 +13,7 @@ class QLabel;
 class QPushButton;
 class QProgressBar;
 class QCheckBox;
+class QRadioButton;
 
 class FlashTab : public QWidget
 {
@@ -23,15 +26,26 @@ public:
     // Called by MainWindow after construction — wires up FlashManager signals
     void initialize(FlashManager *manager);
 
-    // Re-reads AppSettings and updates CLI status label + manager path
+    // Re-reads AppSettings and updates CLI status labels + manager paths
     void refreshCliStatus();
+    void refreshXCubeAIStatus();
 
 private slots:
+    // Hex firmware panel
     void onBrowseClicked();
     void onFlashClicked();
     void onCancelClicked();
     void onSettingsClicked();
     void onClearOutputClicked();
+
+    // AI model panel
+    void onAIModelBrowseClicked();
+    void onAIOutputDirClicked();
+    void onGenerateClicked();
+    void onSourceModeChanged(int id, bool checked);
+
+    void showGenerationResult(const XCubeAIResult &result);
+    void showNextStepDialog();
 
     void appendOutputLine(const QString &line);
     void appendErrorLine(const QString &line);
@@ -44,28 +58,45 @@ private slots:
 private:
     void setupUi();
 
-    AppState     *m_appState     = nullptr;
-    FlashManager *m_flashManager = nullptr;
+    AppState      *m_appState     = nullptr;
+    FlashManager  *m_flashManager = nullptr;
+    XCubeAIRunner *m_xcubeRunner  = nullptr;
 
-    // CLI status bar
+    // ── Source selection ───────────────────────────────────────────────────
+    QRadioButton *m_hexRadio   = nullptr;
+    QRadioButton *m_modelRadio = nullptr;
+
+    // ── Hex firmware panel ─────────────────────────────────────────────────
+    QWidget     *m_hexPanel       = nullptr;
     QLabel      *m_cliStatusLabel = nullptr;
 
-    // Model info form
-    QLineEdit   *m_modelNameEdit = nullptr;
-    QComboBox   *m_archCombo     = nullptr;
-    QComboBox   *m_quantCombo    = nullptr;
-    QLineEdit   *m_filePathEdit  = nullptr;
-    QCheckBox   *m_simModeCheck  = nullptr;
+    QLineEdit   *m_modelNameEdit  = nullptr;
+    QComboBox   *m_archCombo      = nullptr;
+    QComboBox   *m_quantCombo     = nullptr;
+    QLineEdit   *m_filePathEdit   = nullptr;
+    QCheckBox   *m_simModeCheck   = nullptr;
 
-    // Status row
-    QLabel      *m_stlinkLabel  = nullptr;
-    QLabel      *m_targetLabel  = nullptr;
+    QPushButton *m_flashBtn  = nullptr;
+    QPushButton *m_cancelBtn = nullptr;
 
-    // Action row
-    QProgressBar *m_progressBar = nullptr;
-    QPushButton  *m_flashBtn    = nullptr;
-    QPushButton  *m_cancelBtn   = nullptr;
+    // ── AI model panel ─────────────────────────────────────────────────────
+    QWidget     *m_aiPanel          = nullptr;
+    QLabel      *m_xcubeStatusLabel = nullptr;
 
-    // Output
-    QTextEdit   *m_outputEdit   = nullptr;
+    QLineEdit   *m_aiModelPathEdit = nullptr;
+    QComboBox   *m_aiQuantCombo    = nullptr;
+    QLineEdit   *m_aiOutputDirEdit = nullptr;
+
+    QPushButton *m_generateBtn   = nullptr;
+    QPushButton *m_aiCancelBtn   = nullptr;
+
+    // Result buttons (shown after successful generation)
+    QPushButton *m_openDirBtn  = nullptr;
+    QPushButton *m_nextStepBtn = nullptr;
+
+    // ── Shared widgets ─────────────────────────────────────────────────────
+    QLabel       *m_stlinkLabel  = nullptr;
+    QLabel       *m_targetLabel  = nullptr;
+    QProgressBar *m_progressBar  = nullptr;
+    QTextEdit    *m_outputEdit   = nullptr;
 };
