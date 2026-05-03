@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QFile>
 #include <QStyleFactory>
+#include <QIcon>
 #include "mainwindow.h"
 #include "core/AppSettings.h"
 
@@ -11,6 +12,7 @@ int main(int argc, char *argv[])
     app.setApplicationVersion("1.0.0");
     app.setOrganizationName("Marmara University");
     app.setOrganizationDomain("marmara.edu.tr");
+    app.setWindowIcon(QIcon(":/app_icon.png"));
 
     // Load stylesheet
     QFile styleFile(":/style.qss");

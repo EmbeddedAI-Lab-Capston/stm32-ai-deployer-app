@@ -67,6 +67,7 @@ set(PROJECT_SOURCES
     src/ui/SettingsDialog.cpp
 
     resources/app.qrc
+    resources/app.rc
 )
 
 qt_add_executable(STM32AiDeployer
