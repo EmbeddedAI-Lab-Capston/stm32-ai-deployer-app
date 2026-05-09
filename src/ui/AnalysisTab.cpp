@@ -9,6 +9,16 @@
 #include <QPushButton>
 #include <QMessageBox>
 #include <QPainter>
+#include <QFileDialog>
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
+#include <QDir>
+#include <QPageLayout>
+#include <QPageSize>
+#include <QPdfWriter>
+#include <QPixmap>
+#include <QStringConverter>
 
 #include <QtCharts/QChartView>
 #include <QtCharts/QChart>
@@ -18,6 +28,45 @@
 #include <QtCharts/QBarCategoryAxis>
 
 #include "modules/analysis/AnalysisManager.h"
+
+namespace {
+
+QString tableCellText(const QTableWidget *table, int row, int column)
+{
+    const QTableWidgetItem *item = table->item(row, column);
+    return item ? item->text() : QString();
+}
+
+QString headerText(const QTableWidget *table, int column)
+{
+    const QTableWidgetItem *item = table->horizontalHeaderItem(column);
+    return item ? item->text() : QString();
+}
+
+QString csvEscape(QString text)
+{
+    text.replace('"', "\"\"");
+    if (text.contains(',') || text.contains('"') ||
+        text.contains('\n') || text.contains('\r')) {
+        return '"' + text + '"';
+    }
+    return text;
+}
+
+QString exportTimestamp()
+{
+    return QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+}
+
+void drawTextInCell(QPainter &painter, const QRect &rect, const QString &text)
+{
+    painter.drawText(
+        rect.adjusted(6, 0, -6, 0),
+        Qt::AlignVCenter | Qt::AlignLeft,
+        painter.fontMetrics().elidedText(text, Qt::ElideRight, rect.width() - 12));
+}
+
+}
 
 AnalysisTab::AnalysisTab(QWidget *parent)
     : QWidget(parent)
@@ -180,12 +229,183 @@ void AnalysisTab::onDeleteClicked()
 
 void AnalysisTab::onExportCsvClicked()
 {
-    QMessageBox::information(this, tr("CSV Dışa Aktar"),
-        tr("Yakında eklenecek (Aşama 7)."));
+    if (m_sessionTable->rowCount() == 0) {
+        QMessageBox::warning(this, tr("CSV Export"),
+            tr("Disa aktarilacak oturum verisi yok."));
+        return;
+    }
+
+    const QString defaultPath = QDir::homePath() +
+        QString("/stm32_ai_sessions_%1.csv").arg(exportTimestamp());
+    const QString path = QFileDialog::getSaveFileName(
+        this,
+        tr("CSV Export"),
+        defaultPath,
+        tr("CSV Files (*.csv);;All Files (*)"));
+    if (path.isEmpty())
+        return;
+
+    QFile file(path);
+    if (!file.open(QFile::WriteOnly | QFile::Text)) {
+        QMessageBox::critical(this, tr("CSV Export"),
+            tr("Dosya yazilamadi:\n%1").arg(file.errorString()));
+        return;
+    }
+
+    QTextStream out(&file);
+    out.setEncoding(QStringConverter::Utf8);
+    out << QChar(0xFEFF);
+
+    QStringList headers;
+    for (int col = 0; col < m_sessionTable->columnCount(); ++col)
+        headers << csvEscape(headerText(m_sessionTable, col));
+    out << headers.join(',') << '\n';
+
+    for (int row = 0; row < m_sessionTable->rowCount(); ++row) {
+        QStringList cells;
+        for (int col = 0; col < m_sessionTable->columnCount(); ++col)
+            cells << csvEscape(tableCellText(m_sessionTable, row, col));
+        out << cells.join(',') << '\n';
+    }
+
+    QMessageBox::information(this, tr("CSV Export"),
+        tr("CSV dosyasi olusturuldu:\n%1").arg(path));
 }
 
 void AnalysisTab::onExportPdfClicked()
 {
+    if (m_sessionTable->rowCount() == 0) {
+        QMessageBox::warning(this, tr("PDF Rapor"),
+            tr("Rapora eklenecek oturum verisi yok."));
+        return;
+    }
+
+    const QString defaultPath = QDir::homePath() +
+        QString("/stm32_ai_report_%1.pdf").arg(exportTimestamp());
+    const QString path = QFileDialog::getSaveFileName(
+        this,
+        tr("PDF Rapor"),
+        defaultPath,
+        tr("PDF Files (*.pdf);;All Files (*)"));
+    if (path.isEmpty())
+        return;
+
+    QPdfWriter writer(path);
+    writer.setPageSize(QPageSize(QPageSize::A4));
+    writer.setPageMargins(QMarginsF(14, 14, 14, 14), QPageLayout::Millimeter);
+    writer.setResolution(96);
+
+    QPainter painter(&writer);
+    if (!painter.isActive()) {
+        QMessageBox::critical(this, tr("PDF Rapor"),
+            tr("PDF dosyasi olusturulamadi."));
+        return;
+    }
+
+    const QRect pageRect = writer.pageLayout().paintRectPixels(writer.resolution());
+    int y = pageRect.top();
+
+    QFont titleFont = painter.font();
+    titleFont.setPointSize(18);
+    titleFont.setBold(true);
+    painter.setFont(titleFont);
+    painter.setPen(QColor("#111827"));
+    painter.drawText(QRect(pageRect.left(), y, pageRect.width(), 32),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     tr("STM32 AI Deployer - Analiz Raporu"));
+    y += 38;
+
+    QFont metaFont = painter.font();
+    metaFont.setPointSize(9);
+    metaFont.setBold(false);
+    painter.setFont(metaFont);
+    painter.setPen(QColor("#4B5563"));
+    painter.drawText(QRect(pageRect.left(), y, pageRect.width(), 22),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     tr("Olusturma zamani: %1")
+                         .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")));
+    y += 34;
+
+    const int columns = m_sessionTable->columnCount();
+    const int rowHeight = 30;
+    const int tableWidth = pageRect.width();
+    const int colWidth = tableWidth / columns;
+
+    auto drawHeader = [&]() {
+        painter.setBrush(QColor("#1F2937"));
+        painter.setPen(Qt::NoPen);
+        painter.drawRect(pageRect.left(), y, tableWidth, rowHeight);
+
+        QFont headerFont = painter.font();
+        headerFont.setBold(true);
+        painter.setFont(headerFont);
+        painter.setPen(Qt::white);
+
+        for (int col = 0; col < columns; ++col) {
+            const QRect cell(pageRect.left() + col * colWidth, y,
+                             col == columns - 1 ? tableWidth - col * colWidth : colWidth,
+                             rowHeight);
+            drawTextInCell(painter, cell, headerText(m_sessionTable, col));
+        }
+
+        y += rowHeight;
+        headerFont.setBold(false);
+        painter.setFont(headerFont);
+    };
+
+    drawHeader();
+
+    for (int row = 0; row < m_sessionTable->rowCount(); ++row) {
+        if (y + rowHeight > pageRect.bottom()) {
+            writer.newPage();
+            y = pageRect.top();
+            drawHeader();
+        }
+
+        painter.setBrush(row % 2 == 0 ? QColor("#F9FAFB") : QColor("#FFFFFF"));
+        painter.setPen(QColor("#D1D5DB"));
+        painter.drawRect(pageRect.left(), y, tableWidth, rowHeight);
+
+        for (int col = 0; col < columns; ++col) {
+            const QRect cell(pageRect.left() + col * colWidth, y,
+                             col == columns - 1 ? tableWidth - col * colWidth : colWidth,
+                             rowHeight);
+            painter.setPen(QColor("#D1D5DB"));
+            painter.drawRect(cell);
+            painter.setPen(QColor("#111827"));
+            drawTextInCell(painter, cell, tableCellText(m_sessionTable, row, col));
+        }
+        y += rowHeight;
+    }
+
+    y += 28;
+    const QPixmap chartPixmap = m_chartView->grab();
+    if (!chartPixmap.isNull()) {
+        if (y + 160 > pageRect.bottom()) {
+            writer.newPage();
+            y = pageRect.top();
+        }
+
+        QFont sectionFont = painter.font();
+        sectionFont.setPointSize(12);
+        sectionFont.setBold(true);
+        painter.setFont(sectionFont);
+        painter.setPen(QColor("#111827"));
+        painter.drawText(QRect(pageRect.left(), y, pageRect.width(), 26),
+                         Qt::AlignLeft | Qt::AlignVCenter,
+                         tr("Karsilastirma Grafigi"));
+        y += 32;
+
+        const QPixmap scaledChart = chartPixmap.scaledToWidth(
+            pageRect.width(), Qt::SmoothTransformation);
+        const int drawHeight = qMin(scaledChart.height(), pageRect.bottom() - y);
+        painter.drawPixmap(QRect(pageRect.left(), y, pageRect.width(), drawHeight),
+                           scaledChart,
+                           QRect(0, 0, scaledChart.width(), drawHeight));
+    }
+
+    painter.end();
+
     QMessageBox::information(this, tr("PDF Rapor"),
-        tr("Yakında eklenecek (Aşama 7)."));
+        tr("PDF raporu olusturuldu:\n%1").arg(path));
 }
