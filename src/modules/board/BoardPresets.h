@@ -32,8 +32,14 @@ namespace BoardPresets
 
     inline BoardInfo find(const QString &name)
     {
-        for (const auto &b : all())
-            if (b.name == name) return b;
+        const QString needle = name.trimmed();
+        for (const auto &b : all()) {
+            if (b.name.compare(needle, Qt::CaseInsensitive) == 0)
+                return b;
+            if (needle.contains(b.name, Qt::CaseInsensitive) ||
+                b.name.contains(needle, Qt::CaseInsensitive))
+                return b;
+        }
         return {};
     }
 

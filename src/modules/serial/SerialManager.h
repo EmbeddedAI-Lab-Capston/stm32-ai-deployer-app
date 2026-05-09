@@ -25,6 +25,7 @@ public:
 public slots:
     void connectToPort(const QString &portName, qint32 baudRate = 115200);
     void disconnectPort();
+    void requestBoardInfo();
 
 signals:
     void inferenceReceived(const InferenceData &data);
@@ -38,6 +39,7 @@ signals:
     // Internal — used to forward commands to the worker thread
     void requestConnect(const QString &portName, qint32 baudRate);
     void requestDisconnect();
+    void requestInfo();
 
 private:
     QThread      *m_thread    = nullptr;

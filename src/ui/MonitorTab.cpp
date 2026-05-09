@@ -36,6 +36,8 @@ MonitorTab::MonitorTab(AppState *state, SerialManager *serial, QWidget *parent)
             this, &MonitorTab::appendRawLog);
     connect(m_serialManager, &SerialManager::inferenceReceived,
             this, &MonitorTab::onInferenceReceived);
+    connect(m_serialManager, &SerialManager::bootReceived,
+            this, &MonitorTab::onBootReceived);
     connect(m_serialManager, &SerialManager::sysReceived,
             this, &MonitorTab::onSysReceived);
     connect(m_serialManager, &SerialManager::errorOccurred,
@@ -46,6 +48,8 @@ MonitorTab::MonitorTab(AppState *state, SerialManager *serial, QWidget *parent)
             this, &MonitorTab::appendRawLog);
     connect(m_simParser, &PacketParser::inferenceReceived,
             this, &MonitorTab::onInferenceReceived);
+    connect(m_simParser, &PacketParser::bootReceived,
+            this, &MonitorTab::onBootReceived);
     connect(m_simParser, &PacketParser::sysReceived,
             this, &MonitorTab::onSysReceived);
 
@@ -247,6 +251,16 @@ void MonitorTab::onBoardChanged(const BoardInfo &board)
 void MonitorTab::appendRawLog(const QString &line)
 {
     appendHtmlLine("#CDD6F4", line);
+}
+
+void MonitorTab::onBootReceived(const BootData &data)
+{
+    appendHtmlLine("#A6E3A1",
+        QString("§ boot  card=%1  sdk=%2  model=%3  baud=%4")
+            .arg(data.card.isEmpty() ? "--" : data.card)
+            .arg(data.sdk.isEmpty() ? "--" : data.sdk)
+            .arg(data.model.isEmpty() ? "--" : data.model)
+            .arg(data.baud));
 }
 
 void MonitorTab::onInferenceReceived(const InferenceData &data)

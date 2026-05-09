@@ -1,6 +1,9 @@
 #pragma once
 
+#include <QList>
 #include <QString>
+
+#include "modules/board/BoardPresets.h"
 
 // Thin wrapper around QSettings for type-safe access to application preferences.
 class AppSettings
@@ -33,6 +36,10 @@ public:
     QString lastFirmwareDir() const;
     void    setLastFirmwareDir(const QString &dir);
 
+    // User-defined boards shown together with built-in board presets
+    QList<BoardInfo> customBoards() const;
+    void             addCustomBoard(const BoardInfo &board);
+
 private:
     static constexpr auto kKeyCliPath       = "programmer/cli_path";
     static constexpr auto kKeyComPort       = "serial/last_com_port";
@@ -40,4 +47,5 @@ private:
     static constexpr auto kKeyTheme         = "ui/theme";
     static constexpr auto kKeyXCubeAIPath   = "tools/xcubeai_cli_path";
     static constexpr auto kKeyFirmwareDir   = "flash/last_firmware_dir";
+    static constexpr auto kArrayCustomBoards = "boards/custom";
 };

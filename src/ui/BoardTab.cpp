@@ -13,17 +13,24 @@
 #include <QSpinBox>
 #include <QMessageBox>
 
-BoardTab::BoardTab(AppState *state, QWidget *parent)
+#include "core/AppSettings.h"
+#include "modules/serial/SerialManager.h"
+
+BoardTab::BoardTab(AppState *state, SerialManager *serial, QWidget *parent)
     : QWidget(parent)
     , m_appState(state)
+    , m_serial(serial)
 {
     setupUi();
 
-    // React to board changes from AppState (driven by Sidebar)
     connect(m_appState, &AppState::activeBoardChanged,
             this, &BoardTab::onBoardChanged);
 
-    // Show the current board immediately
+    connect(m_serial, &SerialManager::connectionChanged,
+            this, &BoardTab::onSerialConnectionChanged);
+    connect(m_serial, &SerialManager::bootReceived,
+            this, &BoardTab::onSerialBootReceived);
+
     onBoardChanged(m_appState->activeBoard());
 }
 
@@ -130,11 +137,45 @@ void BoardTab::onBoardChanged(const BoardInfo &board)
     m_infoFlash->setText(QString::number(board.flashKb) + " KB");
     m_infoRam->setText(  QString::number(board.ramKb)   + " KB");
     m_infoClock->setText(QString::number(board.clockMhz)+ " MHz");
-    // TODO(asama-3): compare against loaded model RAM requirement
-    m_infoStatus->setText(tr("● Uyumlu"));
-    m_infoStatus->setObjectName("statusOk");
+    updateStatusLabel();
+}
+
+void BoardTab::updateStatusLabel()
+{
+    QString text;
+    QString objectName;
+
+    if (!m_serialConnected) {
+        text       = tr("● Manuel Seçim");
+        objectName = "statusOk";
+    } else if (m_bootDetected) {
+        text       = tr("● UART'tan Algılandı");
+        objectName = "statusOk";
+    } else {
+        text       = tr("● Kart Bilgisi Bekleniyor...");
+        objectName = "statusWarn";
+    }
+
+    m_infoStatus->setText(text);
+    m_infoStatus->setObjectName(objectName);
     m_infoStatus->style()->unpolish(m_infoStatus);
     m_infoStatus->style()->polish(m_infoStatus);
+}
+
+void BoardTab::onSerialConnectionChanged(bool connected, const QString &)
+{
+    m_serialConnected = connected;
+    if (!connected)
+        m_bootDetected = false;
+    updateStatusLabel();
+}
+
+void BoardTab::onSerialBootReceived(const BootData &data)
+{
+    if (data.card.isEmpty())
+        return;
+    m_bootDetected = true;
+    updateStatusLabel();
 }
 
 void BoardTab::onSensorChanged(int index)
@@ -163,22 +204,21 @@ void BoardTab::onSensorChanged(int index)
 
 void BoardTab::onAddCustomBoardClicked()
 {
-    auto *dlg = new QDialog(this);
-    dlg->setWindowTitle(tr("Özel Kart Ekle"));
-    dlg->setMinimumWidth(360);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Özel Kart Ekle"));
+    dlg.setMinimumWidth(360);
 
-    auto *layout    = new QVBoxLayout(dlg);
+    auto *layout    = new QVBoxLayout(&dlg);
     auto *form      = new QFormLayout;
-    auto *nameEdit  = new QLineEdit(dlg);
-    auto *flashSpin = new QSpinBox(dlg);
-    auto *ramSpin   = new QSpinBox(dlg);
-    auto *clockSpin = new QSpinBox(dlg);
+    auto *nameEdit  = new QLineEdit(&dlg);
+    auto *flashSpin = new QSpinBox(&dlg);
+    auto *ramSpin   = new QSpinBox(&dlg);
+    auto *clockSpin = new QSpinBox(&dlg);
 
     nameEdit->setPlaceholderText("örn. STM32L4");
-    flashSpin->setRange(64, 32768); flashSpin->setSuffix(" KB"); flashSpin->setValue(512);
-    ramSpin->setRange(8, 16384);    ramSpin->setSuffix(" KB");   ramSpin->setValue(128);
-    clockSpin->setRange(1, 1000);   clockSpin->setSuffix(" MHz"); clockSpin->setValue(80);
+    flashSpin->setRange(1, 32768); flashSpin->setSuffix(" KB");  flashSpin->setValue(512);
+    ramSpin->setRange(1, 16384);   ramSpin->setSuffix(" KB");    ramSpin->setValue(128);
+    clockSpin->setRange(1, 1000);  clockSpin->setSuffix(" MHz"); clockSpin->setValue(80);
 
     form->addRow(tr("Kart Adı  :"), nameEdit);
     form->addRow(tr("Flash     :"), flashSpin);
@@ -187,25 +227,33 @@ void BoardTab::onAddCustomBoardClicked()
     layout->addLayout(form);
 
     auto *btns = new QDialogButtonBox(
-        QDialogButtonBox::Save | QDialogButtonBox::Cancel, dlg);
+        QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dlg);
     layout->addWidget(btns);
-    connect(btns, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
-    connect(btns, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
+    connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
-    if (dlg->exec() == QDialog::Accepted) {
-        BoardInfo custom;
-        custom.name     = nameEdit->text().isEmpty() ? tr("Yeni Kart") : nameEdit->text();
-        custom.flashKb  = flashSpin->value();
-        custom.ramKb    = ramSpin->value();
-        custom.clockMhz = clockSpin->value();
-        custom.isPreset = false;
+    if (dlg.exec() != QDialog::Accepted)
+        return;
 
-        // Push into AppState — Sidebar and other tabs will react via signal
-        m_appState->setActiveBoard(custom);
-
-        QMessageBox::information(this, tr("Kart Eklendi"),
-            tr("'%1' aktif kart olarak ayarlandı.\n"
-               "Veritabanı desteği Aşama 5'te eklenecek.")
-            .arg(custom.name));
+    const QString name = nameEdit->text().trimmed();
+    if (name.isEmpty()) {
+        QMessageBox::warning(this, tr("Özel Kart"), tr("Kart adı boş olamaz."));
+        return;
     }
+
+    BoardInfo custom;
+    custom.name     = name;
+    custom.flashKb  = flashSpin->value();
+    custom.ramKb    = ramSpin->value();
+    custom.clockMhz = clockSpin->value();
+    custom.isPreset = false;
+
+    AppSettings settings;
+    settings.addCustomBoard(custom);
+    m_appState->setActiveBoard(custom);
+
+    QMessageBox::information(this, tr("Kart Eklendi"),
+        tr("'%1' aktif kart olarak ayarlandı.\n"
+           "Sol paneldeki kart listesine de eklendi.")
+        .arg(custom.name));
 }

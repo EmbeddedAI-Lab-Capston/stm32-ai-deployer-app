@@ -79,6 +79,9 @@ void PacketParser::processPacket(const QByteArray &jsonBytes)
         d.sdk   = obj.value("sdk").toString();
         d.model = obj.value("model").toString();
         d.baud  = static_cast<quint32>(obj.value("baud").toInt());
+        d.flash_kb = static_cast<quint32>(obj.value("flash_kb").toInt());
+        d.ram_kb = static_cast<quint32>(obj.value("ram_kb").toInt());
+        d.clock_mhz = static_cast<quint32>(obj.value("clock_mhz").toInt());
         emit bootReceived(d);
     }
     else if (type == "err") {

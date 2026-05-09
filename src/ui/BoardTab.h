@@ -2,7 +2,9 @@
 
 #include <QWidget>
 #include "core/AppState.h"
+#include "modules/serial/PacketParser.h"
 
+class SerialManager;
 class QLabel;
 class QComboBox;
 class QLineEdit;
@@ -16,18 +18,25 @@ class BoardTab : public QWidget
     Q_OBJECT
 
 public:
-    explicit BoardTab(AppState *state, QWidget *parent = nullptr);
+    explicit BoardTab(AppState *state, SerialManager *serial, QWidget *parent = nullptr);
     ~BoardTab() override;
 
 private slots:
     void onBoardChanged(const BoardInfo &board);
     void onSensorChanged(int index);
     void onAddCustomBoardClicked();
+    void onSerialConnectionChanged(bool connected, const QString &info);
+    void onSerialBootReceived(const BootData &data);
 
 private:
     void setupUi();
+    void updateStatusLabel();
 
-    AppState *m_appState = nullptr;
+    AppState      *m_appState = nullptr;
+    SerialManager *m_serial   = nullptr;
+
+    bool m_serialConnected = false;
+    bool m_bootDetected    = false;
 
     // ── Board info display ───────────────────────────────────────────────
     QLabel *m_infoModel  = nullptr;

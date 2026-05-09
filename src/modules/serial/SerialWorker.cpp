@@ -1,5 +1,7 @@
 #include "SerialWorker.h"
 
+#include <QTimer>
+
 SerialWorker::SerialWorker(QObject *parent)
     : QObject(parent)
     , m_parser(new PacketParser(this))
@@ -46,7 +48,7 @@ void SerialWorker::connectToPort(const QString &portName, qint32 baudRate)
     connect(m_port, &QSerialPort::errorOccurred,
             this,   &SerialWorker::onSerialError);
 
-    if (!m_port->open(QIODevice::ReadOnly)) {
+    if (!m_port->open(QIODevice::ReadWrite)) {
         emit errorOccurred(
             QString("Port açılamadı: %1 — %2")
                 .arg(portName, m_port->errorString()));
@@ -54,6 +56,7 @@ void SerialWorker::connectToPort(const QString &portName, qint32 baudRate)
     }
 
     emit connected(portName, baudRate);
+    QTimer::singleShot(250, this, &SerialWorker::requestBoardInfo);
 }
 
 void SerialWorker::disconnectPort()
@@ -62,6 +65,29 @@ void SerialWorker::disconnectPort()
         m_port->close();
         emit disconnected();
     }
+}
+
+void SerialWorker::writeLine(const QByteArray &line)
+{
+    if (!m_port || !m_port->isOpen())
+        return;
+
+    QByteArray payload = line;
+    if (!payload.endsWith('\n'))
+        payload.append("\r\n");
+
+    m_port->write(payload);
+    m_port->flush();
+}
+
+void SerialWorker::requestBoardInfo()
+{
+    if (!m_port || !m_port->isOpen())
+        return;
+
+    writeLine("INFO?");
+    writeLine("BOOT?");
+    writeLine("?");
 }
 
 void SerialWorker::onReadyRead()

@@ -7,7 +7,14 @@
 #include <QPushButton>
 #include <QFrame>
 #include <QSerialPortInfo>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QLineEdit>
+#include <QSpinBox>
+#include <QMessageBox>
 
+#include "core/AppSettings.h"
 #include "modules/serial/SerialManager.h"
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -170,6 +177,10 @@ void Sidebar::populateBoards()
     for (const BoardInfo &b : BoardPresets::all())
         m_boardCombo->addItem(b.name, QVariant::fromValue(b));
 
+    AppSettings settings;
+    for (const BoardInfo &b : settings.customBoards())
+        m_boardCombo->addItem(b.name, QVariant::fromValue(b));
+
     m_boardCombo->insertSeparator(m_boardCombo->count());
     m_boardCombo->addItem(tr("+ Özel Kart Ekle…"), QVariant());
 
@@ -225,15 +236,40 @@ void Sidebar::refreshPorts()
     populatePorts();
 }
 
+void Sidebar::ensureBoardVisible(const BoardInfo &board)
+{
+    if (board.isNull())
+        return;
+
+    for (int i = 0; i < m_boardCombo->count(); ++i) {
+        const QVariant data = m_boardCombo->itemData(i);
+        if (!data.isValid())
+            continue;
+
+        const BoardInfo existing = data.value<BoardInfo>();
+        if (existing.name.compare(board.name, Qt::CaseInsensitive) == 0) {
+            m_boardCombo->blockSignals(true);
+            m_boardCombo->setItemData(i, QVariant::fromValue(board));
+            m_boardCombo->setCurrentIndex(i);
+            m_boardCombo->blockSignals(false);
+            return;
+        }
+    }
+
+    const int insertAt = qMax(0, m_boardCombo->count() - 1);
+    m_boardCombo->blockSignals(true);
+    m_boardCombo->insertItem(insertAt, board.name, QVariant::fromValue(board));
+    m_boardCombo->setCurrentIndex(insertAt);
+    m_boardCombo->blockSignals(false);
+}
+
 // ── User-action slots ─────────────────────────────────────────────────────
 
 void Sidebar::onBoardComboChanged(int index)
 {
     const QVariant v = m_boardCombo->itemData(index);
     if (!v.isValid()) {
-        // "Özel Kart Ekle…" — TODO(asama-5): open custom board dialog
-        // For now reset to the previously active board
-        populateBoards();
+        onAddCustomBoardClicked();
         return;
     }
     const BoardInfo board = v.value<BoardInfo>();
@@ -270,6 +306,68 @@ void Sidebar::onRefreshClicked()
     refreshPorts();
 }
 
+void Sidebar::onAddCustomBoardClicked()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Özel Kart Ekle"));
+    dlg.setMinimumWidth(360);
+
+    auto *layout = new QVBoxLayout(&dlg);
+    auto *form = new QFormLayout;
+    auto *nameEdit = new QLineEdit(&dlg);
+    auto *flashSpin = new QSpinBox(&dlg);
+    auto *ramSpin = new QSpinBox(&dlg);
+    auto *clockSpin = new QSpinBox(&dlg);
+
+    nameEdit->setPlaceholderText("örn. STM32L4");
+    flashSpin->setRange(1, 32768);
+    flashSpin->setSuffix(" KB");
+    flashSpin->setValue(512);
+    ramSpin->setRange(1, 16384);
+    ramSpin->setSuffix(" KB");
+    ramSpin->setValue(128);
+    clockSpin->setRange(1, 1000);
+    clockSpin->setSuffix(" MHz");
+    clockSpin->setValue(80);
+
+    form->addRow(tr("Kart Adı  :"), nameEdit);
+    form->addRow(tr("Flash     :"), flashSpin);
+    form->addRow(tr("RAM       :"), ramSpin);
+    form->addRow(tr("Saat Hızı :"), clockSpin);
+    layout->addLayout(form);
+
+    auto *buttons = new QDialogButtonBox(
+        QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dlg);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted) {
+        ensureBoardVisible(m_state->activeBoard());
+        return;
+    }
+
+    const QString name = nameEdit->text().trimmed();
+    if (name.isEmpty()) {
+        QMessageBox::warning(this, tr("Özel Kart"), tr("Kart adı boş olamaz."));
+        ensureBoardVisible(m_state->activeBoard());
+        return;
+    }
+
+    BoardInfo custom;
+    custom.name = name;
+    custom.flashKb = flashSpin->value();
+    custom.ramKb = ramSpin->value();
+    custom.clockMhz = clockSpin->value();
+    custom.isPreset = false;
+
+    AppSettings settings;
+    settings.addCustomBoard(custom);
+
+    ensureBoardVisible(custom);
+    m_state->setActiveBoard(custom);
+}
+
 // ── AppState reaction slots ───────────────────────────────────────────────
 
 void Sidebar::onConnectionChanged(bool connected, const QString &info)
@@ -294,6 +392,7 @@ void Sidebar::onConnectionChanged(bool connected, const QString &info)
 void Sidebar::onBoardStateChanged(const BoardInfo &board)
 {
     if (board.isNull()) return;
+    ensureBoardVisible(board);
     m_flashLabel->setText(QString("Flash : %1 KB").arg(board.flashKb));
     m_ramLabel->setText(  QString("RAM   : %1 KB").arg(board.ramKb));
     m_clockLabel->setText(QString("Hız   : %1 MHz").arg(board.clockMhz));

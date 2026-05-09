@@ -76,3 +76,60 @@ void AppSettings::setLastFirmwareDir(const QString &dir)
     QSettings s;
     s.setValue(kKeyFirmwareDir, dir);
 }
+
+QList<BoardInfo> AppSettings::customBoards() const
+{
+    QSettings s;
+    QList<BoardInfo> boards;
+
+    const int count = s.beginReadArray(kArrayCustomBoards);
+    for (int i = 0; i < count; ++i) {
+        s.setArrayIndex(i);
+        BoardInfo board;
+        board.name = s.value("name").toString();
+        board.flashKb = s.value("flash_kb").toInt();
+        board.ramKb = s.value("ram_kb").toInt();
+        board.clockMhz = s.value("clock_mhz").toInt();
+        board.isPreset = false;
+
+        if (!board.name.trimmed().isEmpty())
+            boards.append(board);
+    }
+    s.endArray();
+
+    return boards;
+}
+
+void AppSettings::addCustomBoard(const BoardInfo &board)
+{
+    if (board.name.trimmed().isEmpty())
+        return;
+
+    QList<BoardInfo> boards = customBoards();
+    bool replaced = false;
+    for (BoardInfo &existing : boards) {
+        if (existing.name.compare(board.name, Qt::CaseInsensitive) == 0) {
+            existing = board;
+            existing.isPreset = false;
+            replaced = true;
+            break;
+        }
+    }
+
+    if (!replaced) {
+        BoardInfo custom = board;
+        custom.isPreset = false;
+        boards.append(custom);
+    }
+
+    QSettings s;
+    s.beginWriteArray(kArrayCustomBoards);
+    for (int i = 0; i < boards.size(); ++i) {
+        s.setArrayIndex(i);
+        s.setValue("name", boards.at(i).name);
+        s.setValue("flash_kb", boards.at(i).flashKb);
+        s.setValue("ram_kb", boards.at(i).ramKb);
+        s.setValue("clock_mhz", boards.at(i).clockMhz);
+    }
+    s.endArray();
+}

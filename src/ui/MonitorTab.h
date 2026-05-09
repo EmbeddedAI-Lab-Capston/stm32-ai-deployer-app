@@ -36,6 +36,7 @@ private slots:
     void onConnectionChanged(bool connected, const QString &info);
     void onBoardChanged(const BoardInfo &board);
     void appendRawLog(const QString &line);
+    void onBootReceived(const BootData &data);
     void onInferenceReceived(const InferenceData &data);
     void onSysReceived(const SysData &data);
     void onSerialError(const QString &msg);

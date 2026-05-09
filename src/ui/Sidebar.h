@@ -29,6 +29,7 @@ private slots:
     void onBaudComboChanged(int index);
     void onConnectClicked();
     void onRefreshClicked();
+    void onAddCustomBoardClicked();
 
     // AppState reactions
     void onConnectionChanged(bool connected, const QString &info);
@@ -41,6 +42,7 @@ private:
     void populateBoards();
     void populatePorts();
     void populateBauds();
+    void ensureBoardVisible(const BoardInfo &board);
 
     AppState      *m_state  = nullptr;
     SerialManager *m_serial = nullptr;

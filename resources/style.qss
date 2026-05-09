@@ -484,6 +484,11 @@ QLabel#statusOk {
     font-weight: bold;
 }
 
+QLabel#statusWarn {
+    color: #F9E2AF;
+    font-weight: bold;
+}
+
 QLabel#statusError {
     color: #F38BA8;
     font-weight: bold;

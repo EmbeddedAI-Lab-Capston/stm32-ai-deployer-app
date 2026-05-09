@@ -38,6 +38,9 @@ SerialManager::SerialManager(QObject *parent) : QObject(parent)
     connect(this,     &SerialManager::requestDisconnect,
             m_worker, &SerialWorker::disconnectPort,
             Qt::QueuedConnection);
+    connect(this,     &SerialManager::requestInfo,
+            m_worker, &SerialWorker::requestBoardInfo,
+            Qt::QueuedConnection);
 
     connect(m_thread, &QThread::finished,
             m_worker, &QObject::deleteLater);
@@ -74,4 +77,9 @@ void SerialManager::connectToPort(const QString &portName, qint32 baudRate)
 void SerialManager::disconnectPort()
 {
     emit requestDisconnect();
+}
+
+void SerialManager::requestBoardInfo()
+{
+    emit requestInfo();
 }

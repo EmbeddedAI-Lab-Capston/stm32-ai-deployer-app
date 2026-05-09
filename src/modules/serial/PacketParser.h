@@ -28,6 +28,9 @@ struct BootData {
     QString  sdk;
     QString  model;
     quint32  baud;
+    quint32  flash_kb = 0;
+    quint32  ram_kb = 0;
+    quint32  clock_mhz = 0;
 };
 
 struct ErrorData {

@@ -17,6 +17,8 @@ public:
 public slots:
     void connectToPort(const QString &portName, qint32 baudRate);
     void disconnectPort();
+    void writeLine(const QByteArray &line);
+    void requestBoardInfo();
 
 signals:
     void inferenceReceived(const InferenceData &data);

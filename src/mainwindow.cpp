@@ -92,7 +92,7 @@ void MainWindow::setupCentralWidget()
     m_tabWidget->setTabPosition(QTabWidget::North);
     m_tabWidget->setDocumentMode(false);
 
-    m_boardTab    = new BoardTab(m_appState, this);
+    m_boardTab    = new BoardTab(m_appState, m_serialManager, this);
     m_flashTab    = new FlashTab(m_appState, this);
     m_monitorTab  = new MonitorTab(m_appState, m_serialManager, this);
     m_analysisTab = new AnalysisTab(this);
@@ -135,6 +135,46 @@ void MainWindow::setupStatusBar()
 
 void MainWindow::setupConnections()
 {
+    auto applyBoardFromWire = [this](const QString &cardName,
+                                     int flashKb,
+                                     int ramKb,
+                                     int clockMhz) {
+        const QString name = cardName.trimmed();
+        if (name.isEmpty())
+            return;
+
+        BoardInfo board = BoardPresets::find(name);
+
+        if (board.isNull()) {
+            AppSettings settings;
+            for (const BoardInfo &custom : settings.customBoards()) {
+                if (custom.name.compare(name, Qt::CaseInsensitive) == 0) {
+                    board = custom;
+                    break;
+                }
+            }
+
+            if (board.isNull()) {
+                board.name = name;
+                board.isPreset = false;
+            }
+        }
+
+        if (flashKb > 0)
+            board.flashKb = flashKb;
+        if (ramKb > 0)
+            board.ramKb = ramKb;
+        if (clockMhz > 0)
+            board.clockMhz = clockMhz;
+
+        if (!board.isPreset) {
+            AppSettings settings;
+            settings.addCustomBoard(board);
+        }
+
+        m_appState->setActiveBoard(board);
+    };
+
     // AppState → status bar
     connect(m_appState, &AppState::connectionChanged,
             this, [this](bool connected, const QString &info) {
@@ -160,6 +200,65 @@ void MainWindow::setupConnections()
                     m_appState->setLastModel(config.modelName, 0, 0);
                     // TODO(asama-5): inf ms ve accuracy UART'tan gelecek
                 }
+            });
+
+    connect(m_serialManager, &SerialManager::connectionChanged,
+            this, [this](bool connected, const QString &) {
+                if (connected)
+                    QTimer::singleShot(700, m_serialManager, &SerialManager::requestBoardInfo);
+            });
+
+    connect(m_serialManager, &SerialManager::bootReceived,
+            this, [this](const BootData &boot) {
+                if (!boot.model.isEmpty())
+                    m_appState->setLastModel(boot.model, 0.0, 0);
+
+                auto applyBoard = [this](const QString &cardName,
+                                         int flashKb,
+                                         int ramKb,
+                                         int clockMhz) {
+                    const QString name = cardName.trimmed();
+                    if (name.isEmpty())
+                        return;
+
+                    BoardInfo board = BoardPresets::find(name);
+                    if (board.isNull()) {
+                        AppSettings settings;
+                        for (const BoardInfo &custom : settings.customBoards()) {
+                            if (custom.name.compare(name, Qt::CaseInsensitive) == 0) {
+                                board = custom;
+                                break;
+                            }
+                        }
+                        if (board.isNull()) {
+                            board.name = name;
+                            board.isPreset = false;
+                        }
+                    }
+
+                    if (flashKb > 0) board.flashKb = flashKb;
+                    if (ramKb > 0) board.ramKb = ramKb;
+                    if (clockMhz > 0) board.clockMhz = clockMhz;
+
+                    if (!board.isPreset) {
+                        AppSettings settings;
+                        settings.addCustomBoard(board);
+                    }
+
+                    m_appState->setActiveBoard(board);
+                };
+
+                applyBoard(boot.card,
+                           static_cast<int>(boot.flash_kb),
+                           static_cast<int>(boot.ram_kb),
+                           static_cast<int>(boot.clock_mhz));
+                if (boot.baud > 0)
+                    m_appState->setActiveBaud(static_cast<qint32>(boot.baud));
+            });
+
+    connect(m_serialManager, &SerialManager::inferenceReceived,
+            this, [applyBoardFromWire](const InferenceData &data) {
+                applyBoardFromWire(data.card, 0, 0, 0);
             });
 
     // Refresh CLI status after settings change
