@@ -44,6 +44,7 @@ private slots:
     void onAIOutputDirClicked();
     void onGenerateClicked();
     void onSourceModeChanged(int id, bool checked);
+    void onPipelineWizardClicked();
 
     void showGenerationResult(const XCubeAIResult &result);
     void showNextStepDialog();
@@ -95,6 +96,9 @@ private:
     // Result buttons (shown after successful generation)
     QPushButton *m_openDirBtn  = nullptr;
     QPushButton *m_nextStepBtn = nullptr;
+
+    // Pipeline wizard button (shown at top of source selection)
+    QPushButton *m_wizardBtn   = nullptr;
 
     // ── Shared widgets ─────────────────────────────────────────────────────
     QLabel       *m_stlinkLabel  = nullptr;

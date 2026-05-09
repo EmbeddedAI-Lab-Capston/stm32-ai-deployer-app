@@ -28,6 +28,12 @@ set(PROJECT_SOURCES
     src/core/AppState.h
     src/core/AppState.cpp
 
+    src/core/ToolDetector.h
+    src/core/ToolDetector.cpp
+
+    src/core/TemplateEngine.h
+    src/core/TemplateEngine.cpp
+
     src/modules/board/BoardPresets.h
 
     src/modules/board/BoardManager.h
@@ -41,6 +47,11 @@ set(PROJECT_SOURCES
 
     src/modules/flash/XCubeAIRunner.h
     src/modules/flash/XCubeAIRunner.cpp
+
+    src/modules/flash/PipelineConfig.h
+
+    src/modules/flash/PipelineRunner.h
+    src/modules/flash/PipelineRunner.cpp
 
     src/modules/serial/PacketParser.h
     src/modules/serial/PacketParser.cpp
@@ -77,6 +88,9 @@ set(PROJECT_SOURCES
     src/ui/SettingsDialog.h
     src/ui/SettingsDialog.cpp
 
+    src/ui/PipelineWizard.h
+    src/ui/PipelineWizard.cpp
+
     src/ui/SplashScreen.h
 
     resources/app.qrc
@@ -103,4 +117,13 @@ target_include_directories(STM32AiDeployer PRIVATE
 set_target_properties(STM32AiDeployer PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
+)
+
+# Copy the templates/ directory next to the executable after every build.
+# This makes PipelineRunner find them via applicationDirPath() + "/templates".
+add_custom_command(TARGET STM32AiDeployer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/templates"
+        "$<TARGET_FILE_DIR:STM32AiDeployer>/templates"
+    COMMENT "Copying templates to build directory"
 )

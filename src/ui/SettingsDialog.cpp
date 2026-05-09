@@ -1,131 +1,199 @@
 #include "SettingsDialog.h"
 
-#include <QVBoxLayout>
-#include <QHBoxLayout>
+#include <QCoreApplication>
+#include <QFile>
+#include <QFileDialog>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPushButton>
-#include <QFileDialog>
-#include <QProcess>
-#include <QFile>
 #include <QMessageBox>
+#include <QProcess>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QVBoxLayout>
+
 #include "core/AppSettings.h"
+#include "core/ToolDetector.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Ayarlar"));
-    setMinimumWidth(560);
+    setWindowTitle(tr("Ayarlar — Araç Yolları"));
+    setMinimumWidth(580);
     setModal(true);
-
     setupUi();
     loadCurrentValues();
 }
 
 SettingsDialog::~SettingsDialog() = default;
 
+// ── UI layout ─────────────────────────────────────────────────────────────
+
+static QHBoxLayout *makeToolRow(QLineEdit *edit,
+                                QPushButton *browseBtn,
+                                QPushButton *testBtn)
+{
+    auto *row = new QHBoxLayout;
+    row->addWidget(edit);
+    row->addWidget(browseBtn);
+    row->addWidget(testBtn);
+    return row;
+}
+
 void SettingsDialog::setupUi()
 {
     auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setSpacing(16);
+    mainLayout->setSpacing(14);
     mainLayout->setContentsMargins(20, 20, 20, 20);
 
-    // ── Section: STM32 Programmer CLI ──────────────────────────────────────
-    auto *progLabel = new QLabel(tr("STM32 Programlayıcı"), this);
-    progLabel->setObjectName("settingsSectionLabel");
-    mainLayout->addWidget(progLabel);
+    // ── Section header helper ──────────────────────────────────────────────
+    auto addSection = [&](const QString &text) {
+        auto *lbl = new QLabel(text, this);
+        lbl->setObjectName("settingsSectionLabel");
+        mainLayout->addWidget(lbl);
+    };
 
+    auto addStatusLabel = [&](QLabel *&lbl) -> QFormLayout * {
+        auto *form = new QFormLayout;
+        form->setSpacing(6);
+        lbl = new QLabel(this);
+        lbl->setTextFormat(Qt::RichText);
+        return form;
+    };
+
+    // ── STM32 Programmer CLI ───────────────────────────────────────────────
+    addSection(tr("STM32 Programlayıcı (STM32_Programmer_CLI)"));
     auto *progForm = new QFormLayout;
-    progForm->setSpacing(8);
+    progForm->setSpacing(6);
 
-    auto *cliRow = new QHBoxLayout;
     m_cliPathEdit = new QLineEdit(this);
-    m_cliPathEdit->setPlaceholderText(
-        tr("C:\\...\\STM32_Programmer_CLI.exe"));
-    m_cliPathEdit->setMinimumWidth(360);
-
+    m_cliPathEdit->setPlaceholderText(tr("C:\\...\\STM32_Programmer_CLI.exe"));
     m_browseButton = new QPushButton(tr("Gözat..."), this);
     m_browseButton->setFixedWidth(80);
-    connect(m_browseButton, &QPushButton::clicked,
-            this, &SettingsDialog::onBrowseClicked);
-
     m_testButton = new QPushButton(tr("Test Et"), this);
     m_testButton->setFixedWidth(80);
-    connect(m_testButton, &QPushButton::clicked,
-            this, &SettingsDialog::onTestCliClicked);
+    m_cliStatus = new QLabel(this);
+    m_cliStatus->setTextFormat(Qt::RichText);
 
-    cliRow->addWidget(m_cliPathEdit);
-    cliRow->addWidget(m_browseButton);
-    cliRow->addWidget(m_testButton);
-    progForm->addRow(tr("CLI Yolu:"), cliRow);
+    progForm->addRow(tr("CLI Yolu:"), makeToolRow(m_cliPathEdit, m_browseButton, m_testButton));
+    progForm->addRow(QString(), m_cliStatus);
     mainLayout->addLayout(progForm);
 
-    // ── Section: X-CUBE-AI CLI ─────────────────────────────────────────────
-    auto *xcubeLabel = new QLabel(tr("X-CUBE-AI / ST Edge AI (stedgeai)"), this);
-    xcubeLabel->setObjectName("settingsSectionLabel");
-    mainLayout->addWidget(xcubeLabel);
+    connect(m_browseButton, &QPushButton::clicked, this, &SettingsDialog::onBrowseClicked);
+    connect(m_testButton,   &QPushButton::clicked, this, &SettingsDialog::onTestCliClicked);
 
+    // ── X-CUBE-AI CLI ─────────────────────────────────────────────────────
+    addSection(tr("X-CUBE-AI / ST Edge AI (stedgeai)"));
     auto *xcubeForm = new QFormLayout;
-    xcubeForm->setSpacing(8);
+    xcubeForm->setSpacing(6);
 
-    auto *xcubeRow = new QHBoxLayout;
     m_xcubePathEdit = new QLineEdit(this);
-    m_xcubePathEdit->setPlaceholderText(
-        tr("stedgeai  veya  C:\\...\\stedgeai.exe"));
-    m_xcubePathEdit->setMinimumWidth(360);
-
-    m_xcubeBrowseButton = new QPushButton(tr("Gözat..."), this);
-    m_xcubeBrowseButton->setFixedWidth(80);
-    connect(m_xcubeBrowseButton, &QPushButton::clicked,
-            this, &SettingsDialog::onBrowseXCubeAIClicked);
-
-    m_xcubeTestButton = new QPushButton(tr("Test Et"), this);
-    m_xcubeTestButton->setFixedWidth(80);
-    connect(m_xcubeTestButton, &QPushButton::clicked,
-            this, &SettingsDialog::onTestXCubeAIClicked);
-
-    xcubeRow->addWidget(m_xcubePathEdit);
-    xcubeRow->addWidget(m_xcubeBrowseButton);
-    xcubeRow->addWidget(m_xcubeTestButton);
-    xcubeForm->addRow(tr("CLI Yolu:"), xcubeRow);
+    m_xcubePathEdit->setPlaceholderText(tr("stedgeai  veya  C:\\...\\stedgeai.exe"));
+    m_xcubeBrowseBtn = new QPushButton(tr("Gözat..."), this);
+    m_xcubeBrowseBtn->setFixedWidth(80);
+    m_xcubeTestBtn = new QPushButton(tr("Test Et"), this);
+    m_xcubeTestBtn->setFixedWidth(80);
+    m_xcubeStatus = new QLabel(this);
+    m_xcubeStatus->setTextFormat(Qt::RichText);
 
     auto *xcubeHint = new QLabel(
         tr("X-CUBE-AI v10+:\n"
            "STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/<ver>/Utilities/windows/stedgeai.exe"),
         this);
     xcubeHint->setStyleSheet("color: #6C7086; font-size: 11px;");
-    xcubeForm->addRow(QString(), xcubeHint);
 
+    xcubeForm->addRow(tr("CLI Yolu:"), makeToolRow(m_xcubePathEdit, m_xcubeBrowseBtn, m_xcubeTestBtn));
+    xcubeForm->addRow(QString(), m_xcubeStatus);
+    xcubeForm->addRow(QString(), xcubeHint);
     mainLayout->addLayout(xcubeForm);
+
+    connect(m_xcubeBrowseBtn, &QPushButton::clicked, this, &SettingsDialog::onBrowseXCubeAIClicked);
+    connect(m_xcubeTestBtn,   &QPushButton::clicked, this, &SettingsDialog::onTestXCubeAIClicked);
+
+    // ── arm-none-eabi-gcc ─────────────────────────────────────────────────
+    addSection(tr("ARM GCC Derleyici (arm-none-eabi-gcc)"));
+    auto *gccForm = new QFormLayout;
+    gccForm->setSpacing(6);
+
+    m_gccPathEdit = new QLineEdit(this);
+    m_gccPathEdit->setPlaceholderText(tr("arm-none-eabi-gcc  veya  C:\\...\\arm-none-eabi-gcc.exe"));
+    m_gccBrowseBtn = new QPushButton(tr("Gözat..."), this);
+    m_gccBrowseBtn->setFixedWidth(80);
+    m_gccTestBtn = new QPushButton(tr("Test Et"), this);
+    m_gccTestBtn->setFixedWidth(80);
+    m_gccStatus = new QLabel(this);
+    m_gccStatus->setTextFormat(Qt::RichText);
+
+    gccForm->addRow(tr("GCC Yolu:"), makeToolRow(m_gccPathEdit, m_gccBrowseBtn, m_gccTestBtn));
+    gccForm->addRow(QString(), m_gccStatus);
+    mainLayout->addLayout(gccForm);
+
+    connect(m_gccBrowseBtn, &QPushButton::clicked, this, &SettingsDialog::onBrowseGccClicked);
+    connect(m_gccTestBtn,   &QPushButton::clicked, this, &SettingsDialog::onTestGccClicked);
+
+    // ── make ──────────────────────────────────────────────────────────────
+    addSection(tr("Make (GNU Make)"));
+    auto *makeForm = new QFormLayout;
+    makeForm->setSpacing(6);
+
+    m_makePathEdit = new QLineEdit(this);
+    m_makePathEdit->setPlaceholderText(tr("make  veya  C:\\...\\make.exe"));
+    m_makeBrowseBtn = new QPushButton(tr("Gözat..."), this);
+    m_makeBrowseBtn->setFixedWidth(80);
+    m_makeTestBtn = new QPushButton(tr("Test Et"), this);
+    m_makeTestBtn->setFixedWidth(80);
+    m_makeStatus = new QLabel(this);
+    m_makeStatus->setTextFormat(Qt::RichText);
+
+    makeForm->addRow(tr("Make Yolu:"), makeToolRow(m_makePathEdit, m_makeBrowseBtn, m_makeTestBtn));
+    makeForm->addRow(QString(), m_makeStatus);
+    mainLayout->addLayout(makeForm);
+
+    connect(m_makeBrowseBtn, &QPushButton::clicked, this, &SettingsDialog::onBrowseMakeClicked);
+    connect(m_makeTestBtn,   &QPushButton::clicked, this, &SettingsDialog::onTestMakeClicked);
+
     mainLayout->addStretch();
 
-    // ── Dialog buttons ─────────────────────────────────────────────────────
-    auto *buttonLayout = new QHBoxLayout;
-    buttonLayout->addStretch();
+    // ── Buttons ───────────────────────────────────────────────────────────
+    auto *btnLayout = new QHBoxLayout;
 
-    m_saveButton = new QPushButton(tr("Kaydet"), this);
-    m_saveButton->setObjectName("primaryButton");
-    m_saveButton->setDefault(true);
-    connect(m_saveButton, &QPushButton::clicked,
-            this, &SettingsDialog::onSaveClicked);
+    m_scanAllBtn = new QPushButton(tr("Tümünü Tara"), this);
+    m_scanAllBtn->setObjectName("primaryButton");
+    connect(m_scanAllBtn, &QPushButton::clicked, this, &SettingsDialog::onScanAllClicked);
 
     m_cancelButton = new QPushButton(tr("İptal"), this);
-    connect(m_cancelButton, &QPushButton::clicked,
-            this, &SettingsDialog::onCancelClicked);
+    m_saveButton   = new QPushButton(tr("Kaydet"), this);
+    m_saveButton->setObjectName("primaryButton");
+    m_saveButton->setDefault(true);
 
-    buttonLayout->addWidget(m_cancelButton);
-    buttonLayout->addWidget(m_saveButton);
-    mainLayout->addLayout(buttonLayout);
+    connect(m_saveButton,   &QPushButton::clicked, this, &SettingsDialog::onSaveClicked);
+    connect(m_cancelButton, &QPushButton::clicked, this, &SettingsDialog::onCancelClicked);
+
+    btnLayout->addWidget(m_scanAllBtn);
+    btnLayout->addStretch();
+    btnLayout->addWidget(m_cancelButton);
+    btnLayout->addWidget(m_saveButton);
+    mainLayout->addLayout(btnLayout);
 
     setLayout(mainLayout);
 }
 
 void SettingsDialog::loadCurrentValues()
 {
-    AppSettings settings;
-    m_cliPathEdit->setText(settings.programmerCliPath());
-    m_xcubePathEdit->setText(settings.xcubeAICliPath());
+    AppSettings s;
+    m_cliPathEdit->setText(s.programmerCliPath());
+    m_xcubePathEdit->setText(s.xcubeAICliPath());
+    m_gccPathEdit->setText(s.gccPath());
+    m_makePathEdit->setText(s.makePath());
+}
+
+QString SettingsDialog::makeStatusText(const QString &versionOrEmpty) const
+{
+    if (versionOrEmpty.isEmpty())
+        return QStringLiteral("<span style='color:#F38BA8;'>✗ Bulunamadı / Çalışmıyor</span>");
+    return QString("<span style='color:#A6E3A1;'>✓ %1</span>")
+        .arg(versionOrEmpty.left(50));
 }
 
 // ── STM32 Programmer CLI ───────────────────────────────────────────────────
@@ -133,40 +201,20 @@ void SettingsDialog::loadCurrentValues()
 void SettingsDialog::onBrowseClicked()
 {
     const QString path = QFileDialog::getOpenFileName(
-        this,
-        tr("STM32_Programmer_CLI.exe Seç"),
-        {},
-        tr("Çalıştırılabilir Dosya (*.exe);;Tüm Dosyalar (*)"));
-    if (!path.isEmpty())
-        m_cliPathEdit->setText(path);
+        this, tr("STM32_Programmer_CLI.exe Seç"), {},
+        tr("Çalıştırılabilir (*.exe);;Tüm Dosyalar (*)"));
+    if (!path.isEmpty()) m_cliPathEdit->setText(path);
 }
 
 void SettingsDialog::onTestCliClicked()
 {
     const QString path = m_cliPathEdit->text().trimmed();
     if (path.isEmpty() || !QFile::exists(path)) {
-        QMessageBox::warning(this, tr("Hata"),
-            tr("Dosya bulunamadı:\n") + path);
+        m_cliStatus->setText(makeStatusText({}));
         return;
     }
-
-    QProcess proc;
-    proc.start(path, {"--version"});
-    proc.waitForFinished(5000);
-
-    const QString all = QString::fromLocal8Bit(
-        proc.readAllStandardOutput() + proc.readAllStandardError());
-
-    if (all.contains("STM32CubeProgrammer", Qt::CaseInsensitive) ||
-        all.contains("STM32_Programmer",    Qt::CaseInsensitive) ||
-        proc.exitCode() == 0) {
-        QMessageBox::information(this, tr("CLI Testi Başarılı"),
-            tr("CLI çalışıyor.\n\n") + all.trimmed().left(400));
-    } else {
-        QMessageBox::warning(this, tr("CLI Testi"),
-            tr("CLI çalıştı fakat beklenen çıktı gelmedi.\n\n")
-            + all.trimmed().left(400));
-    }
+    const QString ver = ToolDetector::queryVersion(path, {"--version"});
+    m_cliStatus->setText(makeStatusText(ver));
 }
 
 // ── X-CUBE-AI CLI ─────────────────────────────────────────────────────────
@@ -174,48 +222,106 @@ void SettingsDialog::onTestCliClicked()
 void SettingsDialog::onBrowseXCubeAIClicked()
 {
     const QString path = QFileDialog::getOpenFileName(
-        this,
-        tr("stm32ai.exe Seç"),
-        {},
-        tr("Çalıştırılabilir Dosya (*.exe);;Tüm Dosyalar (*)"));
-    if (!path.isEmpty())
-        m_xcubePathEdit->setText(path);
+        this, tr("stedgeai.exe Seç"), {},
+        tr("Çalıştırılabilir (*.exe);;Tüm Dosyalar (*)"));
+    if (!path.isEmpty()) m_xcubePathEdit->setText(path);
 }
 
 void SettingsDialog::onTestXCubeAIClicked()
 {
     QString path = m_xcubePathEdit->text().trimmed();
     if (path.isEmpty()) path = "stedgeai";
+    const QString ver = ToolDetector::queryVersion(path, {"--version"});
+    m_xcubeStatus->setText(makeStatusText(ver));
+}
 
-    QProcess proc;
-    proc.start(path, {"--version"});
-    proc.waitForFinished(3000);
+// ── ARM GCC ───────────────────────────────────────────────────────────────
 
-    const QString all = QString::fromLocal8Bit(
-        proc.readAllStandardOutput() + proc.readAllStandardError());
+void SettingsDialog::onBrowseGccClicked()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("arm-none-eabi-gcc.exe Seç"), {},
+        tr("Çalıştırılabilir (*.exe);;Tüm Dosyalar (*)"));
+    if (!path.isEmpty()) m_gccPathEdit->setText(path);
+}
 
-    if (all.contains("stedgeai", Qt::CaseInsensitive) ||
-        all.contains("stm32ai",  Qt::CaseInsensitive) ||
-        all.contains("ST Edge",  Qt::CaseInsensitive) ||
-        proc.exitCode() == 0) {
-        QMessageBox::information(this, tr("X-CUBE-AI Testi Başarılı"),
-            tr("stedgeai CLI çalışıyor:\n\n") + all.trimmed().left(400));
-    } else {
-        QMessageBox::warning(this, tr("X-CUBE-AI Bulunamadı"),
-            tr("stedgeai komutu çalıştırılamadı.\n\n"
-               "X-CUBE-AI v10+ (ST Edge AI) için:\n"
-               "STM32Cube/Repository/Packs/STMicroelectronics/"
-               "X-CUBE-AI/<ver>/Utilities/windows/stedgeai.exe"));
+void SettingsDialog::onTestGccClicked()
+{
+    QString path = m_gccPathEdit->text().trimmed();
+    if (path.isEmpty()) path = "arm-none-eabi-gcc";
+    const QString ver = ToolDetector::queryVersion(path, {"--version"});
+    m_gccStatus->setText(makeStatusText(ver));
+}
+
+// ── Make ──────────────────────────────────────────────────────────────────
+
+void SettingsDialog::onBrowseMakeClicked()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("make.exe Seç"), {},
+        tr("Çalıştırılabilir (*.exe);;Tüm Dosyalar (*)"));
+    if (!path.isEmpty()) m_makePathEdit->setText(path);
+}
+
+void SettingsDialog::onTestMakeClicked()
+{
+    QString path = m_makePathEdit->text().trimmed();
+    if (path.isEmpty()) path = "make";
+    const QString ver = ToolDetector::queryVersion(path, {"--version"});
+    m_makeStatus->setText(makeStatusText(ver));
+}
+
+// ── Scan all ──────────────────────────────────────────────────────────────
+
+void SettingsDialog::onScanAllClicked()
+{
+    m_scanAllBtn->setEnabled(false);
+    m_scanAllBtn->setText(tr("Taranıyor..."));
+    QCoreApplication::processEvents();
+
+    struct Entry {
+        QString       name;
+        QString     (*detect)();
+        QLineEdit    *edit;
+        QLabel       *status;
+    };
+
+    const QList<Entry> entries = {
+        { "STM32_Programmer_CLI", &ToolDetector::detectStm32Programmer,
+          m_cliPathEdit,   m_cliStatus   },
+        { "stedgeai",            &ToolDetector::detectXCubeAI,
+          m_xcubePathEdit, m_xcubeStatus },
+        { "arm-none-eabi-gcc",   &ToolDetector::detectGcc,
+          m_gccPathEdit,   m_gccStatus   },
+        { "make",                &ToolDetector::detectMake,
+          m_makePathEdit,  m_makeStatus  },
+    };
+
+    for (const Entry &e : entries) {
+        const QString path = e.detect();
+        if (!path.isEmpty()) {
+            e.edit->setText(path);
+            const QString ver = ToolDetector::queryVersion(path);
+            e.status->setText(makeStatusText(ver));
+        } else {
+            e.status->setText(makeStatusText({}));
+        }
+        QCoreApplication::processEvents();
     }
+
+    m_scanAllBtn->setEnabled(true);
+    m_scanAllBtn->setText(tr("Tümünü Tara"));
 }
 
 // ── Save / Cancel ──────────────────────────────────────────────────────────
 
 void SettingsDialog::onSaveClicked()
 {
-    AppSettings settings;
-    settings.setProgrammerCliPath(m_cliPathEdit->text().trimmed());
-    settings.setXCubeAICliPath(m_xcubePathEdit->text().trimmed());
+    AppSettings s;
+    s.setProgrammerCliPath(m_cliPathEdit->text().trimmed());
+    s.setXCubeAICliPath(m_xcubePathEdit->text().trimmed());
+    s.setGccPath(m_gccPathEdit->text().trimmed());
+    s.setMakePath(m_makePathEdit->text().trimmed());
     accept();
 }
 

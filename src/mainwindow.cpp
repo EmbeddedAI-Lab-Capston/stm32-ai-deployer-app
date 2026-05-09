@@ -21,6 +21,7 @@
 #include "ui/SettingsDialog.h"
 #include "modules/serial/SerialManager.h"
 #include "modules/flash/FlashManager.h"
+#include "core/ToolDetector.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -54,6 +55,40 @@ MainWindow::MainWindow(QWidget *parent)
     AppSettings settings;
     if (settings.programmerCliPath().isEmpty()) {
         QTimer::singleShot(200, this, &MainWindow::onSettingsTriggered);
+    }
+
+    // First-launch tool auto-detection
+    if (!settings.toolsAutoDetected()) {
+        m_toolDetector = new ToolDetector(this);
+
+        connect(m_toolDetector, &ToolDetector::toolFound,
+                this, [this](const ToolInfo &info) {
+                    // Save each found tool path to the appropriate setting
+                    AppSettings s;
+                    if (info.key == "tools/gcc_path")
+                        s.setGccPath(info.path);
+                    else if (info.key == "tools/make_path")
+                        s.setMakePath(info.path);
+                    else if (info.key == "programmer/cli_path")
+                        s.setProgrammerCliPath(info.path);
+                    else if (info.key == "tools/xcubeai_cli_path")
+                        s.setXCubeAICliPath(info.path);
+
+                    statusBar()->showMessage(
+                        QString("✓ %1 bulundu").arg(info.name), 3000);
+                });
+
+        connect(m_toolDetector, &ToolDetector::detectionFinished,
+                this, [this](const QList<ToolInfo> &) {
+                    AppSettings s;
+                    s.setToolsAutoDetected(true);
+                    if (m_flashTab) {
+                        m_flashTab->refreshCliStatus();
+                        m_flashTab->refreshXCubeAIStatus();
+                    }
+                });
+
+        m_toolDetector->detectAll();
     }
 }
 
@@ -273,8 +308,10 @@ void MainWindow::onSettingsTriggered()
     if (m_settingsDialog->exec() == QDialog::Accepted) {
         AppSettings settings;
         m_flashManager->setCliPath(settings.programmerCliPath());
-        if (m_flashTab)
+        if (m_flashTab) {
             m_flashTab->refreshCliStatus();
+            m_flashTab->refreshXCubeAIStatus();
+        }
     }
 }
 

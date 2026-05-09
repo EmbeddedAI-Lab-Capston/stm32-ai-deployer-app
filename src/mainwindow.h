@@ -13,6 +13,7 @@ class AnalysisTab;
 class SettingsDialog;
 class FlashManager;
 class SerialManager;
+class ToolDetector;
 
 class MainWindow : public QMainWindow
 {
@@ -37,6 +38,7 @@ private:
     AppState      *m_appState      = nullptr;
     SerialManager *m_serialManager = nullptr;
     FlashManager  *m_flashManager  = nullptr;
+    ToolDetector  *m_toolDetector  = nullptr;
 
     // ── UI ───────────────────────────────────────────────────────────────
     Sidebar        *m_sidebar       = nullptr;

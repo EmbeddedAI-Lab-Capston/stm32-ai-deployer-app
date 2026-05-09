@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QStringList>
 
 // Thin QProcess wrapper for STM32_Programmer_CLI.
@@ -16,6 +17,7 @@ public:
 
     void    setCliPath(const QString &path);
     QString cliPath()   const { return m_cliPath; }
+    void    setEnvironment(const QProcessEnvironment &env);
     bool    isRunning() const;
     void    cancel();
 
@@ -38,6 +40,8 @@ private slots:
 private:
     void parseProgressFromLine(const QString &line);
 
-    QProcess *m_process = nullptr;
-    QString   m_cliPath;
+    QProcess           *m_process = nullptr;
+    QString             m_cliPath;
+    QProcessEnvironment m_env;
+    bool                m_envSet  = false;
 };

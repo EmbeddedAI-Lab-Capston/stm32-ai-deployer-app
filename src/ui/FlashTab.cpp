@@ -28,6 +28,7 @@
 #include "core/AppSettings.h"
 #include "core/AppState.h"
 #include "SettingsDialog.h"
+#include "PipelineWizard.h"
 
 FlashTab::FlashTab(AppState *state, QWidget *parent)
     : QWidget(parent)
@@ -174,6 +175,17 @@ void FlashTab::setupUi()
 
     sourceLayout->addWidget(m_hexRadio);
     sourceLayout->addWidget(m_modelRadio);
+
+    // Pipeline Wizard — end-to-end .tflite → compile → flash
+    m_wizardBtn = new QPushButton(
+        tr("   Pipeline Wizard  (.tflite  → Derle  → Flash)"), this);
+    m_wizardBtn->setObjectName("primaryButton");
+    m_wizardBtn->setMinimumHeight(36);
+    m_wizardBtn->setToolTip(
+        tr("Model, sensör ve pin bilgilerini girerek\n"
+           "otomatik derleme ve flash pipeline'ını başlatır."));
+    sourceLayout->addWidget(m_wizardBtn);
+
     mainLayout->addWidget(sourceBox);
 
     connect(srcGroup, &QButtonGroup::idToggled,
@@ -437,6 +449,7 @@ void FlashTab::setupUi()
     mainLayout->addWidget(outputBox, 1);
 
     // ── Signal connections ─────────────────────────────────────────────────
+    connect(m_wizardBtn,       &QPushButton::clicked, this, &FlashTab::onPipelineWizardClicked);
     connect(browseBtn,         &QPushButton::clicked, this, &FlashTab::onBrowseClicked);
     connect(m_flashBtn,        &QPushButton::clicked, this, &FlashTab::onFlashClicked);
     connect(m_cancelBtn,       &QPushButton::clicked, this, &FlashTab::onCancelClicked);
@@ -493,6 +506,13 @@ void FlashTab::onSourceModeChanged(int id, bool checked)
     if (!checked) return;
     m_hexPanel->setVisible(id == 0);
     m_aiPanel->setVisible(id == 1);
+}
+
+void FlashTab::onPipelineWizardClicked()
+{
+    auto *wizard = new PipelineWizard(m_appState, this);
+    wizard->setAttribute(Qt::WA_DeleteOnClose);
+    wizard->exec();
 }
 
 // ── Slots: hex firmware panel ──────────────────────────────────────────────

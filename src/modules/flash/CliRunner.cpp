@@ -12,6 +12,12 @@ CliRunner::~CliRunner()
 
 void CliRunner::setCliPath(const QString &path) { m_cliPath = path; }
 
+void CliRunner::setEnvironment(const QProcessEnvironment &env)
+{
+    m_env    = env;
+    m_envSet = true;
+}
+
 bool CliRunner::isRunning() const
 {
     return m_process && m_process->state() != QProcess::NotRunning;
@@ -32,7 +38,7 @@ void CliRunner::run(const QStringList &args)
         return;
     }
     if (m_cliPath.isEmpty() || !QFile::exists(m_cliPath)) {
-        emit errorLine(tr("STM32_Programmer_CLI bulunamadı: ") + m_cliPath);
+        emit errorLine(tr("Çalıştırılabilir bulunamadı: ") + m_cliPath);
         emit finished(false, -1);
         return;
     }
@@ -48,6 +54,9 @@ void CliRunner::run(const QStringList &args)
             this, &CliRunner::onProcessFinished);
     connect(m_process, &QProcess::errorOccurred,
             this, &CliRunner::onProcessError);
+
+    if (m_envSet)
+        m_process->setProcessEnvironment(m_env);
 
     emit started();
     m_process->start(m_cliPath, args);
@@ -87,6 +96,12 @@ void CliRunner::parseProgressFromLine(const QString &line)
 
 void CliRunner::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 {
+    // Drain any output that arrived after the last readyRead signal
+    if (m_process) {
+        onReadyReadStdOut();
+        onReadyReadStdErr();
+    }
+
     const bool success = (exitCode == 0 && status == QProcess::NormalExit);
     QProcess *proc = m_process;
     m_process = nullptr;

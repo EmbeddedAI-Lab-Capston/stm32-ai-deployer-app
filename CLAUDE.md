@@ -67,7 +67,9 @@ stm32-ai-deployer/
 │   │
 │   ├── core/
 │   │   ├── AppSettings.h / .cpp     ← QSettings wrapper
-│   │   └── Database.h / .cpp        ← SQLite yöneticisi
+│   │   ├── AppState.h / .cpp        ← Merkezi çalışma zamanı durumu
+│   │   ├── ToolDetector.h / .cpp    ← GCC/Make/CLI otomatik tespit
+│   │   └── TemplateEngine.h / .cpp  ← {{PLACEHOLDER}} template sistemi
 │   │
 │   ├── modules/
 │   │   ├── board/
@@ -75,25 +77,42 @@ stm32-ai-deployer/
 │   │   │   └── BoardPresets.h       ← F4/H7/N6 sabit tanımları
 │   │   ├── flash/
 │   │   │   ├── FlashManager.h / .cpp
-│   │   │   └── CliRunner.h / .cpp   ← QProcess wrapper
+│   │   │   ├── CliRunner.h / .cpp   ← QProcess wrapper
+│   │   │   ├── XCubeAIRunner.h / .cpp ← stedgeai CLI wrapper
+│   │   │   ├── PipelineConfig.h     ← Pipeline yapılandırma struct
+│   │   │   └── PipelineRunner.h / .cpp ← .tflite→C→GCC→Flash orkestrasyonu
 │   │   ├── serial/
 │   │   │   ├── SerialWorker.h / .cpp ← QThread worker
 │   │   │   └── PacketParser.h / .cpp ← § JSON protokol parser
 │   │   └── analysis/
-│   │       ├── AnalysisManager.h / .cpp
-│   │       └── SessionModel.h       ← SQLite oturum veri modeli
+│   │       └── AnalysisManager.h / .cpp
 │   │
 │   └── ui/
 │       ├── BoardTab.h / .cpp
 │       ├── FlashTab.h / .cpp
 │       ├── MonitorTab.h / .cpp
 │       ├── AnalysisTab.h / .cpp
-│       └── SettingsDialog.h / .cpp
+│       ├── SettingsDialog.h / .cpp  ← 4 araç + Tümünü Tara
+│       └── PipelineWizard.h / .cpp  ← 4 adımlı QWizard
 │
 ├── resources/
 │   ├── app.qrc
 │   ├── style.qss                    ← Merkezi Qt stil dosyası
 │   └── icons/
+│
+├── templates/                       ← STM32 proje şablonları
+│   ├── README.md
+│   ├── base/
+│   │   ├── STM32F4/                 ← Makefile, ld, startup, Inc/, Src/
+│   │   ├── STM32H7/
+│   │   └── STM32N6/
+│   ├── sensors/
+│   │   ├── MPU6050/                 ← I2C IMU (HAR)
+│   │   ├── BME280/                  ← I2C çevre sensörü
+│   │   └── PDM_MIC/                 ← SAI PDM mikrofon (KWS)
+│   └── ai_glue/
+│       ├── ai_runner.c / .h         ← X-CUBE-AI inference wrapper
+│       └── uart_report.c / .h       ← Protokol v1.0 UART raporlama
 │
 └── docs/
     ├── protocol_v1.md               ← UART protokol referansı
@@ -261,22 +280,37 @@ CREATE TABLE sys_logs (
 
 ```cpp
 // STM32_Programmer_CLI.exe tam yolu
-AppSettings::ProgrammerCliPath   // "tools/programmer_cli_path"
+"programmer/cli_path"
+
+// stedgeai.exe tam yolu (X-CUBE-AI)
+"tools/xcubeai_cli_path"
+
+// arm-none-eabi-gcc tam yolu (Aşama 4.8)
+"tools/gcc_path"
+
+// make.exe tam yolu (Aşama 4.8)
+"tools/make_path"
+
+// İlk açılış araç taraması yapıldı mı (Aşama 4.8)
+"tools/auto_detected"
 
 // Son kullanılan COM port
-AppSettings::LastComPort         // "serial/last_com_port"
-
-// Son seçilen baud rate
-AppSettings::LastBaudRate        // "serial/last_baud_rate"  default: 115200
+"serial/last_com_port"
 
 // Son seçilen kart adı
-AppSettings::LastBoard           // "board/last_board"
+"board/last_board"
 
 // Uygulama teması
-AppSettings::Theme               // "ui/theme"  default: "dark"
+"ui/theme"  // default: "dark"
 
-// STM32_Programmer_CLI otomatik arama yapıldı mı
-AppSettings::CliAutoDetected     // "tools/cli_auto_detected"
+// Son firmware klasörü
+"flash/last_firmware_dir"
+
+// Son model klasörü (Aşama 4.8)
+"flash/last_model_dir"
+
+// Son pipeline çıktı klasörü (Aşama 4.8)
+"flash/last_output_dir"
 ```
 
 ---
@@ -292,6 +326,7 @@ AppSettings::CliAutoDetected     // "tools/cli_auto_detected"
 | 4     | Flash modülü            | ✅ Tamamlandı |
 | 4.6   | X-CUBE-AI CLI entegrasyonu | ✅ Tamamlandı |
 
+| 4.8   | Template Framework + Pipeline Wizard | ✅ Tamamlandı |
 | 5     | Veritabanı ve kayıt     | ⏳ Bekliyor  |
 | 6     | Canlı dashboard         | ⏳ Bekliyor  |
 | 7     | Model karşılaştırma     | ⏳ Bekliyor  |
@@ -332,6 +367,46 @@ cmake --build build --target clean
 | `src/modules/serial/PacketParser.h` | § protokol parser — değiştirme    |
 | `resources/style.qss`      | Tüm UI stili buradan yönetilir              |
 | `docs/protocol_v1.md`      | UART protokol referansı                     |
+
+---
+
+## Araç Yolları — Otomatik Tespit (Aşama 4.8)
+
+`ToolDetector` sınıfı ilk açılışta tüm araçları arar ve `AppSettings`'e kaydeder.
+
+| Araç                  | Arama sırası                                         |
+|-----------------------|------------------------------------------------------|
+| arm-none-eabi-gcc     | PATH → STM32CubeIDE plugins → sabit yollar          |
+| make                  | PATH → STM32CubeIDE plugins → sabit yollar          |
+| STM32_Programmer_CLI  | PATH → Program Files/ST/.../bin/                    |
+| stedgeai              | PATH → ~/STM32Cube/Repository/.../Utilities/windows/ |
+
+**Bilinen sabit yollar:**
+- GCC: `C:\ST\STM32CubeIDE_1.19.0\...\com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1...\tools\bin\arm-none-eabi-gcc.exe`
+- Make: `C:\ST\STM32CubeIDE_1.19.0\...\com.st.stm32cube.ide.mcu.externaltools.make.win32_2.2.0...\tools\bin\make.exe`
+
+## Template Yapısı (Aşama 4.8)
+
+```
+templates/base/       → Kart başına HAL iskeleti (Makefile, ld, startup, Src/, Inc/)
+templates/sensors/    → Sensör başına okuma kodu (MPU6050, BME280, PDM_MIC)
+templates/ai_glue/    → X-CUBE-AI wrapper (ai_runner) + UART raporlama (uart_report)
+```
+
+**Placeholder sistemi:** `{{KEY}}` → TemplateEngine tarafından wizard değerleriyle değiştirilir.
+
+## Pipeline Akışı (Aşama 4.8)
+
+```
+.tflite → stedgeai generate (C kodu)
+       → TemplateEngine (board + sensor + ai_glue şablonları kopyala)
+       → arm-none-eabi-gcc via Makefile (derleme)
+       → .elf
+       → STM32_Programmer_CLI (flash)
+```
+
+`PipelineWizard` (4 sayfa): Model → Sensör → Özet/Araç Doğrulama → Derleme+Flash
+`PipelineRunner`: Tüm adımları sırayla `XCubeAIRunner` ve `CliRunner` ile çalıştırır.
 
 ---
 

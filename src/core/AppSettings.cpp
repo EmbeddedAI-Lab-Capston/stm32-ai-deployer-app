@@ -100,6 +100,78 @@ QList<BoardInfo> AppSettings::customBoards() const
     return boards;
 }
 
+QString AppSettings::gccPath() const
+{
+    QSettings s;
+    return s.value(kKeyGccPath, QString{}).toString();
+}
+
+void AppSettings::setGccPath(const QString &path)
+{
+    QSettings s;
+    s.setValue(kKeyGccPath, path);
+}
+
+QString AppSettings::makePath() const
+{
+    QSettings s;
+    return s.value(kKeyMakePath, QString{}).toString();
+}
+
+void AppSettings::setMakePath(const QString &path)
+{
+    QSettings s;
+    s.setValue(kKeyMakePath, path);
+}
+
+bool AppSettings::toolsAutoDetected() const
+{
+    QSettings s;
+    return s.value(kKeyToolsAutoDetected, false).toBool();
+}
+
+void AppSettings::setToolsAutoDetected(bool value)
+{
+    QSettings s;
+    s.setValue(kKeyToolsAutoDetected, value);
+}
+
+QString AppSettings::lastModelDir() const
+{
+    QSettings s;
+    return s.value(kKeyLastModelDir, QDir::homePath()).toString();
+}
+
+void AppSettings::setLastModelDir(const QString &dir)
+{
+    QSettings s;
+    s.setValue(kKeyLastModelDir, dir);
+}
+
+QString AppSettings::lastOutputDir() const
+{
+    QSettings s;
+    return s.value(kKeyLastOutputDir, QDir::homePath()).toString();
+}
+
+void AppSettings::setLastOutputDir(const QString &dir)
+{
+    QSettings s;
+    s.setValue(kKeyLastOutputDir, dir);
+}
+
+QString AppSettings::cubeSdkPath() const
+{
+    QSettings s;
+    return s.value(kKeyCubeSdkPath, QString{}).toString();
+}
+
+void AppSettings::setCubeSdkPath(const QString &path)
+{
+    QSettings s;
+    s.setValue(kKeyCubeSdkPath, path);
+}
+
 void AppSettings::addCustomBoard(const BoardInfo &board)
 {
     if (board.name.trimmed().isEmpty())
