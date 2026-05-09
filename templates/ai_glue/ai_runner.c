@@ -9,10 +9,12 @@
 
 #include "ai_runner.h"
 #include "ai_config.h"
+#include "main.h"
 
 /* X-CUBE-AI headers — provided by stedgeai generate output */
 #include "network.h"
 #include "network_data.h"
+#include "network_data_params.h"
 
 #include <string.h>
 
@@ -20,8 +22,8 @@
 static uint8_t ai_activations[AI_ACTIVATIONS_SIZE] __attribute__((aligned(4)));
 
 static ai_handle  s_network    = AI_HANDLE_NULL;
-static ai_buffer  s_in_buffer[AI_NETWORK_IN_NUM];
-static ai_buffer  s_out_buffer[AI_NETWORK_OUT_NUM];
+static ai_buffer *s_in_buffer   = NULL;
+static ai_buffer *s_out_buffer  = NULL;
 
 /* DWT cycle counter helpers */
 #ifndef DWT_CYCCNT
@@ -37,7 +39,7 @@ static uint32_t dwt_us(uint32_t cycles)
 }
 
 /* Class labels — customise for your model */
-static const char *const CLASS_LABELS[AI_OUTPUT_CLASSES] = {
+static const char *const CLASS_LABELS[] = {
     "walking", "running", "sitting", "standing",
 #if AI_OUTPUT_CLASSES > 4
     "lying", "cycling", "unknown", "idle",
@@ -53,22 +55,17 @@ void AI_Runner_Init(void)
     DWT_CYCCNT = 0;
     DWT_CTRL  |= 1;
 
-    const ai_handle network_data[] = { AI_NETWORK_DATA_WEIGHTS_GET() };
+    ai_handle *activation_buffers = AI_NETWORK_DATA_ACTIVATIONS_TABLE_GET();
+    activation_buffers[0] = AI_HANDLE_PTR(ai_activations);
 
     ai_error err = ai_network_create_and_init(&s_network,
-                                               network_data, NULL);
+                                               activation_buffers,
+                                               NULL);
     (void)err;  /* NOTE: check err in production */
 
-    /* Bind static activation buffer */
-    ai_network_params params = {
-        AI_NETWORK_DATA_WEIGHTS(AI_NETWORK_DATA_WEIGHTS_GET()),
-        AI_NETWORK_DATA_ACTIVATIONS(ai_activations)
-    };
-    ai_network_init(s_network, &params);
-
     /* Get I/O buffer info */
-    ai_network_inputs_get(s_network,  s_in_buffer);
-    ai_network_outputs_get(s_network, s_out_buffer);
+    s_in_buffer  = ai_network_inputs_get(s_network, NULL);
+    s_out_buffer = ai_network_outputs_get(s_network, NULL);
 }
 
 /* ── Infer ────────────────────────────────────────────────────────────── */
@@ -76,11 +73,11 @@ void AI_Runner_Init(void)
 uint32_t AI_Runner_Infer(const float *input, AI_InferenceResult *result)
 {
     /* Point input buffer to caller's data */
-    s_in_buffer[0].data = (void *)input;
+    s_in_buffer[0].data = AI_HANDLE_PTR(input);
 
     /* Allocate output on stack */
-    float output_data[AI_OUTPUT_CLASSES] = {0};
-    s_out_buffer[0].data = output_data;
+    ai_i8 output_data[AI_NETWORK_OUT_1_SIZE] = {0};
+    s_out_buffer[0].data = AI_HANDLE_PTR(output_data);
 
     uint32_t t0 = DWT_CYCCNT;
     ai_network_run(s_network, s_in_buffer, s_out_buffer);
@@ -88,7 +85,7 @@ uint32_t AI_Runner_Infer(const float *input, AI_InferenceResult *result)
 
     /* Argmax */
     uint8_t best = 0;
-    float   best_val = output_data[0];
+    ai_i8   best_val = output_data[0];
     for (int i = 1; i < AI_OUTPUT_CLASSES; i++) {
         if (output_data[i] > best_val) {
             best_val = output_data[i];
@@ -97,7 +94,7 @@ uint32_t AI_Runner_Infer(const float *input, AI_InferenceResult *result)
     }
 
     result->class_id       = best;
-    result->confidence_pct = (uint8_t)(best_val * 100.0f + 0.5f);
+    result->confidence_pct = (uint8_t)((best_val > 0) ? best_val : 0);
     if (best < AI_OUTPUT_CLASSES)
         strncpy(result->label, CLASS_LABELS[best], sizeof(result->label) - 1);
     else

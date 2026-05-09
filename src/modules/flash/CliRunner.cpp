@@ -1,6 +1,8 @@
 #include "CliRunner.h"
 
 #include <QFile>
+#include <QFileInfo>
+#include <QRegularExpression>
 
 CliRunner::CliRunner(QObject *parent) : QObject(parent) {}
 
@@ -37,7 +39,8 @@ void CliRunner::run(const QStringList &args)
         emit errorLine(tr("Zaten çalışan bir işlem var."));
         return;
     }
-    if (m_cliPath.isEmpty() || !QFile::exists(m_cliPath)) {
+    const QFileInfo cliInfo(m_cliPath);
+    if (m_cliPath.isEmpty() || (cliInfo.isAbsolute() && !cliInfo.exists())) {
         emit errorLine(tr("Çalıştırılabilir bulunamadı: ") + m_cliPath);
         emit finished(false, -1);
         return;
@@ -100,6 +103,22 @@ void CliRunner::onProcessFinished(int exitCode, QProcess::ExitStatus status)
     if (m_process) {
         onReadyReadStdOut();
         onReadyReadStdErr();
+        const auto drain = [this](const QByteArray &data, bool isError) {
+            const QString text = QString::fromLocal8Bit(data);
+            for (const QString &raw : text.split(QRegularExpression("[\\r\\n]+"),
+                                                  Qt::SkipEmptyParts)) {
+                const QString line = raw.trimmed();
+                if (line.isEmpty()) continue;
+                if (isError)
+                    emit errorLine(line);
+                else {
+                    emit outputLine(line);
+                    parseProgressFromLine(line);
+                }
+            }
+        };
+        drain(m_process->readAllStandardOutput(), false);
+        drain(m_process->readAllStandardError(), true);
     }
 
     const bool success = (exitCode == 0 && status == QProcess::NormalExit);

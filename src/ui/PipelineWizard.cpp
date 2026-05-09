@@ -21,7 +21,26 @@
 
 #include "core/AppSettings.h"
 #include "core/AppState.h"
+#include "modules/board/BoardPresets.h"
 #include "modules/flash/PipelineRunner.h"
+
+static QString sdkPatternForBoard(const QString &board)
+{
+    if (board.contains("H7", Qt::CaseInsensitive))
+        return QStringLiteral("STM32Cube_FW_H7_*");
+    if (board.contains("N6", Qt::CaseInsensitive))
+        return QStringLiteral("STM32Cube_FW_N6_*");
+    return QStringLiteral("STM32Cube_FW_F4_*");
+}
+
+static QString sdkTokenForBoard(const QString &board)
+{
+    if (board.contains("H7", Qt::CaseInsensitive))
+        return QStringLiteral("STM32Cube_FW_H7_");
+    if (board.contains("N6", Qt::CaseInsensitive))
+        return QStringLiteral("STM32Cube_FW_N6_");
+    return QStringLiteral("STM32Cube_FW_F4_");
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 //  Page 1 — Model selection
@@ -268,12 +287,17 @@ public:
         m_progLabel->setTextFormat(Qt::RichText);
         m_sdkLabel->setTextFormat(Qt::RichText);
         m_sdkLabel->setWordWrap(true);
+        m_sdkBrowseBtn = new QPushButton(tr("Seç"), this);
+        m_sdkBrowseBtn->setFixedWidth(60);
+        auto *sdkRow = new QHBoxLayout;
+        sdkRow->addWidget(m_sdkLabel, 1);
+        sdkRow->addWidget(m_sdkBrowseBtn);
 
         toolForm->addRow("arm-none-eabi-gcc:", m_gccLabel);
         toolForm->addRow("make:",              m_makeLabel);
         toolForm->addRow("stedgeai:",          m_xcubeLabel);
         toolForm->addRow("STM32_Prog_CLI:",    m_progLabel);
-        toolForm->addRow("STM32Cube SDK:",     m_sdkLabel);
+        toolForm->addRow("STM32Cube SDK:",     sdkRow);
         layout->addWidget(toolBox);
 
         // Output directory
@@ -289,6 +313,7 @@ public:
         layout->addStretch();
 
         connect(outBtn, &QPushButton::clicked, this, &SummaryPage::onChooseOutDir);
+        connect(m_sdkBrowseBtn, &QPushButton::clicked, this, &SummaryPage::onChooseSdkDir);
         connect(m_outEdit, &QLineEdit::textChanged,
                 this, &SummaryPage::completeChanged);
     }
@@ -316,12 +341,18 @@ public:
 
         // Detect STM32Cube SDK
         m_detectedSdkPath = s.cubeSdkPath();
+        const QString expectedSdkPattern = sdkPatternForBoard(m_cfg->targetBoard);
+        const QString expectedSdkToken = sdkTokenForBoard(m_cfg->targetBoard);
+        if (!m_detectedSdkPath.isEmpty()
+            && !QDir(m_detectedSdkPath).dirName().contains(expectedSdkToken, Qt::CaseInsensitive)) {
+            m_detectedSdkPath.clear();
+        }
         if (m_detectedSdkPath.isEmpty() || !QDir(m_detectedSdkPath).exists()) {
             const QString repoBase = QDir::homePath() + "/STM32Cube/Repository";
             const QDir repo(repoBase);
             if (repo.exists()) {
                 const QStringList fw = repo.entryList(
-                    QStringList{"STM32Cube_FW_F4_*","STM32Cube_FW_H7_*","STM32Cube_FW_N6_*"},
+                    QStringList{expectedSdkPattern},
                     QDir::Dirs, QDir::Name | QDir::Reversed);
                 if (!fw.isEmpty())
                     m_detectedSdkPath = QDir::cleanPath(repoBase + "/" + fw.first());
@@ -333,8 +364,9 @@ public:
                     .arg(QDir(m_detectedSdkPath).dirName()));
         } else {
             m_sdkLabel->setText(
-                "<span style='color:#F38BA8;'>✗ Bulunamadı — STM32CubeMX ile "
-                "STM32Cube_FW_F4 paketini indirin</span>");
+                QStringLiteral("<span style='color:#F38BA8;'>✗ Bulunamadı — STM32CubeMX ile ")
+                + expectedSdkPattern.toHtmlEscaped()
+                + QStringLiteral(" paketini indirin</span>"));
         }
 
         // Pre-fill output dir
@@ -359,6 +391,8 @@ public:
         m_cfg->cubeSdkPath       = m_detectedSdkPath;
         m_cfg->outputDir         = m_outEdit->text().trimmed();
         s.setLastOutputDir(m_cfg->outputDir);
+        if (!m_cfg->cubeSdkPath.isEmpty())
+            s.setCubeSdkPath(m_cfg->cubeSdkPath);
         return true;
     }
 
@@ -370,9 +404,57 @@ private slots:
         if (!dir.isEmpty()) m_outEdit->setText(dir);
     }
 
+    void onChooseSdkDir()
+    {
+        const QString startDir = m_detectedSdkPath.isEmpty()
+            ? QDir::homePath() + "/STM32Cube/Repository"
+            : m_detectedSdkPath;
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("STM32Cube SDK Klasörü Seç"), startDir);
+        if (dir.isEmpty())
+            return;
+
+        m_detectedSdkPath = QDir::cleanPath(dir);
+        updateSdkLabel();
+        emit completeChanged();
+    }
+
 private:
+    void updateSdkLabel()
+    {
+        const QString expectedSdkPattern = sdkPatternForBoard(m_cfg->targetBoard);
+        const QString expectedSdkToken = sdkTokenForBoard(m_cfg->targetBoard);
+
+        if (!m_detectedSdkPath.isEmpty() && QDir(m_detectedSdkPath).exists()) {
+            const QString folderName = QDir(m_detectedSdkPath).dirName();
+            const bool boardMatches = folderName.contains(expectedSdkToken, Qt::CaseInsensitive);
+            const QString color = boardMatches ? QStringLiteral("#A6E3A1")
+                                               : QStringLiteral("#FAB387");
+            const QString prefix = boardMatches ? QStringLiteral("✓ ")
+                                                : QStringLiteral("! ");
+            const QString suffix = boardMatches
+                ? QString()
+                : QStringLiteral(" — hedef kart için beklenen: ")
+                    + expectedSdkPattern.toHtmlEscaped();
+
+            m_sdkLabel->setText(
+                QString("<span style='color:%1;'>%2%3%4</span>")
+                    .arg(color,
+                         prefix,
+                         folderName.toHtmlEscaped(),
+                         suffix));
+            return;
+        }
+
+        m_sdkLabel->setText(
+            QStringLiteral("<span style='color:#F38BA8;'>✗ Bulunamadı — STM32CubeMX ile ")
+            + expectedSdkPattern.toHtmlEscaped()
+            + QStringLiteral(" paketini indirin veya Seç ile klasörü gösterin</span>"));
+    }
+
     PipelineConfig *m_cfg;
     QLabel    *m_gccLabel, *m_makeLabel, *m_xcubeLabel, *m_progLabel, *m_sdkLabel;
+    QPushButton *m_sdkBrowseBtn;
     QLineEdit *m_outEdit;
     QString    m_detectedSdkPath;
 };
@@ -531,10 +613,14 @@ PipelineWizard::PipelineWizard(AppState *state, QWidget *parent)
     setOption(QWizard::NoCancelButtonOnLastPage);
 
     // Populate board from AppState
-    if (m_appState && !m_appState->activeBoard().isNull())
-        m_config.targetBoard = m_appState->activeBoard().name;
-    else
+    if (m_appState && !m_appState->activeBoard().isNull()) {
+        const BoardInfo normalized = BoardPresets::find(m_appState->activeBoard().name);
+        m_config.targetBoard = normalized.isNull()
+            ? m_appState->activeBoard().name
+            : normalized.name;
+    } else {
         m_config.targetBoard = "STM32F4";
+    }
 
     setupPages();
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "stm32f4xx_hal.h"
+#include "main.h"
 #include <stdint.h>
 
 /* I2C address: SDO=LOW → 0xEC, SDO=HIGH → 0xEE */

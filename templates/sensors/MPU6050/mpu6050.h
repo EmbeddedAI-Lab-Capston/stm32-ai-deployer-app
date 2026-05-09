@@ -1,6 +1,6 @@
 #pragma once
 
-#include "stm32f4xx_hal.h"  /* Replace with stm32h7xx_hal.h for H7 */
+#include "main.h"
 #include <stdint.h>
 
 /* I2C address: AD0=LOW → 0xD0, AD0=HIGH → 0xD2 */

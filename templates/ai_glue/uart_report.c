@@ -8,7 +8,7 @@
 
 #include "uart_report.h"
 
-#include "stm32f4xx_hal.h"  /* Replace with stm32h7xx_hal.h for H7/N6 */
+#include "main.h"
 #include <stdio.h>
 #include <string.h>
 
