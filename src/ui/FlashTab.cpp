@@ -125,6 +125,8 @@ void FlashTab::refreshXCubeAIStatus()
     }
 
     m_xcubeRunner->setCliPath(path);
+    if (!m_xcubeStatusLabel)
+        return;
 
     const bool available = !path.isEmpty() &&
                            (path == "stm32ai" || QFile::exists(path));
@@ -132,7 +134,6 @@ void FlashTab::refreshXCubeAIStatus()
     if (available) {
         m_xcubeStatusLabel->setText(tr("✓ stedgeai hazır"));
         m_xcubeStatusLabel->setStyleSheet("color: #A6E3A1;");
-        m_modelRadio->setEnabled(true);
     } else {
         m_xcubeStatusLabel->setText(
             tr("⚠ stedgeai bulunamadı — Ayarlar menüsünden yolu girin"));
@@ -165,8 +166,9 @@ void FlashTab::setupUi()
     auto *sourceLayout = new QVBoxLayout(sourceBox);
     sourceLayout->setSpacing(6);
 
-    m_hexRadio   = new QRadioButton(tr("Hazır Firmware (.hex / .bin)"), this);
+    m_hexRadio   = new QRadioButton(tr("Hazır Firmware (.hex / .bin / .elf)"), this);
     m_modelRadio = new QRadioButton(tr("AI Modelinden Üret (.tflite / .h5)"), this);
+    m_modelRadio->setVisible(false);
     m_hexRadio->setChecked(true);
 
     auto *srcGroup = new QButtonGroup(this);
