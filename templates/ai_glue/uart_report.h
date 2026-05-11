@@ -33,3 +33,13 @@ void UART_Report_SysStatus(uint32_t    uptime_s,
 
 /* {"t":"err","code":N,"msg":"..."} */
 void UART_Report_Error(uint32_t code, const char *msg);
+
+/* {"t":"bench","samples":N,"avg_us":N,"min_us":N,"max_us":N,"ram_b":N,"free_ram_b":N,"label":"...","card":"..."} */
+void UART_Report_Benchmark(uint32_t samples,
+                           uint32_t avg_us,
+                           uint32_t min_us,
+                           uint32_t max_us,
+                           uint32_t ram_b,
+                           uint32_t free_ram_b,
+                           const char *label,
+                           const char *card);

@@ -10,6 +10,7 @@ class BoardTab;
 class FlashTab;
 class MonitorTab;
 class AnalysisTab;
+class BenchmarkTab;
 class SettingsDialog;
 class FlashManager;
 class SerialManager;
@@ -46,6 +47,7 @@ private:
     BoardTab       *m_boardTab      = nullptr;
     FlashTab       *m_flashTab      = nullptr;
     MonitorTab     *m_monitorTab    = nullptr;
+    BenchmarkTab   *m_benchmarkTab  = nullptr;
     AnalysisTab    *m_analysisTab   = nullptr;
     SettingsDialog *m_settingsDialog = nullptr;
 

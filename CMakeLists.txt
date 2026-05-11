@@ -82,6 +82,9 @@ set(PROJECT_SOURCES
     src/ui/AnalysisTab.h
     src/ui/AnalysisTab.cpp
 
+    src/ui/BenchmarkTab.h
+    src/ui/BenchmarkTab.cpp
+
     src/ui/Sidebar.h
     src/ui/Sidebar.cpp
 

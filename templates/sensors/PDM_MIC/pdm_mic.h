@@ -30,4 +30,4 @@ void              PDM_Mic_ComputeMFCC(const int16_t *pcm, float *mfcc, uint16_t 
 
 /* Sensor API used by main.c template */
 void Sensor_Init(I2C_HandleTypeDef *hi2c);  /* hi2c unused for PDM; kept for API compat */
-void Sensor_Read(float *out, uint16_t len);
+HAL_StatusTypeDef Sensor_Read(float *out, uint16_t len);

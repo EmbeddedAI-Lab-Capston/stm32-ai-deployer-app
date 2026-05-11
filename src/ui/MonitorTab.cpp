@@ -261,6 +261,8 @@ void MonitorTab::onBootReceived(const BootData &data)
             .arg(data.sdk.isEmpty() ? "--" : data.sdk)
             .arg(data.model.isEmpty() ? "--" : data.model)
             .arg(data.baud));
+    if (!data.sensor.isEmpty())
+        appendHtmlLine("#A6E3A1", QString("sensor firmware=%1").arg(data.sensor));
 }
 
 void MonitorTab::onInferenceReceived(const InferenceData &data)

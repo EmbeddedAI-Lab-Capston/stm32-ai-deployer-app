@@ -10,6 +10,7 @@ PacketParser::PacketParser(QObject *parent) : QObject(parent)
     qRegisterMetaType<SysData>("SysData");
     qRegisterMetaType<BootData>("BootData");
     qRegisterMetaType<ErrorData>("ErrorData");
+    qRegisterMetaType<BenchData>("BenchData");
 }
 
 void PacketParser::feed(const QByteArray &data)
@@ -78,6 +79,7 @@ void PacketParser::processPacket(const QByteArray &jsonBytes)
         d.card  = obj.value("card").toString();
         d.sdk   = obj.value("sdk").toString();
         d.model = obj.value("model").toString();
+        d.sensor = obj.value("sensor").toString();
         d.baud  = static_cast<quint32>(obj.value("baud").toInt());
         d.flash_kb = static_cast<quint32>(obj.value("flash_kb").toInt());
         d.ram_kb = static_cast<quint32>(obj.value("ram_kb").toInt());
@@ -90,6 +92,19 @@ void PacketParser::processPacket(const QByteArray &jsonBytes)
         d.msg       = obj.value("msg").toString();
         d.timestamp = QDateTime::currentDateTime();
         emit errorReceived(d);
+    }
+    else if (type == "bench") {
+        BenchData d;
+        d.samples    = static_cast<quint32>(obj.value("samples").toInt());
+        d.avg_us     = static_cast<quint32>(obj.value("avg_us").toInt());
+        d.min_us     = static_cast<quint32>(obj.value("min_us").toInt());
+        d.max_us     = static_cast<quint32>(obj.value("max_us").toInt());
+        d.ram_b      = static_cast<quint32>(obj.value("ram_b").toInt());
+        d.free_ram_b = static_cast<quint32>(obj.value("free_ram_b").toInt());
+        d.label      = obj.value("label").toString();
+        d.card       = obj.value("card").toString();
+        d.timestamp  = QDateTime::currentDateTime();
+        emit benchReceived(d);
     }
     else {
         emit malformedPacket(jsonBytes);

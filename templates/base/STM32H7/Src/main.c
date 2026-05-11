@@ -8,6 +8,9 @@
 #include "uart_report.h"
 #include "{{SENSOR_TYPE_LOWER}}.h"
 
+#include <stdio.h>
+#include <string.h>
+
 UART_HandleTypeDef huart3;
 I2C_HandleTypeDef  hi2c1;
 
@@ -15,6 +18,13 @@ static void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_I2C1_Init(void);
+static void Process_Uart_Command(void);
+static void Run_Benchmark(uint32_t samples, float min_v, float max_v, uint32_t seed);
+
+static char s_cmd_buf[96];
+static uint8_t s_cmd_len = 0;
+static volatile uint8_t s_cmd_ready = 0;
+static uint8_t s_rx_byte = 0;
 
 int main(void)
 {
@@ -26,14 +36,21 @@ int main(void)
 
     Sensor_Init(&hi2c1);
     AI_Runner_Init();
+    UART_Report_SetHandle(&huart3);
+    HAL_UART_Receive_IT(&huart3, &s_rx_byte, 1);
 
     UART_Report_Boot(AI_MODEL_NAME, AI_TARGET_BOARD, "EdgeAI_v1.0", 115200);
 
     uint32_t cycle = 0;
 
     while (1) {
+        Process_Uart_Command();
+
         float input[AI_INPUT_SIZE];
-        Sensor_Read(input, AI_INPUT_SIZE);
+        if (Sensor_Read(input, AI_INPUT_SIZE) != HAL_OK) {
+            HAL_Delay(200);
+            continue;
+        }
 
         AI_InferenceResult result;
         uint32_t inf_us = AI_Runner_Infer(input, &result);
@@ -53,6 +70,107 @@ int main(void)
         }
 
         HAL_Delay(16);
+    }
+}
+
+static uint32_t bench_rand(uint32_t *state)
+{
+    *state = (*state * 1664525UL) + 1013904223UL;
+    return *state;
+}
+
+static void Run_Benchmark(uint32_t samples, float min_v, float max_v, uint32_t seed)
+{
+    if (samples == 0) samples = 1;
+    if (samples > 10000) samples = 10000;
+    if (max_v < min_v) {
+        float tmp = min_v;
+        min_v = max_v;
+        max_v = tmp;
+    }
+
+    uint32_t total_us = 0;
+    uint32_t min_us = 0xFFFFFFFFUL;
+    uint32_t max_us = 0;
+    AI_InferenceResult result = {0};
+    float input[AI_INPUT_SIZE];
+    uint32_t rng = seed ? seed : 1;
+
+    for (uint32_t i = 0; i < samples; ++i) {
+        for (uint32_t j = 0; j < AI_INPUT_SIZE; ++j) {
+            uint32_t r = bench_rand(&rng);
+            float unit = (float)(r & 0x00FFFFFFUL) / 16777215.0f;
+            input[j] = min_v + unit * (max_v - min_v);
+        }
+
+        uint32_t inf_us = AI_Runner_Infer(input, &result);
+        total_us += inf_us;
+        if (inf_us < min_us) min_us = inf_us;
+        if (inf_us > max_us) max_us = inf_us;
+    }
+
+    UART_Report_Benchmark(samples,
+                          total_us / samples,
+                          min_us,
+                          max_us,
+                          AI_Runner_GetRamUsage(),
+                          AI_Runner_GetFreeRam(),
+                          result.label,
+                          AI_TARGET_BOARD);
+}
+
+static void Process_Uart_Command(void)
+{
+    if (!s_cmd_ready)
+        return;
+
+    char cmd[96];
+    __disable_irq();
+    memcpy(cmd, s_cmd_buf, sizeof(cmd));
+    s_cmd_ready = 0;
+    __enable_irq();
+
+    unsigned long samples = 20;
+    long min_milli = 0;
+    long max_milli = 1000;
+    unsigned long seed = 1234;
+    if (sscanf(cmd, "BENCH %lu %ld %ld %lu",
+               &samples, &min_milli, &max_milli, &seed) >= 1) {
+        Run_Benchmark((uint32_t)samples,
+                      (float)min_milli / 1000.0f,
+                      (float)max_milli / 1000.0f,
+                      (uint32_t)seed);
+    } else if (strcmp(cmd, "INFO?") == 0 || strcmp(cmd, "BOOT?") == 0) {
+        UART_Report_Boot(AI_MODEL_NAME, AI_TARGET_BOARD, "EdgeAI_v1.0", 115200);
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART3) {
+        char ch = (char)s_rx_byte;
+        if (!s_cmd_ready) {
+            if (ch == '\r' || ch == '\n') {
+                if (s_cmd_len > 0) {
+                    s_cmd_buf[s_cmd_len] = '\0';
+                    s_cmd_len = 0;
+                    s_cmd_ready = 1;
+                }
+            } else if (s_cmd_len < sizeof(s_cmd_buf) - 1) {
+                s_cmd_buf[s_cmd_len++] = ch;
+            } else {
+                s_cmd_len = 0;
+            }
+        }
+        HAL_UART_Receive_IT(&huart3, &s_rx_byte, 1);
+    }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART3) {
+        s_cmd_len = 0;
+        HAL_UART_Receive_IT(&huart3, &s_rx_byte, 1);
     }
 }
 

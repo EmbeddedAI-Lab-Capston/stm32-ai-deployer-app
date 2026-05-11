@@ -40,9 +40,9 @@ static uint32_t dwt_us(uint32_t cycles)
 
 /* Class labels — customise for your model */
 static const char *const CLASS_LABELS[] = {
-    "walking", "running", "sitting", "standing",
+    "normal", "anomaly", "class_2", "class_3",
 #if AI_OUTPUT_CLASSES > 4
-    "lying", "cycling", "unknown", "idle",
+    "class_4", "class_5", "class_6", "class_7",
 #endif
 };
 
@@ -93,8 +93,12 @@ uint32_t AI_Runner_Infer(const float *input, AI_InferenceResult *result)
         }
     }
 
+    int32_t confidence = ((int32_t)best_val + 128) * 100 / 255;
+    if (confidence < 0) confidence = 0;
+    if (confidence > 100) confidence = 100;
+
     result->class_id       = best;
-    result->confidence_pct = (uint8_t)((best_val > 0) ? best_val : 0);
+    result->confidence_pct = (uint8_t)confidence;
     if (best < AI_OUTPUT_CLASSES)
         strncpy(result->label, CLASS_LABELS[best], sizeof(result->label) - 1);
     else

@@ -11,6 +11,7 @@
 #include <string.h>
 
 static I2C_HandleTypeDef *s_hi2c = NULL;
+static HAL_StatusTypeDef s_init_status = HAL_ERROR;
 
 /* Calibration data */
 static uint16_t dig_T1;
@@ -31,13 +32,13 @@ HAL_StatusTypeDef BME280_Init(I2C_HandleTypeDef *hi2c)
     uint8_t chip_id = 0;
     HAL_StatusTypeDef ret;
 
-    ret = HAL_I2C_Mem_Read(hi2c, BME280_I2C_ADDR, BME280_REG_CHIP_ID,
+    ret = HAL_I2C_Mem_Read(hi2c, BME280_HAL_ADDR, BME280_REG_CHIP_ID,
                            I2C_MEMADD_SIZE_8BIT, &chip_id, 1, 100);
     if (ret != HAL_OK || chip_id != BME280_CHIP_ID_VAL) return HAL_ERROR;
 
     /* Read calibration data — registers 0x88..0xA1 and 0xE1..0xE7 */
     uint8_t calib[26];
-    ret = HAL_I2C_Mem_Read(hi2c, BME280_I2C_ADDR, 0x88,
+    ret = HAL_I2C_Mem_Read(hi2c, BME280_HAL_ADDR, 0x88,
                            I2C_MEMADD_SIZE_8BIT, calib, 26, 100);
     if (ret != HAL_OK) return ret;
 
@@ -57,11 +58,11 @@ HAL_StatusTypeDef BME280_Init(I2C_HandleTypeDef *hi2c)
 
     /* Set oversampling: T×2, P×16, H×1; normal mode */
     uint8_t ctrl = 0x01; /* H oversample ×1 */
-    HAL_I2C_Mem_Write(hi2c, BME280_I2C_ADDR, BME280_REG_CTRL_HUM,
+    HAL_I2C_Mem_Write(hi2c, BME280_HAL_ADDR, BME280_REG_CTRL_HUM,
                       I2C_MEMADD_SIZE_8BIT, &ctrl, 1, 100);
 
     ctrl = 0xB7; /* T×2 P×16 normal mode */
-    HAL_I2C_Mem_Write(hi2c, BME280_I2C_ADDR, BME280_REG_CTRL_MEAS,
+    HAL_I2C_Mem_Write(hi2c, BME280_HAL_ADDR, BME280_REG_CTRL_MEAS,
                       I2C_MEMADD_SIZE_8BIT, &ctrl, 1, 100);
 
     return HAL_OK;
@@ -73,7 +74,7 @@ HAL_StatusTypeDef BME280_ReadAll(I2C_HandleTypeDef *hi2c, BME280_Data *data)
 {
     uint8_t raw[8];
     HAL_StatusTypeDef ret = HAL_I2C_Mem_Read(
-        hi2c, BME280_I2C_ADDR, BME280_REG_PRESS_MSB,
+        hi2c, BME280_HAL_ADDR, BME280_REG_PRESS_MSB,
         I2C_MEMADD_SIZE_8BIT, raw, 8, 100);
     if (ret != HAL_OK) return ret;
 
@@ -123,15 +124,21 @@ HAL_StatusTypeDef BME280_ReadAll(I2C_HandleTypeDef *hi2c, BME280_Data *data)
 void Sensor_Init(I2C_HandleTypeDef *hi2c)
 {
     s_hi2c = hi2c;
-    BME280_Init(hi2c);
+    s_init_status = BME280_Init(hi2c);
 }
 
-void Sensor_Read(float *out, uint16_t len)
+HAL_StatusTypeDef Sensor_Read(float *out, uint16_t len)
 {
     BME280_Data d = {0};
-    if (s_hi2c) BME280_ReadAll(s_hi2c, &d);
+    if (!s_hi2c || s_init_status != HAL_OK)
+        return HAL_ERROR;
+
+    HAL_StatusTypeDef ret = BME280_ReadAll(s_hi2c, &d);
+    if (ret != HAL_OK)
+        return ret;
 
     float vals[3] = { d.temperature_c, d.pressure_hpa, d.humidity_pct };
     for (uint16_t i = 0; i < len; i++)
         out[i] = vals[i % 3];
+    return HAL_OK;
 }

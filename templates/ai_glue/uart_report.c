@@ -8,6 +8,7 @@
 
 #include "uart_report.h"
 
+#include "ai_config.h"
 #include "main.h"
 #include <stdio.h>
 #include <string.h>
@@ -57,8 +58,8 @@ void UART_Report_Boot(const char *model,
     char json[200];
     snprintf(json, sizeof(json),
              "{\"t\":\"boot\",\"card\":\"%s\",\"sdk\":\"%s\","
-             "\"model\":\"%s\",\"baud\":%lu}",
-             card, sdk, model, (unsigned long)baud);
+             "\"model\":\"%s\",\"sensor\":\"%s\",\"baud\":%lu}",
+             card, sdk, model, AI_SENSOR_TYPE, (unsigned long)baud);
     send_packet(json);
 }
 
@@ -99,5 +100,30 @@ void UART_Report_Error(uint32_t code, const char *msg)
     snprintf(json, sizeof(json),
              "{\"t\":\"err\",\"code\":%lu,\"msg\":\"%s\"}",
              (unsigned long)code, msg);
+    send_packet(json);
+}
+
+void UART_Report_Benchmark(uint32_t samples,
+                           uint32_t avg_us,
+                           uint32_t min_us,
+                           uint32_t max_us,
+                           uint32_t ram_b,
+                           uint32_t free_ram_b,
+                           const char *label,
+                           const char *card)
+{
+    char json[240];
+    snprintf(json, sizeof(json),
+             "{\"t\":\"bench\",\"samples\":%lu,\"avg_us\":%lu,"
+             "\"min_us\":%lu,\"max_us\":%lu,\"ram_b\":%lu,"
+             "\"free_ram_b\":%lu,\"label\":\"%s\",\"card\":\"%s\"}",
+             (unsigned long)samples,
+             (unsigned long)avg_us,
+             (unsigned long)min_us,
+             (unsigned long)max_us,
+             (unsigned long)ram_b,
+             (unsigned long)free_ram_b,
+             label,
+             card);
     send_packet(json);
 }

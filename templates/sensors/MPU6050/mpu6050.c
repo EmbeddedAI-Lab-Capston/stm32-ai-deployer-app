@@ -9,6 +9,7 @@
 #include <string.h>
 
 static I2C_HandleTypeDef *s_hi2c = NULL;
+static HAL_StatusTypeDef s_init_status = HAL_ERROR;
 
 /* ── Init ─────────────────────────────────────────────────────────────── */
 
@@ -19,31 +20,31 @@ HAL_StatusTypeDef MPU6050_Init(I2C_HandleTypeDef *hi2c)
 
     /* Wake up: clear SLEEP bit */
     data = 0x00;
-    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_I2C_ADDR, MPU6050_REG_PWR_MGMT_1,
+    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_HAL_ADDR, MPU6050_REG_PWR_MGMT_1,
                             I2C_MEMADD_SIZE_8BIT, &data, 1, 100);
     if (ret != HAL_OK) return ret;
 
     /* Sample rate divider: 0 → 1 kHz / (1+0) = 1 kHz */
     data = 0x00;
-    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_I2C_ADDR, MPU6050_REG_SMPLRT_DIV,
+    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_HAL_ADDR, MPU6050_REG_SMPLRT_DIV,
                             I2C_MEMADD_SIZE_8BIT, &data, 1, 100);
     if (ret != HAL_OK) return ret;
 
     /* DLPF: bandwidth 42 Hz */
     data = 0x03;
-    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_I2C_ADDR, MPU6050_REG_CONFIG,
+    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_HAL_ADDR, MPU6050_REG_CONFIG,
                             I2C_MEMADD_SIZE_8BIT, &data, 1, 100);
     if (ret != HAL_OK) return ret;
 
     /* Gyro: ±250 °/s */
     data = 0x00;
-    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_I2C_ADDR, MPU6050_REG_GYRO_CONFIG,
+    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_HAL_ADDR, MPU6050_REG_GYRO_CONFIG,
                             I2C_MEMADD_SIZE_8BIT, &data, 1, 100);
     if (ret != HAL_OK) return ret;
 
     /* Accel: ±2 g */
     data = 0x00;
-    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_I2C_ADDR, MPU6050_REG_ACCEL_CONFIG,
+    ret = HAL_I2C_Mem_Write(hi2c, MPU6050_HAL_ADDR, MPU6050_REG_ACCEL_CONFIG,
                             I2C_MEMADD_SIZE_8BIT, &data, 1, 100);
     return ret;
 }
@@ -54,7 +55,7 @@ HAL_StatusTypeDef MPU6050_ReadAll(I2C_HandleTypeDef *hi2c, MPU6050_Data *data)
 {
     uint8_t raw[14];
     HAL_StatusTypeDef ret = HAL_I2C_Mem_Read(
-        hi2c, MPU6050_I2C_ADDR, MPU6050_REG_ACCEL_XOUT_H,
+        hi2c, MPU6050_HAL_ADDR, MPU6050_REG_ACCEL_XOUT_H,
         I2C_MEMADD_SIZE_8BIT, raw, 14, 100);
     if (ret != HAL_OK) return ret;
 
@@ -80,16 +81,22 @@ HAL_StatusTypeDef MPU6050_ReadAll(I2C_HandleTypeDef *hi2c, MPU6050_Data *data)
 void Sensor_Init(I2C_HandleTypeDef *hi2c)
 {
     s_hi2c = hi2c;
-    MPU6050_Init(hi2c);
+    s_init_status = MPU6050_Init(hi2c);
 }
 
-void Sensor_Read(float *out, uint16_t len)
+HAL_StatusTypeDef Sensor_Read(float *out, uint16_t len)
 {
     MPU6050_Data d = {0};
-    if (s_hi2c) MPU6050_ReadAll(s_hi2c, &d);
+    if (!s_hi2c || s_init_status != HAL_OK)
+        return HAL_ERROR;
+
+    HAL_StatusTypeDef ret = MPU6050_ReadAll(s_hi2c, &d);
+    if (ret != HAL_OK)
+        return ret;
 
     /* Fill output: [ax, ay, az, gx, gy, gz, ...] cycled */
     float vals[6] = { d.ax, d.ay, d.az, d.gx, d.gy, d.gz };
     for (uint16_t i = 0; i < len; i++)
         out[i] = vals[i % 6];
+    return HAL_OK;
 }

@@ -85,14 +85,18 @@ void Sensor_Init(I2C_HandleTypeDef *hi2c)
     /* SAI handle must be initialised in main before calling this */
 }
 
-void Sensor_Read(float *out, uint16_t len)
+HAL_StatusTypeDef Sensor_Read(float *out, uint16_t len)
 {
-    if (!s_hsai) { memset(out, 0, len * sizeof(float)); return; }
+    if (!s_hsai)
+        return HAL_ERROR;
 
-    PDM_Mic_Capture(s_hsai, &s_frame);
+    HAL_StatusTypeDef ret = PDM_Mic_Capture(s_hsai, &s_frame);
+    if (ret != HAL_OK)
+        return ret;
     PDM_Mic_ComputeMFCC(s_frame.pcm, s_frame.mfcc, PDM_BUFFER_SIZE);
 
     uint16_t copy = (len < MFCC_NUM_COEFFS) ? len : MFCC_NUM_COEFFS;
     memcpy(out, s_frame.mfcc, copy * sizeof(float));
     for (uint16_t i = copy; i < len; i++) out[i] = 0.0f;
+    return HAL_OK;
 }

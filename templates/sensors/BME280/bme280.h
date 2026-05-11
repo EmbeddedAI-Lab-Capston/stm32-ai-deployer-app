@@ -5,6 +5,7 @@
 
 /* I2C address: SDO=LOW → 0xEC, SDO=HIGH → 0xEE */
 #define BME280_I2C_ADDR    {{I2C_ADDRESS}}
+#define BME280_HAL_ADDR    ((BME280_I2C_ADDR < 0x80U) ? (BME280_I2C_ADDR << 1) : BME280_I2C_ADDR)
 
 #define BME280_REG_CHIP_ID    0xD0
 #define BME280_REG_RESET      0xE0
@@ -26,4 +27,4 @@ HAL_StatusTypeDef BME280_ReadAll(I2C_HandleTypeDef *hi2c, BME280_Data *data);
 
 /* Sensor API used by main.c template */
 void Sensor_Init(I2C_HandleTypeDef *hi2c);
-void Sensor_Read(float *out, uint16_t len);
+HAL_StatusTypeDef Sensor_Read(float *out, uint16_t len);

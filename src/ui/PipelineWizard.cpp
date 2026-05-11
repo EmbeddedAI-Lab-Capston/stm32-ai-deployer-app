@@ -93,6 +93,31 @@ public:
             && QFile::exists(m_pathEdit->text());
     }
 
+#if 0
+    void initializePage() override
+    {
+        const QString model = m_cfg->modelPath.toLower();
+        if (model.contains("bme") || model.contains("basinc") ||
+            model.contains("basınc") || model.contains("basınç") ||
+            model.contains("nem") || model.contains("sicaklik") ||
+            model.contains("sıcaklık")) {
+            const int idx = m_sensorCombo->findData("BME280");
+            if (idx >= 0)
+                m_sensorCombo->setCurrentIndex(idx);
+        } else if (model.contains("mpu") || model.contains("ivme") ||
+                   model.contains("imu") || model.contains("har")) {
+            const int idx = m_sensorCombo->findData("MPU6050");
+            if (idx >= 0)
+                m_sensorCombo->setCurrentIndex(idx);
+        } else if (model.contains("mic") || model.contains("ses") ||
+                   model.contains("audio") || model.contains("kws")) {
+            const int idx = m_sensorCombo->findData("PDM_MIC");
+            if (idx >= 0)
+                m_sensorCombo->setCurrentIndex(idx);
+        }
+    }
+
+#endif
     bool validatePage() override
     {
         m_cfg->modelPath     = m_pathEdit->text();
@@ -200,6 +225,27 @@ public:
 
         connect(m_sensorCombo, &QComboBox::currentIndexChanged,
                 this, &SensorPage::onSensorChanged);
+    }
+
+    void initializePage() override
+    {
+        const QString model = m_cfg->modelPath.toLower();
+        if (model.contains("bme") || model.contains("basinc") ||
+            model.contains("nem") || model.contains("sicaklik")) {
+            const int idx = m_sensorCombo->findData("BME280");
+            if (idx >= 0)
+                m_sensorCombo->setCurrentIndex(idx);
+        } else if (model.contains("mpu") || model.contains("ivme") ||
+                   model.contains("imu") || model.contains("har")) {
+            const int idx = m_sensorCombo->findData("MPU6050");
+            if (idx >= 0)
+                m_sensorCombo->setCurrentIndex(idx);
+        } else if (model.contains("mic") || model.contains("ses") ||
+                   model.contains("audio") || model.contains("kws")) {
+            const int idx = m_sensorCombo->findData("PDM_MIC");
+            if (idx >= 0)
+                m_sensorCombo->setCurrentIndex(idx);
+        }
     }
 
     bool validatePage() override

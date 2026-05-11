@@ -5,6 +5,7 @@
 
 /* I2C address: AD0=LOW → 0xD0, AD0=HIGH → 0xD2 */
 #define MPU6050_I2C_ADDR    {{I2C_ADDRESS}}
+#define MPU6050_HAL_ADDR    ((MPU6050_I2C_ADDR < 0x80U) ? (MPU6050_I2C_ADDR << 1) : MPU6050_I2C_ADDR)
 
 /* Register map */
 #define MPU6050_REG_PWR_MGMT_1   0x6B
@@ -30,4 +31,4 @@ HAL_StatusTypeDef MPU6050_ReadAll(I2C_HandleTypeDef *hi2c, MPU6050_Data *data);
 
 /* Sensor API used by main.c template */
 void Sensor_Init(I2C_HandleTypeDef *hi2c);
-void Sensor_Read(float *out, uint16_t len);
+HAL_StatusTypeDef Sensor_Read(float *out, uint16_t len);

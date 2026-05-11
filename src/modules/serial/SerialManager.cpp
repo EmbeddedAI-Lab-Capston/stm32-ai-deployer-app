@@ -14,6 +14,8 @@ SerialManager::SerialManager(QObject *parent) : QObject(parent)
             this,     &SerialManager::bootReceived);
     connect(m_worker, &SerialWorker::errorReceived,
             this,     &SerialManager::errorReceived);
+    connect(m_worker, &SerialWorker::benchReceived,
+            this,     &SerialManager::benchReceived);
     connect(m_worker, &SerialWorker::rawLineReceived,
             this,     &SerialManager::rawLineReceived);
 
@@ -40,6 +42,9 @@ SerialManager::SerialManager(QObject *parent) : QObject(parent)
             Qt::QueuedConnection);
     connect(this,     &SerialManager::requestInfo,
             m_worker, &SerialWorker::requestBoardInfo,
+            Qt::QueuedConnection);
+    connect(this,     &SerialManager::requestWriteLine,
+            m_worker, &SerialWorker::writeLine,
             Qt::QueuedConnection);
 
     connect(m_thread, &QThread::finished,
@@ -82,4 +87,9 @@ void SerialManager::disconnectPort()
 void SerialManager::requestBoardInfo()
 {
     emit requestInfo();
+}
+
+void SerialManager::writeLine(const QByteArray &line)
+{
+    emit requestWriteLine(line);
 }

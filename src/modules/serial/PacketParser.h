@@ -27,6 +27,7 @@ struct BootData {
     QString  card;
     QString  sdk;
     QString  model;
+    QString  sensor;
     quint32  baud;
     quint32  flash_kb = 0;
     quint32  ram_kb = 0;
@@ -39,10 +40,23 @@ struct ErrorData {
     QDateTime timestamp;
 };
 
+struct BenchData {
+    quint32 samples;
+    quint32 avg_us;
+    quint32 min_us;
+    quint32 max_us;
+    quint32 ram_b;
+    quint32 free_ram_b;
+    QString label;
+    QString card;
+    QDateTime timestamp;
+};
+
 Q_DECLARE_METATYPE(InferenceData)
 Q_DECLARE_METATYPE(SysData)
 Q_DECLARE_METATYPE(BootData)
 Q_DECLARE_METATYPE(ErrorData)
+Q_DECLARE_METATYPE(BenchData)
 
 // Parses the §{JSON}\r\n protocol. Call feed() with raw bytes as they arrive.
 class PacketParser : public QObject
@@ -60,6 +74,7 @@ signals:
     void sysReceived(const SysData &data);
     void bootReceived(const BootData &data);
     void errorReceived(const ErrorData &data);
+    void benchReceived(const BenchData &data);
     void rawLineReceived(const QString &line);
     void malformedPacket(const QByteArray &raw);
 

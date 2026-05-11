@@ -26,12 +26,14 @@ public slots:
     void connectToPort(const QString &portName, qint32 baudRate = 115200);
     void disconnectPort();
     void requestBoardInfo();
+    void writeLine(const QByteArray &line);
 
 signals:
     void inferenceReceived(const InferenceData &data);
     void sysReceived(const SysData &data);
     void bootReceived(const BootData &data);
     void errorReceived(const ErrorData &data);
+    void benchReceived(const BenchData &data);
     void rawLineReceived(const QString &line);
     void connectionChanged(bool connected, const QString &info);
     void errorOccurred(const QString &msg);
@@ -40,6 +42,7 @@ signals:
     void requestConnect(const QString &portName, qint32 baudRate);
     void requestDisconnect();
     void requestInfo();
+    void requestWriteLine(const QByteArray &line);
 
 private:
     QThread      *m_thread    = nullptr;

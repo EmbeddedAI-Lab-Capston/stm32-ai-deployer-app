@@ -17,6 +17,7 @@
 #include "ui/BoardTab.h"
 #include "ui/FlashTab.h"
 #include "ui/MonitorTab.h"
+#include "ui/BenchmarkTab.h"
 #include "ui/AnalysisTab.h"
 #include "ui/SettingsDialog.h"
 #include "modules/serial/SerialManager.h"
@@ -130,6 +131,7 @@ void MainWindow::setupCentralWidget()
     m_boardTab    = new BoardTab(m_appState, m_serialManager, this);
     m_flashTab    = new FlashTab(m_appState, this);
     m_monitorTab  = new MonitorTab(m_appState, m_serialManager, this);
+    m_benchmarkTab = new BenchmarkTab(m_appState, m_serialManager, this);
     m_analysisTab = new AnalysisTab(this);
 
     m_flashTab->initialize(m_flashManager);
@@ -144,6 +146,9 @@ void MainWindow::setupCentralWidget()
     m_tabWidget->addTab(m_monitorTab,
         s->standardIcon(QStyle::SP_FileDialogDetailedView),
         tr("UART Monitör"));
+    m_tabWidget->addTab(m_benchmarkTab,
+        s->standardIcon(QStyle::SP_ComputerIcon),
+        tr("Kart Benchmark Testleri"));
     m_tabWidget->addTab(m_analysisTab,
         s->standardIcon(QStyle::SP_FileDialogInfoView),
         tr("Analiz"));
