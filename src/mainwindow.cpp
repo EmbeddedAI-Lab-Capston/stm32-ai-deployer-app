@@ -183,6 +183,7 @@ void MainWindow::setupConnections()
         if (name.isEmpty())
             return;
 
+        const BoardInfo current = m_appState->activeBoard();
         BoardInfo board = BoardPresets::find(name);
 
         if (board.isNull()) {
@@ -206,6 +207,25 @@ void MainWindow::setupConnections()
             board.ramKb = ramKb;
         if (clockMhz > 0)
             board.clockMhz = clockMhz;
+
+        const bool sameFamily = !current.isNull()
+            && (current.name.compare(board.name, Qt::CaseInsensitive) == 0
+                || current.name.contains(board.name, Qt::CaseInsensitive)
+                || board.name.contains(current.name, Qt::CaseInsensitive)
+                || current.probeBoardName.contains(board.name, Qt::CaseInsensitive)
+                || name.contains(current.name, Qt::CaseInsensitive));
+        if (sameFamily) {
+            if (board.portName.isEmpty()) board.portName = current.portName;
+            if (board.probeBoardName.isEmpty()) board.probeBoardName = current.probeBoardName;
+            if (board.deviceId.isEmpty()) board.deviceId = current.deviceId;
+            if (board.revisionId.isEmpty()) board.revisionId = current.revisionId;
+            if (board.deviceName.isEmpty()) board.deviceName = current.deviceName;
+            if (board.nvmSize.isEmpty()) board.nvmSize = current.nvmSize;
+            if (board.deviceCpu.isEmpty()) board.deviceCpu = current.deviceCpu;
+            if (board.stlinkSn.isEmpty()) board.stlinkSn = current.stlinkSn;
+            if (board.stlinkFw.isEmpty()) board.stlinkFw = current.stlinkFw;
+            if (board.voltage.isEmpty()) board.voltage = current.voltage;
+        }
 
         if (!board.isPreset) {
             AppSettings settings;
@@ -252,46 +272,6 @@ void MainWindow::setupConnections()
             this, [this](const BootData &boot) {
                 if (!boot.model.isEmpty())
                     m_appState->setLastModel(boot.model, 0.0, 0);
-
-                auto applyBoard = [this](const QString &cardName,
-                                         int flashKb,
-                                         int ramKb,
-                                         int clockMhz) {
-                    const QString name = cardName.trimmed();
-                    if (name.isEmpty())
-                        return;
-
-                    BoardInfo board = BoardPresets::find(name);
-                    if (board.isNull()) {
-                        AppSettings settings;
-                        for (const BoardInfo &custom : settings.customBoards()) {
-                            if (custom.name.compare(name, Qt::CaseInsensitive) == 0) {
-                                board = custom;
-                                break;
-                            }
-                        }
-                        if (board.isNull()) {
-                            board.name = name;
-                            board.isPreset = false;
-                        }
-                    }
-
-                    if (flashKb > 0) board.flashKb = flashKb;
-                    if (ramKb > 0) board.ramKb = ramKb;
-                    if (clockMhz > 0) board.clockMhz = clockMhz;
-
-                    if (!board.isPreset) {
-                        AppSettings settings;
-                        settings.addCustomBoard(board);
-                    }
-
-                    m_appState->setActiveBoard(board);
-                };
-
-                applyBoard(boot.card,
-                           static_cast<int>(boot.flash_kb),
-                           static_cast<int>(boot.ram_kb),
-                           static_cast<int>(boot.clock_mhz));
                 if (boot.baud > 0)
                     m_appState->setActiveBaud(static_cast<qint32>(boot.baud));
             });
