@@ -13,8 +13,12 @@
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QMessageBox>
+#include <QFileInfo>
+#include <QProcess>
+#include <QRegularExpression>
 
 #include "core/AppSettings.h"
+#include "modules/flash/FlashManager.h"
 #include "modules/serial/SerialManager.h"
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -53,6 +57,7 @@ Sidebar::Sidebar(AppState *state, SerialManager *serial, QWidget *parent)
 
     // Initialise labels with the default AppState values
     onBoardStateChanged(m_state->activeBoard());
+    startStLinkBoardProbe();
 }
 
 void Sidebar::setupUi()
@@ -199,10 +204,12 @@ void Sidebar::populatePorts()
 {
     m_portCombo->blockSignals(true);
     m_portCombo->clear();
+    m_stlinkPortName.clear();
 
     // ST-Link first
     const QSerialPortInfo stlink = SerialManager::findStLink();
     if (!stlink.isNull()) {
+        m_stlinkPortName = stlink.portName();
         m_portCombo->addItem(
             QString("★ %1 (ST-Link)").arg(stlink.portName()),
             stlink.portName());
@@ -279,6 +286,7 @@ void Sidebar::onBoardComboChanged(int index)
 void Sidebar::onPortComboChanged(int index)
 {
     m_state->setActivePort(m_portCombo->itemData(index).toString());
+    startStLinkBoardProbe();
 }
 
 void Sidebar::onBaudComboChanged(int /*index*/)
@@ -297,6 +305,7 @@ void Sidebar::onConnectClicked()
             m_statusLabel->setText(tr("⚠ Port seçilmedi"));
             return;
         }
+        startStLinkBoardProbe();
         m_serial->connectToPort(port, baud);
     }
 }
@@ -304,6 +313,7 @@ void Sidebar::onConnectClicked()
 void Sidebar::onRefreshClicked()
 {
     refreshPorts();
+    startStLinkBoardProbe();
 }
 
 void Sidebar::onAddCustomBoardClicked()
@@ -406,5 +416,137 @@ void Sidebar::onLastModelChanged(const QString &name, double infMs, quint8 acc)
             QString("%1 ms · %2%").arg(infMs, 0, 'f', 1).arg(acc));
     } else {
         m_modelMetaLabel->setText("--");
+    }
+}
+
+void Sidebar::startStLinkBoardProbe()
+{
+    if (m_stlinkPortName.isEmpty())
+        return;
+    if (m_state->activePort() != m_stlinkPortName)
+        return;
+
+    AppSettings settings;
+    QString cliPath = settings.programmerCliPath();
+    if (cliPath.isEmpty()) {
+        cliPath = FlashManager::detectCliPath();
+        if (!cliPath.isEmpty())
+            settings.setProgrammerCliPath(cliPath);
+    }
+    if (cliPath.isEmpty())
+        return;
+
+    const QFileInfo cliInfo(cliPath);
+    if (cliInfo.isAbsolute() && !cliInfo.exists())
+        return;
+
+    if (m_stlinkProbe) {
+        m_stlinkProbe->kill();
+        m_stlinkProbe->deleteLater();
+    }
+
+    m_stlinkProbe = new QProcess(this);
+    connect(m_stlinkProbe, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this](int exitCode, QProcess::ExitStatus) {
+                onStLinkProbeFinished(exitCode);
+            });
+    m_stlinkProbe->start(cliPath, {QStringLiteral("-c"), QStringLiteral("port=SWD")});
+}
+
+void Sidebar::onStLinkProbeFinished(int exitCode)
+{
+    if (!m_stlinkProbe)
+        return;
+
+    const QString output = QString::fromLocal8Bit(m_stlinkProbe->readAllStandardOutput()
+                                                  + m_stlinkProbe->readAllStandardError());
+    m_stlinkProbe->deleteLater();
+    m_stlinkProbe = nullptr;
+
+    if (exitCode != 0 || output.trimmed().isEmpty())
+        return;
+
+    applyDetectedStLinkBoard(output);
+}
+
+void Sidebar::applyDetectedStLinkBoard(const QString &probeOutput)
+{
+    QString boardName;
+    QString deviceName;
+    QString deviceId;
+    QString revisionId;
+    QString nvmSize;
+    QString cpuName;
+    QString stlinkSn;
+    QString stlinkFw;
+    QString voltage;
+
+    for (const QString &line : probeOutput.split(QRegularExpression("[\\r\\n]+"),
+                                                 Qt::SkipEmptyParts)) {
+        const QString trimmed = line.trimmed();
+        const int sep = trimmed.indexOf(':');
+        if (sep < 0)
+            continue;
+
+        const QString key = trimmed.left(sep).trimmed();
+        const QString value = trimmed.mid(sep + 1).trimmed();
+        if (key.compare(QStringLiteral("Board"), Qt::CaseInsensitive) == 0)
+            boardName = value;
+        else if (key.compare(QStringLiteral("ST-LINK SN"), Qt::CaseInsensitive) == 0)
+            stlinkSn = value;
+        else if (key.compare(QStringLiteral("ST-LINK FW"), Qt::CaseInsensitive) == 0)
+            stlinkFw = value;
+        else if (key.compare(QStringLiteral("Voltage"), Qt::CaseInsensitive) == 0)
+            voltage = value;
+        else if (key.compare(QStringLiteral("Device name"), Qt::CaseInsensitive) == 0)
+            deviceName = value;
+        else if (key.compare(QStringLiteral("Device ID"), Qt::CaseInsensitive) == 0)
+            deviceId = value;
+        else if (key.compare(QStringLiteral("Revision ID"), Qt::CaseInsensitive) == 0)
+            revisionId = value;
+        else if (key.compare(QStringLiteral("NVM size"), Qt::CaseInsensitive) == 0)
+            nvmSize = value;
+        else if (key.compare(QStringLiteral("Device CPU"), Qt::CaseInsensitive) == 0)
+            cpuName = value;
+    }
+
+    const QString lookup = QStringList{boardName, deviceName, deviceId, cpuName}
+        .join(QStringLiteral(" "));
+    BoardInfo board = BoardPresets::find(lookup);
+    if (board.isNull() && !boardName.isEmpty())
+        board = BoardPresets::find(boardName);
+    if (board.isNull() && !deviceName.isEmpty())
+        board = BoardPresets::find(deviceName);
+    if (board.isNull())
+        return;
+
+    board.portName = m_stlinkPortName;
+    board.probeBoardName = boardName;
+    board.deviceId = deviceId;
+    board.revisionId = revisionId;
+    board.deviceName = deviceName;
+    board.nvmSize = nvmSize;
+    board.deviceCpu = cpuName;
+    board.stlinkSn = stlinkSn;
+    board.stlinkFw = stlinkFw;
+    board.voltage = voltage;
+
+    ensureBoardVisible(board);
+    m_state->setActiveBoard(board);
+
+    const QString displayName = !boardName.isEmpty() ? boardName : deviceName;
+    if (!displayName.isEmpty() && !m_stlinkPortName.isEmpty()) {
+        for (int i = 0; i < m_portCombo->count(); ++i) {
+            if (m_portCombo->itemData(i).toString() == m_stlinkPortName) {
+                m_portCombo->setItemText(
+                    i, QString("★ %1 (%2)").arg(m_stlinkPortName, displayName));
+                break;
+            }
+        }
+    }
+
+    if (!m_state->isConnected() && !displayName.isEmpty()) {
+        m_statusLabel->setText(tr("● ST-Link: ") + displayName);
+        m_statusLabel->setStyleSheet("color: #89B4FA; font-weight: bold;");
     }
 }

@@ -6,6 +6,7 @@ class SerialManager;
 class QComboBox;
 class QLabel;
 class QPushButton;
+class QProcess;
 
 // ── Sidebar ───────────────────────────────────────────────────────────────
 // Left-hand panel widget.  Owns board selection, port/baud selection and
@@ -35,6 +36,7 @@ private slots:
     void onConnectionChanged(bool connected, const QString &info);
     void onBoardStateChanged(const BoardInfo &board);
     void onLastModelChanged(const QString &name, double infMs, quint8 acc);
+    void onStLinkProbeFinished(int exitCode);
 
 private:
     void setupUi();
@@ -43,6 +45,8 @@ private:
     void populatePorts();
     void populateBauds();
     void ensureBoardVisible(const BoardInfo &board);
+    void startStLinkBoardProbe();
+    void applyDetectedStLinkBoard(const QString &probeOutput);
 
     AppState      *m_state  = nullptr;
     SerialManager *m_serial = nullptr;
@@ -59,6 +63,8 @@ private:
     QPushButton *m_connectBtn  = nullptr;
     QPushButton *m_refreshBtn  = nullptr;
     QLabel      *m_statusLabel = nullptr;
+    QProcess    *m_stlinkProbe = nullptr;
+    QString      m_stlinkPortName;
 
     // ── Last model section ────────────────────────────────────────────
     QLabel *m_modelNameLabel = nullptr;

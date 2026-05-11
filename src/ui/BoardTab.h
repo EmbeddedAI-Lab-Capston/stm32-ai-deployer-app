@@ -37,12 +37,22 @@ private:
 
     bool m_serialConnected = false;
     bool m_bootDetected    = false;
+    bool m_stlinkDetected  = false;
 
     // ── Board info display ───────────────────────────────────────────────
     QLabel *m_infoModel  = nullptr;
     QLabel *m_infoFlash  = nullptr;
     QLabel *m_infoRam    = nullptr;
     QLabel *m_infoClock  = nullptr;
+    QLabel *m_infoPort   = nullptr;
+    QLabel *m_infoProbeBoard = nullptr;
+    QLabel *m_infoDeviceId = nullptr;
+    QLabel *m_infoRevision = nullptr;
+    QLabel *m_infoDeviceName = nullptr;
+    QLabel *m_infoNvm = nullptr;
+    QLabel *m_infoCpu = nullptr;
+    QLabel *m_infoStlink = nullptr;
+    QLabel *m_infoVoltage = nullptr;
     QLabel *m_infoStatus = nullptr;
 
     // ── Sensor config ────────────────────────────────────────────────────

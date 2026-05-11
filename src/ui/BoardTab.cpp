@@ -12,6 +12,8 @@
 #include <QDialogButtonBox>
 #include <QSpinBox>
 #include <QMessageBox>
+#include <QRegularExpression>
+#include <QStringList>
 
 #include "core/AppSettings.h"
 #include "modules/serial/SerialManager.h"
@@ -62,6 +64,15 @@ void BoardTab::setupUi()
     infoForm->addRow(tr("Flash :"), makeVal(m_infoFlash,  "--"));
     infoForm->addRow(tr("RAM   :"), makeVal(m_infoRam,    "--"));
     infoForm->addRow(tr("Hız   :"), makeVal(m_infoClock,  "--"));
+    infoForm->addRow(tr("COM   :"), makeVal(m_infoPort, "--"));
+    infoForm->addRow(tr("Board :"), makeVal(m_infoProbeBoard, "--"));
+    infoForm->addRow(tr("Device ID :"), makeVal(m_infoDeviceId, "--"));
+    infoForm->addRow(tr("Revision  :"), makeVal(m_infoRevision, "--"));
+    infoForm->addRow(tr("Device    :"), makeVal(m_infoDeviceName, "--"));
+    infoForm->addRow(tr("NVM       :"), makeVal(m_infoNvm, "--"));
+    infoForm->addRow(tr("CPU       :"), makeVal(m_infoCpu, "--"));
+    infoForm->addRow(tr("ST-LINK   :"), makeVal(m_infoStlink, "--"));
+    infoForm->addRow(tr("Voltage   :"), makeVal(m_infoVoltage, "--"));
 
     m_infoStatus = new QLabel(tr("● Uyumlu"), this);
     m_infoStatus->setObjectName("statusOk");
@@ -133,10 +144,29 @@ void BoardTab::setupUi()
 void BoardTab::onBoardChanged(const BoardInfo &board)
 {
     if (board.isNull()) return;
+    m_stlinkDetected = !board.probeBoardName.isEmpty()
+        || !board.deviceName.isEmpty()
+        || !board.deviceId.isEmpty();
     m_infoModel->setText(board.name);
     m_infoFlash->setText(QString::number(board.flashKb) + " KB");
     m_infoRam->setText(  QString::number(board.ramKb)   + " KB");
     m_infoClock->setText(QString::number(board.clockMhz)+ " MHz");
+    const auto valueOrDash = [](const QString &value) {
+        const QString trimmed = value.trimmed();
+        return trimmed.isEmpty() ? QStringLiteral("--") : trimmed;
+    };
+    m_infoPort->setText(valueOrDash(board.portName));
+    m_infoProbeBoard->setText(valueOrDash(board.probeBoardName));
+    m_infoDeviceId->setText(valueOrDash(board.deviceId));
+    m_infoRevision->setText(valueOrDash(board.revisionId));
+    m_infoDeviceName->setText(valueOrDash(board.deviceName));
+    m_infoNvm->setText(valueOrDash(board.nvmSize));
+    m_infoCpu->setText(valueOrDash(board.deviceCpu));
+    const QString stlink = QStringList{board.stlinkSn, board.stlinkFw}
+        .filter(QRegularExpression("\\S"))
+        .join(QStringLiteral(" / "));
+    m_infoStlink->setText(valueOrDash(stlink));
+    m_infoVoltage->setText(valueOrDash(board.voltage));
     updateStatusLabel();
 }
 
@@ -145,7 +175,10 @@ void BoardTab::updateStatusLabel()
     QString text;
     QString objectName;
 
-    if (!m_serialConnected) {
+    if (m_stlinkDetected) {
+        text       = tr("● ST-Link'ten Algılandı");
+        objectName = "statusOk";
+    } else if (!m_serialConnected) {
         text       = tr("● Manuel Seçim");
         objectName = "statusOk";
     } else if (m_bootDetected) {

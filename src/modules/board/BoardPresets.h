@@ -13,6 +13,16 @@ struct BoardInfo
     int     ramKb    = 0;   // 192
     int     clockMhz = 0;   // 168
     bool    isPreset = true; // false = custom (user-defined)
+    QString portName;
+    QString probeBoardName;
+    QString deviceId;
+    QString revisionId;
+    QString deviceName;
+    QString nvmSize;
+    QString deviceCpu;
+    QString stlinkSn;
+    QString stlinkFw;
+    QString voltage;
 
     bool isNull() const { return name.isEmpty(); }
 };

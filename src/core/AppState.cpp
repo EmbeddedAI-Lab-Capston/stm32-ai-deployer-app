@@ -11,7 +11,19 @@ AppState::AppState(QObject *parent)
 void AppState::setActiveBoard(const BoardInfo &board)
 {
     if (m_activeBoard.name == board.name &&
-        m_activeBoard.flashKb == board.flashKb)
+        m_activeBoard.flashKb == board.flashKb &&
+        m_activeBoard.ramKb == board.ramKb &&
+        m_activeBoard.clockMhz == board.clockMhz &&
+        m_activeBoard.portName == board.portName &&
+        m_activeBoard.probeBoardName == board.probeBoardName &&
+        m_activeBoard.deviceId == board.deviceId &&
+        m_activeBoard.revisionId == board.revisionId &&
+        m_activeBoard.deviceName == board.deviceName &&
+        m_activeBoard.nvmSize == board.nvmSize &&
+        m_activeBoard.deviceCpu == board.deviceCpu &&
+        m_activeBoard.stlinkSn == board.stlinkSn &&
+        m_activeBoard.stlinkFw == board.stlinkFw &&
+        m_activeBoard.voltage == board.voltage)
         return;
     m_activeBoard = board;
     emit activeBoardChanged(m_activeBoard);
