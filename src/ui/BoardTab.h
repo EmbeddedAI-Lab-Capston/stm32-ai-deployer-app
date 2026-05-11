@@ -8,6 +8,8 @@ class SerialManager;
 class QLabel;
 class QComboBox;
 class QLineEdit;
+class QPushButton;
+class QProcess;
 class QWidget;
 
 // ── BoardTab ─────────────────────────────────────────────────────────────
@@ -27,10 +29,22 @@ private slots:
     void onAddCustomBoardClicked();
     void onSerialConnectionChanged(bool connected, const QString &info);
     void onSerialBootReceived(const BootData &data);
+    void onBoardComboChanged(int index);
+    void onPortComboChanged(int index);
+    void onBaudComboChanged(int index);
+    void onConnectClicked();
+    void onRefreshClicked();
+    void onStLinkProbeFinished(int exitCode);
 
 private:
     void setupUi();
     void updateStatusLabel();
+    void populateBoards();
+    void populatePorts();
+    void populateBauds();
+    void ensureBoardVisible(const BoardInfo &board);
+    void startStLinkBoardProbe();
+    void applyDetectedStLinkBoard(const QString &probeOutput);
 
     AppState      *m_appState = nullptr;
     SerialManager *m_serial   = nullptr;
@@ -54,6 +68,15 @@ private:
     QLabel *m_infoStlink = nullptr;
     QLabel *m_infoVoltage = nullptr;
     QLabel *m_infoStatus = nullptr;
+
+    QComboBox   *m_boardCombo  = nullptr;
+    QComboBox   *m_portCombo   = nullptr;
+    QComboBox   *m_baudCombo   = nullptr;
+    QPushButton *m_connectBtn  = nullptr;
+    QPushButton *m_refreshBtn  = nullptr;
+    QLabel      *m_connStatusLabel = nullptr;
+    QProcess    *m_stlinkProbe = nullptr;
+    QString      m_stlinkPortName;
 
     // ── Sensor config ────────────────────────────────────────────────────
     QComboBox *m_sensorCombo = nullptr;

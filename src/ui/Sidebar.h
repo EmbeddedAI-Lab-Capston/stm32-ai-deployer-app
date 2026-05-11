@@ -53,6 +53,7 @@ private:
 
     // ── Board section ─────────────────────────────────────────────────
     QComboBox *m_boardCombo  = nullptr;
+    QLabel    *m_boardNameLabel = nullptr;
     QLabel    *m_flashLabel  = nullptr;
     QLabel    *m_ramLabel    = nullptr;
     QLabel    *m_clockLabel  = nullptr;

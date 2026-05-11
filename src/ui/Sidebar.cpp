@@ -86,10 +86,13 @@ void Sidebar::setupUi()
     m_boardCombo->setObjectName("sidebarCombo");
     layout->addWidget(m_boardCombo);
     populateBoards();
+    m_boardCombo->setVisible(false);
 
+    m_boardNameLabel = makeValueLabel("Kart  : --", this);
     m_flashLabel = makeValueLabel("Flash : --", this);
     m_ramLabel   = makeValueLabel("RAM   : --", this);
     m_clockLabel = makeValueLabel("Hız   : --", this);
+    layout->addWidget(m_boardNameLabel);
     layout->addWidget(m_flashLabel);
     layout->addWidget(m_ramLabel);
     layout->addWidget(m_clockLabel);
@@ -105,15 +108,18 @@ void Sidebar::setupUi()
     m_portCombo->setObjectName("sidebarCombo");
     layout->addWidget(m_portCombo);
     populatePorts();
+    m_portCombo->setVisible(false);
 
     m_baudCombo = new QComboBox(this);
     m_baudCombo->setObjectName("sidebarCombo");
     layout->addWidget(m_baudCombo);
     populateBauds();
+    m_baudCombo->setVisible(false);
 
     m_connectBtn = new QPushButton(tr("Bağlan"), this);
     m_connectBtn->setObjectName("primaryButton");
     layout->addWidget(m_connectBtn);
+    m_connectBtn->setVisible(false);
 
     m_statusLabel = new QLabel(tr("● Bağlantı Yok"), this);
     m_statusLabel->setObjectName("sidebarConnLabel");
@@ -129,6 +135,7 @@ void Sidebar::setupUi()
     refreshLayout->addWidget(m_refreshBtn);
     refreshLayout->addStretch();
     layout->addWidget(refreshRow);
+    refreshRow->setVisible(false);
 
     layout->addSpacing(6);
     layout->addWidget(makeSep(this));
@@ -384,7 +391,17 @@ void Sidebar::onConnectionChanged(bool connected, const QString &info)
 {
     if (connected) {
         m_connectBtn->setText(tr("Bağlantıyı Kes"));
-        m_statusLabel->setText(tr("● Bağlı — ") + info);
+        const BoardInfo board = m_state->activeBoard();
+        const QString boardName = !board.probeBoardName.isEmpty()
+            ? board.probeBoardName
+            : board.deviceName;
+        const QString portText = !board.portName.isEmpty()
+            ? board.portName
+            : info.section(' ', 0, 0);
+        const QString detail = boardName.isEmpty()
+            ? info
+            : QString("%1 (%2)").arg(portText, boardName);
+        m_statusLabel->setText(tr("● Bağlı — ") + detail);
         m_statusLabel->setStyleSheet("color: #A6E3A1; font-weight: bold;");
         m_portCombo->setEnabled(false);
         m_baudCombo->setEnabled(false);
@@ -403,9 +420,20 @@ void Sidebar::onBoardStateChanged(const BoardInfo &board)
 {
     if (board.isNull()) return;
     ensureBoardVisible(board);
+    if (m_boardNameLabel)
+        m_boardNameLabel->setText(QString("Kart  : %1").arg(board.name));
     m_flashLabel->setText(QString("Flash : %1 KB").arg(board.flashKb));
     m_ramLabel->setText(  QString("RAM   : %1 KB").arg(board.ramKb));
     m_clockLabel->setText(QString("Hız   : %1 MHz").arg(board.clockMhz));
+    if (!m_state->isConnected()) {
+        const QString boardName = !board.probeBoardName.isEmpty()
+            ? board.probeBoardName
+            : board.deviceName;
+        if (!board.portName.isEmpty() && !boardName.isEmpty()) {
+            m_statusLabel->setText(QString("● %1 (%2)").arg(board.portName, boardName));
+            m_statusLabel->setStyleSheet("color: #89B4FA; font-weight: bold;");
+        }
+    }
 }
 
 void Sidebar::onLastModelChanged(const QString &name, double infMs, quint8 acc)
@@ -546,7 +574,7 @@ void Sidebar::applyDetectedStLinkBoard(const QString &probeOutput)
     }
 
     if (!m_state->isConnected() && !displayName.isEmpty()) {
-        m_statusLabel->setText(tr("● ST-Link: ") + displayName);
+        m_statusLabel->setText(QString("● %1 (%2)").arg(m_stlinkPortName, displayName));
         m_statusLabel->setStyleSheet("color: #89B4FA; font-weight: bold;");
     }
 }

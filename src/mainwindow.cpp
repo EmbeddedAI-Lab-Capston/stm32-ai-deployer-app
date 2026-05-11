@@ -137,7 +137,7 @@ void MainWindow::setupCentralWidget()
     auto *s = m_tabWidget->style();
     m_tabWidget->addTab(m_boardTab,
         s->standardIcon(QStyle::SP_ComputerIcon),
-        tr("Kart & Sensör"));
+        tr("Kart Seçimi ve Bilgileri"));
     m_tabWidget->addTab(m_flashTab,
         s->standardIcon(QStyle::SP_ArrowUp),
         tr("Model & Flash"));

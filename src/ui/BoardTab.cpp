@@ -14,8 +14,12 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QStringList>
+#include <QFileInfo>
+#include <QProcess>
+#include <QSerialPortInfo>
 
 #include "core/AppSettings.h"
+#include "modules/flash/FlashManager.h"
 #include "modules/serial/SerialManager.h"
 
 BoardTab::BoardTab(AppState *state, SerialManager *serial, QWidget *parent)
@@ -85,8 +89,38 @@ void BoardTab::setupUi()
 
     bottomLayout->addWidget(infoBox, 1);
 
+    auto *selectBox = new QGroupBox(tr("Kart Seçimi ve Bağlantı"), this);
+    auto *selectLayout = new QVBoxLayout(selectBox);
+    selectLayout->setSpacing(10);
+
+    auto *selectForm = new QFormLayout;
+    m_boardCombo = new QComboBox(this);
+    m_portCombo = new QComboBox(this);
+    m_baudCombo = new QComboBox(this);
+    selectForm->addRow(tr("Kart :"), m_boardCombo);
+    selectForm->addRow(tr("COM  :"), m_portCombo);
+    selectForm->addRow(tr("Baud :"), m_baudCombo);
+    selectLayout->addLayout(selectForm);
+
+    auto *buttonRow = new QHBoxLayout;
+    m_connectBtn = new QPushButton(tr("Bağlan"), this);
+    m_connectBtn->setObjectName("primaryButton");
+    m_refreshBtn = new QPushButton(tr("Portları Yenile"), this);
+    auto *boardCustomBtn = new QPushButton(tr("Özel Kart Ekle"), this);
+    buttonRow->addWidget(m_connectBtn);
+    buttonRow->addWidget(m_refreshBtn);
+    buttonRow->addWidget(boardCustomBtn);
+    selectLayout->addLayout(buttonRow);
+
+    m_connStatusLabel = new QLabel(tr("● Bağlantı Yok"), this);
+    m_connStatusLabel->setObjectName("sidebarConnLabel");
+    selectLayout->addWidget(m_connStatusLabel);
+    selectLayout->addStretch();
+    bottomLayout->addWidget(selectBox, 1);
+
     // ── Sensor config ──────────────────────────────────────────────────────
     auto *sensorBox     = new QGroupBox(tr("Sensör Konfigürasyonu"), this);
+    sensorBox->setVisible(false);
     auto *sensorVLayout = new QVBoxLayout(sensorBox);
     sensorVLayout->setSpacing(8);
 
@@ -137,6 +171,96 @@ void BoardTab::setupUi()
     connect(addCustomBtn, &QPushButton::clicked,
             this, &BoardTab::onAddCustomBoardClicked);
     // TODO(asama-5): connect saveConfigBtn to Database::saveConfig
+    connect(boardCustomBtn, &QPushButton::clicked,
+            this, &BoardTab::onAddCustomBoardClicked);
+    connect(m_boardCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &BoardTab::onBoardComboChanged);
+    connect(m_portCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &BoardTab::onPortComboChanged);
+    connect(m_baudCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &BoardTab::onBaudComboChanged);
+    connect(m_connectBtn, &QPushButton::clicked,
+            this, &BoardTab::onConnectClicked);
+    connect(m_refreshBtn, &QPushButton::clicked,
+            this, &BoardTab::onRefreshClicked);
+
+    populateBoards();
+    populatePorts();
+    populateBauds();
+    startStLinkBoardProbe();
+}
+
+void BoardTab::populateBoards()
+{
+    m_boardCombo->blockSignals(true);
+    m_boardCombo->clear();
+
+    for (const BoardInfo &b : BoardPresets::all())
+        m_boardCombo->addItem(b.name, QVariant::fromValue(b));
+
+    AppSettings settings;
+    for (const BoardInfo &b : settings.customBoards())
+        m_boardCombo->addItem(b.name, QVariant::fromValue(b));
+
+    m_boardCombo->insertSeparator(m_boardCombo->count());
+    m_boardCombo->addItem(tr("+ Özel Kart Ekle..."), QVariant());
+    ensureBoardVisible(m_appState->activeBoard());
+    m_boardCombo->blockSignals(false);
+}
+
+void BoardTab::populatePorts()
+{
+    m_portCombo->blockSignals(true);
+    m_portCombo->clear();
+    m_stlinkPortName.clear();
+
+    const QSerialPortInfo stlink = SerialManager::findStLink();
+    if (!stlink.isNull()) {
+        m_stlinkPortName = stlink.portName();
+        m_portCombo->addItem(QString("★ %1 (ST-Link)").arg(stlink.portName()),
+                             stlink.portName());
+    }
+
+    for (const QSerialPortInfo &info : SerialManager::availablePorts()) {
+        if (!stlink.isNull() && info.portName() == stlink.portName())
+            continue;
+        m_portCombo->addItem(info.portName(), info.portName());
+    }
+
+    if (m_portCombo->count() == 0)
+        m_portCombo->addItem(tr("Port bulunamadı"), QString());
+
+    m_appState->setActivePort(m_portCombo->currentData().toString());
+    m_portCombo->blockSignals(false);
+}
+
+void BoardTab::populateBauds()
+{
+    m_baudCombo->blockSignals(true);
+    m_baudCombo->clear();
+    m_baudCombo->addItems({"9600", "38400", "115200", "230400", "921600"});
+    m_baudCombo->setCurrentText(QString::number(m_appState->activeBaud()));
+    m_baudCombo->blockSignals(false);
+}
+
+void BoardTab::ensureBoardVisible(const BoardInfo &board)
+{
+    if (board.isNull() || !m_boardCombo)
+        return;
+
+    for (int i = 0; i < m_boardCombo->count(); ++i) {
+        const QVariant data = m_boardCombo->itemData(i);
+        if (!data.isValid())
+            continue;
+        const BoardInfo existing = data.value<BoardInfo>();
+        if (existing.name.compare(board.name, Qt::CaseInsensitive) == 0) {
+            m_boardCombo->blockSignals(true);
+            m_boardCombo->setItemData(i, QVariant::fromValue(board));
+            m_boardCombo->setCurrentIndex(i);
+            m_boardCombo->blockSignals(false);
+            return;
+        }
+    }
 }
 
 // ── Slots ──────────────────────────────────────────────────────────────────
@@ -147,6 +271,7 @@ void BoardTab::onBoardChanged(const BoardInfo &board)
     m_stlinkDetected = !board.probeBoardName.isEmpty()
         || !board.deviceName.isEmpty()
         || !board.deviceId.isEmpty();
+    ensureBoardVisible(board);
     m_infoModel->setText(board.name);
     m_infoFlash->setText(QString::number(board.flashKb) + " KB");
     m_infoRam->setText(  QString::number(board.ramKb)   + " KB");
@@ -200,6 +325,17 @@ void BoardTab::onSerialConnectionChanged(bool connected, const QString &)
     m_serialConnected = connected;
     if (!connected)
         m_bootDetected = false;
+    if (m_connectBtn)
+        m_connectBtn->setText(connected ? tr("Bağlantıyı Kes") : tr("Bağlan"));
+    if (m_connStatusLabel) {
+        m_connStatusLabel->setText(connected ? tr("● Bağlı") : tr("● Bağlantı Yok"));
+        m_connStatusLabel->setStyleSheet(connected
+            ? QStringLiteral("color: #A6E3A1; font-weight: bold;")
+            : QStringLiteral("color: #6C7086;"));
+    }
+    if (m_portCombo) m_portCombo->setEnabled(!connected);
+    if (m_baudCombo) m_baudCombo->setEnabled(!connected);
+    if (m_refreshBtn) m_refreshBtn->setEnabled(!connected);
     updateStatusLabel();
 }
 
@@ -233,6 +369,166 @@ void BoardTab::onSensorChanged(int index)
         break;
     default: break;
     }
+}
+
+void BoardTab::onBoardComboChanged(int index)
+{
+    const QVariant v = m_boardCombo->itemData(index);
+    if (!v.isValid()) {
+        onAddCustomBoardClicked();
+        return;
+    }
+    m_appState->setActiveBoard(v.value<BoardInfo>());
+}
+
+void BoardTab::onPortComboChanged(int index)
+{
+    m_appState->setActivePort(m_portCombo->itemData(index).toString());
+    startStLinkBoardProbe();
+}
+
+void BoardTab::onBaudComboChanged(int)
+{
+    m_appState->setActiveBaud(m_baudCombo->currentText().toInt());
+}
+
+void BoardTab::onConnectClicked()
+{
+    if (m_appState->isConnected()) {
+        m_serial->disconnectPort();
+        return;
+    }
+
+    const QString port = m_appState->activePort();
+    if (port.isEmpty()) {
+        m_connStatusLabel->setText(tr("⚠ Port seçilmedi"));
+        return;
+    }
+
+    startStLinkBoardProbe();
+    m_serial->connectToPort(port, m_appState->activeBaud());
+}
+
+void BoardTab::onRefreshClicked()
+{
+    populatePorts();
+    startStLinkBoardProbe();
+}
+
+void BoardTab::startStLinkBoardProbe()
+{
+    if (m_stlinkPortName.isEmpty())
+        return;
+    if (m_appState->activePort() != m_stlinkPortName)
+        return;
+
+    AppSettings settings;
+    QString cliPath = settings.programmerCliPath();
+    if (cliPath.isEmpty()) {
+        cliPath = FlashManager::detectCliPath();
+        if (!cliPath.isEmpty())
+            settings.setProgrammerCliPath(cliPath);
+    }
+    if (cliPath.isEmpty())
+        return;
+
+    const QFileInfo cliInfo(cliPath);
+    if (cliInfo.isAbsolute() && !cliInfo.exists())
+        return;
+
+    if (m_stlinkProbe) {
+        m_stlinkProbe->kill();
+        m_stlinkProbe->deleteLater();
+    }
+
+    m_stlinkProbe = new QProcess(this);
+    connect(m_stlinkProbe, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this](int exitCode, QProcess::ExitStatus) {
+                onStLinkProbeFinished(exitCode);
+            });
+    m_stlinkProbe->start(cliPath, {QStringLiteral("-c"), QStringLiteral("port=SWD")});
+}
+
+void BoardTab::onStLinkProbeFinished(int exitCode)
+{
+    if (!m_stlinkProbe)
+        return;
+
+    const QString output = QString::fromLocal8Bit(m_stlinkProbe->readAllStandardOutput()
+                                                  + m_stlinkProbe->readAllStandardError());
+    m_stlinkProbe->deleteLater();
+    m_stlinkProbe = nullptr;
+
+    if (exitCode != 0 || output.trimmed().isEmpty())
+        return;
+
+    applyDetectedStLinkBoard(output);
+}
+
+void BoardTab::applyDetectedStLinkBoard(const QString &probeOutput)
+{
+    QString boardName;
+    QString deviceName;
+    QString deviceId;
+    QString revisionId;
+    QString nvmSize;
+    QString cpuName;
+    QString stlinkSn;
+    QString stlinkFw;
+    QString voltage;
+
+    for (const QString &line : probeOutput.split(QRegularExpression("[\\r\\n]+"),
+                                                 Qt::SkipEmptyParts)) {
+        const QString trimmed = line.trimmed();
+        const int sep = trimmed.indexOf(':');
+        if (sep < 0)
+            continue;
+
+        const QString key = trimmed.left(sep).trimmed();
+        const QString value = trimmed.mid(sep + 1).trimmed();
+        if (key.compare(QStringLiteral("Board"), Qt::CaseInsensitive) == 0)
+            boardName = value;
+        else if (key.compare(QStringLiteral("ST-LINK SN"), Qt::CaseInsensitive) == 0)
+            stlinkSn = value;
+        else if (key.compare(QStringLiteral("ST-LINK FW"), Qt::CaseInsensitive) == 0)
+            stlinkFw = value;
+        else if (key.compare(QStringLiteral("Voltage"), Qt::CaseInsensitive) == 0)
+            voltage = value;
+        else if (key.compare(QStringLiteral("Device name"), Qt::CaseInsensitive) == 0)
+            deviceName = value;
+        else if (key.compare(QStringLiteral("Device ID"), Qt::CaseInsensitive) == 0)
+            deviceId = value;
+        else if (key.compare(QStringLiteral("Revision ID"), Qt::CaseInsensitive) == 0)
+            revisionId = value;
+        else if (key.compare(QStringLiteral("NVM size"), Qt::CaseInsensitive) == 0)
+            nvmSize = value;
+        else if (key.compare(QStringLiteral("Device CPU"), Qt::CaseInsensitive) == 0)
+            cpuName = value;
+    }
+
+    const QString lookup = QStringList{boardName, deviceName, deviceId, cpuName}
+        .join(QStringLiteral(" "));
+    BoardInfo board = BoardPresets::find(lookup);
+    if (board.isNull() && !boardName.isEmpty())
+        board = BoardPresets::find(boardName);
+    if (board.isNull() && !deviceName.isEmpty())
+        board = BoardPresets::find(deviceName);
+    if (board.isNull())
+        return;
+
+    board.portName = m_stlinkPortName;
+    board.probeBoardName = boardName;
+    board.deviceId = deviceId;
+    board.revisionId = revisionId;
+    board.deviceName = deviceName;
+    board.nvmSize = nvmSize;
+    board.deviceCpu = cpuName;
+    board.stlinkSn = stlinkSn;
+    board.stlinkFw = stlinkFw;
+    board.voltage = voltage;
+
+    ensureBoardVisible(board);
+    m_appState->setActiveBoard(board);
 }
 
 void BoardTab::onAddCustomBoardClicked()
@@ -283,6 +579,7 @@ void BoardTab::onAddCustomBoardClicked()
 
     AppSettings settings;
     settings.addCustomBoard(custom);
+    populateBoards();
     m_appState->setActiveBoard(custom);
 
     QMessageBox::information(this, tr("Kart Eklendi"),
