@@ -121,7 +121,8 @@ static void Run_Benchmark(uint32_t samples, float min_v, float max_v, uint32_t s
         if (inf_us > max_us) max_us = inf_us;
     }
 
-    UART_Report_Benchmark(samples,
+    UART_Report_Benchmark(AI_MODEL_NAME,
+                          samples,
                           total_us / samples,
                           min_us,
                           max_us,

@@ -9,8 +9,12 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressBar>
@@ -45,6 +49,8 @@ BenchmarkTab::BenchmarkTab(AppState *state, SerialManager *serial, QWidget *pare
     onBoardChanged(m_state->activeBoard());
     onPortChanged(m_state->activePort());
     onBaudChanged(m_state->activeBaud());
+    resetMetrics();
+    loadModelReportMetrics();
 }
 
 BenchmarkTab::~BenchmarkTab()
@@ -119,11 +125,13 @@ void BenchmarkTab::setupUi()
 
     auto *metricsBox = new QGroupBox(tr("Metrikler"), this);
     auto *metricsForm = new QFormLayout(metricsBox);
+    m_modelLabel = new QLabel("--", this);
     m_inferenceLabel = new QLabel("--", this);
     m_ramLabel = new QLabel("--", this);
     m_flashLabel = new QLabel("--", this);
     m_maccLabel = new QLabel("--", this);
     m_statusLabel = new QLabel(tr("Hazır"), this);
+    metricsForm->addRow(tr("Model :"), m_modelLabel);
     metricsForm->addRow(tr("Inference time :"), m_inferenceLabel);
     metricsForm->addRow(tr("RAM / Activations :"), m_ramLabel);
     metricsForm->addRow(tr("Flash / Weights :"), m_flashLabel);
@@ -255,6 +263,7 @@ void BenchmarkTab::startBenchmarkProcess()
         args << QStringLiteral("--save-csv");
 
     resetMetrics();
+    loadModelReportMetrics();
     m_output->clear();
     appendLog(QString("> %1 %2").arg(cliPath, args.join(' ')));
     m_statusLabel->setText(tr("Çalışıyor..."));
@@ -376,8 +385,56 @@ void BenchmarkTab::parseMetrics(const QString &text)
     setIf(m_inferenceLabel, QRegularExpression("(?:inference|duration|elapsed).*?:\\s*([^\\r\\n]*?(?:ms|us|s))", QRegularExpression::CaseInsensitiveOption), text);
 }
 
+void BenchmarkTab::loadModelReportMetrics()
+{
+    AppSettings settings;
+    const QString reportPath = QDir(settings.lastOutputDir()).filePath(
+        QStringLiteral("xcubeai_output/network_c_info.json"));
+
+    QFile file(reportPath);
+    if (!file.open(QIODevice::ReadOnly))
+        return;
+
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject())
+        return;
+
+    const QJsonObject root = doc.object();
+    quint64 macc = 0;
+    const QJsonArray graphs = root.value(QStringLiteral("graphs")).toArray();
+    for (const QJsonValue &graphValue : graphs) {
+        const QJsonArray nodes = graphValue.toObject()
+            .value(QStringLiteral("nodes")).toArray();
+        for (const QJsonValue &nodeValue : nodes)
+            macc += static_cast<quint64>(nodeValue.toObject()
+                .value(QStringLiteral("macc")).toInteger());
+    }
+
+    const QJsonArray tools = root.value(QStringLiteral("environment")).toObject()
+        .value(QStringLiteral("tools")).toArray();
+    if (!tools.isEmpty()) {
+        const QJsonObject inputModel = tools.first().toObject()
+            .value(QStringLiteral("input_model")).toObject();
+        const QString modelName = inputModel.value(QStringLiteral("name")).toString();
+        const qint64 weightsBytes = inputModel.value(QStringLiteral("size")).toInteger();
+
+        if (!modelName.isEmpty() && m_modelLabel->text() == QStringLiteral("--"))
+            m_modelLabel->setText(modelName);
+        if (weightsBytes > 0)
+            m_flashLabel->setText(QString("%1 B (%2 KiB) weights")
+                                      .arg(weightsBytes)
+                                      .arg(weightsBytes / 1024.0, 0, 'f', 2));
+    }
+
+    if (macc > 0)
+        m_maccLabel->setText(QLocale().toString(macc));
+}
+
 void BenchmarkTab::resetMetrics()
 {
+    m_modelLabel->setText(m_state->lastModelName().isEmpty()
+                              ? QStringLiteral("--")
+                              : m_state->lastModelName());
     m_inferenceLabel->setText("--");
     m_ramLabel->setText("--");
     m_flashLabel->setText("--");
@@ -390,6 +447,13 @@ void BenchmarkTab::onBenchReceived(const BenchData &data)
     m_runBtn->setEnabled(true);
     m_cancelBtn->setVisible(false);
 
+    const QString modelName = data.model.isEmpty()
+        ? m_state->lastModelName()
+        : data.model;
+    if (!modelName.isEmpty())
+        m_modelLabel->setText(modelName);
+    loadModelReportMetrics();
+
     m_inferenceLabel->setText(
         QString("avg %1 us | min %2 us | max %3 us")
             .arg(data.avg_us)
@@ -399,7 +463,8 @@ void BenchmarkTab::onBenchReceived(const BenchData &data)
                             .arg(data.ram_b)
                             .arg(data.free_ram_b));
     m_statusLabel->setText(tr("Tamamlandı"));
-    appendLog(QString("BENCH result: samples=%1 avg=%2us min=%3us max=%4us ram=%5B free=%6B label=%7 card=%8")
+    appendLog(QString("BENCH result: model=%1 samples=%2 avg=%3us min=%4us max=%5us ram=%6B free=%7B label=%8 card=%9")
+                  .arg(modelName.isEmpty() ? QStringLiteral("--") : modelName)
                   .arg(data.samples)
                   .arg(data.avg_us)
                   .arg(data.min_us)

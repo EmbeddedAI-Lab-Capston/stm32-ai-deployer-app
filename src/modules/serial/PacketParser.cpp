@@ -95,6 +95,7 @@ void PacketParser::processPacket(const QByteArray &jsonBytes)
     }
     else if (type == "bench") {
         BenchData d;
+        d.model      = obj.value("model").toString();
         d.samples    = static_cast<quint32>(obj.value("samples").toInt());
         d.avg_us     = static_cast<quint32>(obj.value("avg_us").toInt());
         d.min_us     = static_cast<quint32>(obj.value("min_us").toInt());

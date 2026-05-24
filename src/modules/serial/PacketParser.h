@@ -41,6 +41,7 @@ struct ErrorData {
 };
 
 struct BenchData {
+    QString model;
     quint32 samples;
     quint32 avg_us;
     quint32 min_us;

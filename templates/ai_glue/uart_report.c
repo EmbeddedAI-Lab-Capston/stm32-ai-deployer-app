@@ -103,7 +103,8 @@ void UART_Report_Error(uint32_t code, const char *msg)
     send_packet(json);
 }
 
-void UART_Report_Benchmark(uint32_t samples,
+void UART_Report_Benchmark(const char *model,
+                           uint32_t samples,
                            uint32_t avg_us,
                            uint32_t min_us,
                            uint32_t max_us,
@@ -114,9 +115,10 @@ void UART_Report_Benchmark(uint32_t samples,
 {
     char json[240];
     snprintf(json, sizeof(json),
-             "{\"t\":\"bench\",\"samples\":%lu,\"avg_us\":%lu,"
+             "{\"t\":\"bench\",\"model\":\"%s\",\"samples\":%lu,\"avg_us\":%lu,"
              "\"min_us\":%lu,\"max_us\":%lu,\"ram_b\":%lu,"
              "\"free_ram_b\":%lu,\"label\":\"%s\",\"card\":\"%s\"}",
+             model,
              (unsigned long)samples,
              (unsigned long)avg_us,
              (unsigned long)min_us,

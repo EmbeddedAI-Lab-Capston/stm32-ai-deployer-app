@@ -41,6 +41,7 @@ private:
     void sendBenchmarkCommand();
     void appendLog(const QString &text);
     void parseMetrics(const QString &text);
+    void loadModelReportMetrics();
     QString xcubeCliPath() const;
     void resetMetrics();
 
@@ -58,6 +59,7 @@ private:
     QLabel *m_boardLabel = nullptr;
     QLabel *m_portLabel = nullptr;
     QLabel *m_inferenceLabel = nullptr;
+    QLabel *m_modelLabel = nullptr;
     QLabel *m_ramLabel = nullptr;
     QLabel *m_flashLabel = nullptr;
     QLabel *m_maccLabel = nullptr;
