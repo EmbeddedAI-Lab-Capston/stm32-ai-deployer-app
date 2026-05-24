@@ -564,16 +564,7 @@ void AnalysisTab::populateSensorData(QTableWidget *table)
 
 void AnalysisTab::populateCompiledModelData(QTableWidget *table)
 {
-    const QList<QStringList> rows = {
-        {"2026-05-24 12:41", "anomaly_cnn", "INT8", "NUCLEO-H723ZG", "STM32H723ZG", "BME280", "1x3x1", "6,466", "15,136", "6.70 KiB", "65.83 KiB", "Örnek kayıt"},
-        {"2026-05-24 11:58", "anomaly_cnn", "Float32", "NUCLEO-H723ZG", "STM32H723ZG", "BME280", "1x3x1", "6,466", "15,136", "25.2 KiB", "63.97 KiB", "Örnek kayıt"},
-        {"2026-05-22 18:12", "har_mlp", "INT8", "STM32F407 Discovery", "STM32F407VG", "MPU6050", "1x6", "12,840", "22,800", "12.4 KiB", "58.2 KiB", "Örnek kayıt"},
-        {"2026-05-20 16:40", "kws_lstm", "INT8", "STM32N6570-DK", "STM32N657", "PDM_MIC", "1x16000", "96,120", "90,400", "96.8 KiB", "128.4 KiB", "Örnek kayıt"},
-    };
-    table->setRowCount(rows.size());
-    for (int row = 0; row < rows.size(); ++row)
-        for (int col = 0; col < rows[row].size(); ++col)
-            table->setItem(row, col, makeItem(rows[row][col]));
+    table->setRowCount(0);
 }
 
 void AnalysisTab::loadPersistentRecords()
@@ -805,6 +796,16 @@ void AnalysisTab::onDeleteClicked()
     const QModelIndexList selected = table->selectionModel()->selectedRows();
     for (const QModelIndex &index : selected)
         rows.append(index.row());
+    if (rows.isEmpty()) {
+        const QModelIndexList indexes = table->selectionModel()->selectedIndexes();
+        for (const QModelIndex &index : indexes) {
+            if (!rows.contains(index.row()))
+                rows.append(index.row());
+        }
+    }
+    if (rows.isEmpty() && table->currentRow() >= 0)
+        rows.append(table->currentRow());
+
     std::sort(rows.begin(), rows.end(), std::greater<int>());
 
     for (int row : rows) {
