@@ -9,6 +9,7 @@
 #include "{{SENSOR_TYPE_LOWER}}.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 UART_HandleTypeDef huart3;
@@ -20,6 +21,7 @@ static void MX_USART3_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void Process_Uart_Command(void);
 static void Run_Benchmark(uint32_t samples, float min_v, float max_v, uint32_t seed);
+static void Run_Manual_Inference(const char *payload);
 
 static char s_cmd_buf[96];
 static uint8_t s_cmd_len = 0;
@@ -120,6 +122,34 @@ static void Run_Benchmark(uint32_t samples, float min_v, float max_v, uint32_t s
                           AI_TARGET_BOARD);
 }
 
+static void Run_Manual_Inference(const char *payload)
+{
+    float input[AI_INPUT_SIZE] = {0};
+    const char *p = payload;
+
+    for (uint32_t i = 0; i < AI_INPUT_SIZE; ++i) {
+        while (*p == ' ' || *p == '\t' || *p == ',') ++p;
+        if (*p == '\0')
+            break;
+
+        char *end = NULL;
+        long milli = strtol(p, &end, 10);
+        if (end == p)
+            break;
+
+        input[i] = (float)milli / 1000.0f;
+        p = end;
+    }
+
+    AI_InferenceResult result = {0};
+    uint32_t inf_us = AI_Runner_Infer(input, &result);
+    UART_Report_Inference(AI_MODEL_NAME, inf_us,
+                          AI_Runner_GetRamUsage(),
+                          result.confidence_pct,
+                          result.label,
+                          AI_TARGET_BOARD);
+}
+
 static void Process_Uart_Command(void)
 {
     if (!s_cmd_ready)
@@ -135,7 +165,9 @@ static void Process_Uart_Command(void)
     long min_milli = 0;
     long max_milli = 1000;
     unsigned long seed = 1234;
-    if (sscanf(cmd, "BENCH %lu %ld %ld %lu",
+    if (strncmp(cmd, "INFER ", 6) == 0) {
+        Run_Manual_Inference(cmd + 6);
+    } else if (sscanf(cmd, "BENCH %lu %ld %ld %lu",
                &samples, &min_milli, &max_milli, &seed) >= 1) {
         Run_Benchmark((uint32_t)samples,
                       (float)min_milli / 1000.0f,

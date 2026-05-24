@@ -6,12 +6,14 @@
 #include "modules/serial/CircularBuffer.h"
 
 class SerialManager;
-class SerialSimulator;
 class PacketParser;
 class QTextEdit;
 class QLabel;
 class QCheckBox;
 class QScrollBar;
+class QSpinBox;
+class QDoubleSpinBox;
+class QTimer;
 
 // ── MonitorTab ────────────────────────────────────────────────────────────
 // UART terminal + inference metrics.
@@ -31,6 +33,7 @@ private slots:
     void onClearClicked();
     void onSaveClicked();
     void onSimulationToggled(bool checked);
+    void sendSimulatedSensorFrame();
 
     // AppState / Serial reactions
     void onConnectionChanged(bool connected, const QString &info);
@@ -44,13 +47,11 @@ private slots:
 private:
     void setupUi();
     void appendHtmlLine(const QString &color, const QString &text);
+    void startHardwareSimulation();
+    void stopHardwareSimulation();
 
     AppState        *m_appState     = nullptr;
     SerialManager   *m_serialManager = nullptr;
-
-    // Simulator (stays on main thread)
-    PacketParser    *m_simParser   = nullptr;
-    SerialSimulator *m_simulator   = nullptr;
 
     // Circular buffer — last 500 inference records (Phase 6 charts)
     CircularBuffer<InferenceData> m_infBuffer{500};
@@ -60,6 +61,13 @@ private:
 
     // Simulation toggle
     QCheckBox *m_simCheck    = nullptr;
+    QSpinBox *m_simIntervalSpin = nullptr;
+    QDoubleSpinBox *m_simMinSpin = nullptr;
+    QDoubleSpinBox *m_simMaxSpin = nullptr;
+    QTimer *m_simTimer = nullptr;
+    quint32 m_simSeed = 1234;
+    quint32 m_simSentCount = 0;
+    quint32 m_simResponseCount = 0;
 
     // Terminal
     QTextEdit *m_terminal = nullptr;

@@ -8,6 +8,7 @@
 #include <QTextEdit>
 #include <QSplitter>
 #include <QCheckBox>
+#include <QDoubleSpinBox>
 #include <QScrollBar>
 #include <QFile>
 #include <QFileDialog>
@@ -15,17 +16,17 @@
 #include <QDateTime>
 #include <QFont>
 #include <QFrame>
+#include <QSpinBox>
+#include <QTimer>
 
 #include "core/AppState.h"
 #include "modules/serial/SerialManager.h"
-#include "modules/serial/SerialSimulator.h"
 
 MonitorTab::MonitorTab(AppState *state, SerialManager *serial, QWidget *parent)
     : QWidget(parent)
     , m_appState(state)
     , m_serialManager(serial)
-    , m_simParser(new PacketParser(this))
-    , m_simulator(new SerialSimulator(m_simParser, this))
+    , m_simTimer(new QTimer(this))
 {
     setupUi();
 
@@ -43,15 +44,8 @@ MonitorTab::MonitorTab(AppState *state, SerialManager *serial, QWidget *parent)
     connect(m_serialManager, &SerialManager::errorOccurred,
             this, &MonitorTab::onSerialError);
 
-    // ── Simulator parser → same UI slots ──────────────────────────────────
-    connect(m_simParser, &PacketParser::rawLineReceived,
-            this, &MonitorTab::appendRawLog);
-    connect(m_simParser, &PacketParser::inferenceReceived,
-            this, &MonitorTab::onInferenceReceived);
-    connect(m_simParser, &PacketParser::bootReceived,
-            this, &MonitorTab::onBootReceived);
-    connect(m_simParser, &PacketParser::sysReceived,
-            this, &MonitorTab::onSysReceived);
+    connect(m_simTimer, &QTimer::timeout,
+            this, &MonitorTab::sendSimulatedSensorFrame);
 
     // ── AppState reactions ────────────────────────────────────────────────
     connect(m_appState, &AppState::connectionChanged,
@@ -92,6 +86,29 @@ void MonitorTab::setupUi()
 
     m_simCheck = new QCheckBox(tr("Simülasyon Modu"), this);
     statusLayout->addWidget(m_simCheck);
+
+    m_simIntervalSpin = new QSpinBox(this);
+    m_simIntervalSpin->setRange(50, 5000);
+    m_simIntervalSpin->setSingleStep(50);
+    m_simIntervalSpin->setValue(500);
+    m_simIntervalSpin->setSuffix(" ms");
+    m_simIntervalSpin->setEnabled(false);
+    statusLayout->addWidget(new QLabel(tr("Periyot:"), this));
+    statusLayout->addWidget(m_simIntervalSpin);
+
+    m_simMinSpin = new QDoubleSpinBox(this);
+    m_simMinSpin->setRange(-100000.0, 100000.0);
+    m_simMinSpin->setDecimals(3);
+    m_simMinSpin->setValue(0.0);
+    m_simMinSpin->setEnabled(false);
+    m_simMaxSpin = new QDoubleSpinBox(this);
+    m_simMaxSpin->setRange(-100000.0, 100000.0);
+    m_simMaxSpin->setDecimals(3);
+    m_simMaxSpin->setValue(1.0);
+    m_simMaxSpin->setEnabled(false);
+    statusLayout->addWidget(new QLabel(tr("Aralık:"), this));
+    statusLayout->addWidget(m_simMinSpin);
+    statusLayout->addWidget(m_simMaxSpin);
 
     mainLayout->addWidget(statusFrame);
 
@@ -213,12 +230,95 @@ void MonitorTab::onSaveClicked()
 void MonitorTab::onSimulationToggled(bool checked)
 {
     if (checked) {
-        onConnectionChanged(true, "Simülasyon @ 115200");
-        m_simulator->start(800);
+        startHardwareSimulation();
     } else {
-        m_simulator->stop();
-        onConnectionChanged(false, QString());
-        onClearClicked();
+        stopHardwareSimulation();
+    }
+}
+
+void MonitorTab::startHardwareSimulation()
+{
+    const QString port = m_appState->activePort();
+    if (port.isEmpty()) {
+        appendHtmlLine("#F38BA8", tr("Simülasyon için aktif COM port seçili değil."));
+        m_simCheck->setChecked(false);
+        return;
+    }
+
+    m_simIntervalSpin->setEnabled(true);
+    m_simMinSpin->setEnabled(true);
+    m_simMaxSpin->setEnabled(true);
+    m_simSeed = 1234;
+    m_simSentCount = 0;
+    m_simResponseCount = 0;
+
+    appendHtmlLine("#F9E2AF",
+        tr("Donanım simülasyonu başlatılıyor: sentetik sensör verileri karta gönderilecek."));
+
+    if (!m_appState->isConnected()) {
+        m_serialManager->connectToPort(port, m_appState->activeBaud());
+        QTimer::singleShot(1200, this, [this]() {
+            if (m_simCheck->isChecked()) {
+                m_serialManager->writeLine("BOOT?");
+                sendSimulatedSensorFrame();
+                m_simTimer->start(m_simIntervalSpin->value());
+            }
+        });
+    } else {
+        m_serialManager->writeLine("BOOT?");
+        sendSimulatedSensorFrame();
+        m_simTimer->start(m_simIntervalSpin->value());
+    }
+}
+
+void MonitorTab::stopHardwareSimulation()
+{
+    m_simTimer->stop();
+    m_simIntervalSpin->setEnabled(false);
+    m_simMinSpin->setEnabled(false);
+    m_simMaxSpin->setEnabled(false);
+    appendHtmlLine("#6C7086", tr("Donanım simülasyonu durduruldu."));
+}
+
+void MonitorTab::sendSimulatedSensorFrame()
+{
+    if (!m_appState->isConnected()) {
+        m_simTimer->stop();
+        m_simCheck->setChecked(false);
+        appendHtmlLine("#F38BA8", tr("UART bağlantısı yok; simülasyon durduruldu."));
+        return;
+    }
+
+    if (m_simTimer->interval() != m_simIntervalSpin->value())
+        m_simTimer->setInterval(m_simIntervalSpin->value());
+
+    const double minValue = m_simMinSpin->value();
+    const double maxValue = m_simMaxSpin->value();
+    const double lo = qMin(minValue, maxValue);
+    const double hi = qMax(minValue, maxValue);
+
+    QStringList values;
+    QStringList displayValues;
+    for (int i = 0; i < 3; ++i) {
+        m_simSeed = (m_simSeed * 1664525u) + 1013904223u;
+        const double unit = static_cast<double>(m_simSeed & 0x00FFFFFFu) / 16777215.0;
+        const double value = lo + unit * (hi - lo);
+        const int milli = qRound(value * 1000.0);
+        values << QString::number(milli);
+        displayValues << QString::number(value, 'f', 3);
+    }
+
+    const QByteArray command = QString("INFER %1").arg(values.join(' ')).toUtf8();
+    ++m_simSentCount;
+    appendHtmlLine("#F9E2AF",
+        QString("sim sensor  x1=%1  x2=%2  x3=%3")
+            .arg(displayValues.value(0), displayValues.value(1), displayValues.value(2)));
+    m_serialManager->writeLine(command);
+
+    if (m_simSentCount >= 6 && m_simResponseCount == 0) {
+        appendHtmlLine("#F38BA8",
+            tr("Karttan INFER cevabı gelmedi. Pipeline Wizard ile firmware'i yeniden üretip flash ettiğinizden emin olun."));
+        m_simSentCount = 0;
     }
 }
 
@@ -267,6 +367,9 @@ void MonitorTab::onBootReceived(const BootData &data)
 
 void MonitorTab::onInferenceReceived(const InferenceData &data)
 {
+    if (m_simCheck && m_simCheck->isChecked())
+        ++m_simResponseCount;
+
     const double ms    = data.inf_us / 1000.0;
     const double ramKb = data.ram_b  / 1024.0;
 
