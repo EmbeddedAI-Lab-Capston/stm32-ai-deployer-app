@@ -2,8 +2,15 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
+#include <QVector>
 
-// Manages session recording to SQLite and provides data for comparison charts.
+struct AnalysisRecord {
+    int id = -1;
+    QString kind;
+    QStringList cells;
+};
+
 class AnalysisManager : public QObject
 {
     Q_OBJECT
@@ -12,31 +19,14 @@ public:
     explicit AnalysisManager(QObject *parent = nullptr);
     ~AnalysisManager() override;
 
-    // TODO: Open (or create) the SQLite database at the given path
-    // bool openDatabase(const QString &dbPath);
+    bool isOpen() const;
+    int addRecord(const QString &kind, const QStringList &cells);
+    QVector<AnalysisRecord> records(const QString &kind) const;
+    void deleteRecord(int id);
 
-    // TODO: Begin a new recording session; returns session ID
-    // int startSession(const QString &boardName, const QString &modelName);
+private:
+    void openDatabase();
+    void migrate();
 
-    // TODO: End the current recording session
-    // void endSession();
-
-    // TODO: Insert an inference metric record into the current session
-    // void recordMetric(const QJsonObject &packet);
-
-    // TODO: Return all session records as a list of structs for the comparison table
-    // QList<SessionRecord> allSessions() const;
-
-    // TODO: Return all metric rows for the given session ID (for chart data)
-    // QList<MetricRecord> metricsForSession(int sessionId) const;
-
-    // TODO: Delete a session and all its metric rows by session ID
-    // void deleteSession(int sessionId);
-
-signals:
-    // TODO: Emitted when a new metric is inserted (for live chart updates)
-    // void metricRecorded(const QJsonObject &packet);
-
-    // TODO: Emitted when the session list changes (add/delete)
-    // void sessionsChanged();
+    QString m_connectionName;
 };

@@ -251,6 +251,10 @@ void MonitorTab::startHardwareSimulation()
     m_simSeed = 1234;
     m_simSentCount = 0;
     m_simResponseCount = 0;
+    m_simTotalInfUs = 0;
+    m_simTotalRamB = 0;
+    m_simTotalAcc = 0;
+    m_simLastInference = {};
 
     appendHtmlLine("#F9E2AF",
         tr("Donanım simülasyonu başlatılıyor: sentetik sensör verileri karta gönderilecek."));
@@ -277,6 +281,15 @@ void MonitorTab::stopHardwareSimulation()
     m_simIntervalSpin->setEnabled(false);
     m_simMinSpin->setEnabled(false);
     m_simMaxSpin->setEnabled(false);
+
+    if (m_simResponseCount > 0) {
+        InferenceData summary = m_simLastInference;
+        summary.inf_us = static_cast<quint32>(m_simTotalInfUs / m_simResponseCount);
+        summary.ram_b = static_cast<quint32>(m_simTotalRamB / m_simResponseCount);
+        summary.acc_pct = static_cast<quint8>(m_simTotalAcc / m_simResponseCount);
+        emit simulationSessionFinished(summary, m_simResponseCount);
+    }
+
     appendHtmlLine("#6C7086", tr("Donanım simülasyonu durduruldu."));
 }
 
@@ -367,8 +380,13 @@ void MonitorTab::onBootReceived(const BootData &data)
 
 void MonitorTab::onInferenceReceived(const InferenceData &data)
 {
-    if (m_simCheck && m_simCheck->isChecked())
+    if (m_simCheck && m_simCheck->isChecked()) {
         ++m_simResponseCount;
+        m_simTotalInfUs += data.inf_us;
+        m_simTotalRamB += data.ram_b;
+        m_simTotalAcc += data.acc_pct;
+        m_simLastInference = data;
+    }
 
     const double ms    = data.inf_us / 1000.0;
     const double ramKb = data.ram_b  / 1024.0;

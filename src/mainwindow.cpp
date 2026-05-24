@@ -281,6 +281,22 @@ void MainWindow::setupConnections()
                 applyBoardFromWire(data.card, 0, 0, 0);
             });
 
+    connect(m_serialManager, &SerialManager::benchReceived,
+            this, [this](const BenchData &data) {
+                if (m_analysisTab) {
+                    BenchData enriched = data;
+                    if (enriched.model.isEmpty())
+                        enriched.model = m_appState->lastModelName();
+                    m_analysisTab->addBenchmarkResult(enriched, m_appState->activeBoard());
+                }
+            });
+
+    connect(m_monitorTab, &MonitorTab::simulationSessionFinished,
+            this, [this](const InferenceData &data, quint32 samples) {
+                if (m_analysisTab)
+                    m_analysisTab->addSimulationResult(data, m_appState->activeBoard(), samples);
+            });
+
     // Refresh CLI status after settings change
     // (handled in onSettingsTriggered)
 }

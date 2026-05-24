@@ -29,6 +29,9 @@ public:
                         QWidget       *parent = nullptr);
     ~MonitorTab() override;
 
+signals:
+    void simulationSessionFinished(const InferenceData &summary, quint32 samples);
+
 private slots:
     void onClearClicked();
     void onSaveClicked();
@@ -68,6 +71,10 @@ private:
     quint32 m_simSeed = 1234;
     quint32 m_simSentCount = 0;
     quint32 m_simResponseCount = 0;
+    quint64 m_simTotalInfUs = 0;
+    quint64 m_simTotalRamB = 0;
+    quint64 m_simTotalAcc = 0;
+    InferenceData m_simLastInference;
 
     // Terminal
     QTextEdit *m_terminal = nullptr;

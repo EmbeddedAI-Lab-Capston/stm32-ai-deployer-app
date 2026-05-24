@@ -14,6 +14,9 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPageLayout>
@@ -27,6 +30,7 @@
 #include <QTabWidget>
 #include <QTextStream>
 #include <QVBoxLayout>
+#include <QRegularExpression>
 #include <QStringConverter>
 
 #include <QtCharts/QBarCategoryAxis>
@@ -36,6 +40,7 @@
 #include <QtCharts/QChartView>
 #include <QtCharts/QValueAxis>
 
+#include "core/AppSettings.h"
 #include "modules/analysis/AnalysisManager.h"
 
 namespace {
@@ -102,6 +107,91 @@ QTableWidgetItem *makeItem(const QString &text)
     return item;
 }
 
+QString modelTypeFromName(const QString &model)
+{
+    const QString lower = model.toLower();
+    if (lower.contains("int8"))
+        return QStringLiteral("INT8");
+    if (lower.contains("float32") || lower.contains("fp32"))
+        return QStringLiteral("Float32");
+    if (lower.contains("dynamic"))
+        return QStringLiteral("Dynamic Q");
+    return QStringLiteral("--");
+}
+
+QString boardNameForRow(const QString &wireCard, const BoardInfo &board)
+{
+    if (!board.probeBoardName.isEmpty())
+        return board.probeBoardName;
+    if (!wireCard.isEmpty())
+        return wireCard;
+    return board.isNull() ? QStringLiteral("--") : board.name;
+}
+
+QString chipNameForRow(const BoardInfo &board)
+{
+    if (!board.deviceName.isEmpty())
+        return board.deviceName;
+    if (board.name.contains("H7", Qt::CaseInsensitive))
+        return QStringLiteral("STM32H723ZG");
+    if (board.name.contains("F4", Qt::CaseInsensitive))
+        return QStringLiteral("STM32F407VG");
+    if (board.name.contains("N6", Qt::CaseInsensitive))
+        return QStringLiteral("STM32N657");
+    return QStringLiteral("--");
+}
+
+QString cpuNameForRow(const BoardInfo &board)
+{
+    if (!board.deviceCpu.isEmpty())
+        return board.deviceCpu;
+    if (board.name.contains("H7", Qt::CaseInsensitive))
+        return QStringLiteral("Cortex-M7");
+    if (board.name.contains("F4", Qt::CaseInsensitive))
+        return QStringLiteral("Cortex-M4");
+    if (board.name.contains("N6", Qt::CaseInsensitive))
+        return QStringLiteral("Cortex-M55/NPU");
+    return QStringLiteral("--");
+}
+
+struct ModelReportDetails {
+    QString sensor = QStringLiteral("--");
+    QString weights = QStringLiteral("--");
+};
+
+ModelReportDetails loadModelReportDetails()
+{
+    ModelReportDetails details;
+    AppSettings settings;
+    const QDir outputDir(settings.lastOutputDir());
+
+    QFile config(outputDir.filePath(QStringLiteral("Inc/ai_config.h")));
+    if (config.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        const QString text = QString::fromUtf8(config.readAll());
+        const auto match = QRegularExpression(
+            QStringLiteral("AI_SENSOR_TYPE\\s+\"([^\"]+)\"")).match(text);
+        if (match.hasMatch())
+            details.sensor = match.captured(1);
+    }
+
+    QFile report(outputDir.filePath(QStringLiteral("xcubeai_output/network_c_info.json")));
+    if (report.open(QIODevice::ReadOnly)) {
+        const QJsonDocument doc = QJsonDocument::fromJson(report.readAll());
+        const QJsonArray tools = doc.object()
+            .value(QStringLiteral("environment")).toObject()
+            .value(QStringLiteral("tools")).toArray();
+        if (!tools.isEmpty()) {
+            const qint64 size = tools.first().toObject()
+                .value(QStringLiteral("input_model")).toObject()
+                .value(QStringLiteral("size")).toInteger();
+            if (size > 0)
+                details.weights = QString("%1 KiB").arg(size / 1024.0, 0, 'f', 2);
+        }
+    }
+
+    return details;
+}
+
 }
 
 AnalysisTab::AnalysisTab(QWidget *parent)
@@ -146,6 +236,7 @@ void AnalysisTab::setupUi()
     m_tabs->addTab(createAnalysisPage(QStringLiteral("simulation")), tr("Simülasyon Veri Analizleri"));
     m_tabs->addTab(createAnalysisPage(QStringLiteral("sensor")), tr("Gerçek Sensör Veri Analizleri"));
     mainLayout->addWidget(m_tabs, 1);
+    loadPersistentRecords();
 
     connect(refreshBtn, &QPushButton::clicked, this, &AnalysisTab::onRefreshClicked);
     connect(deleteBtn, &QPushButton::clicked, this, &AnalysisTab::onDeleteClicked);
@@ -228,7 +319,7 @@ QWidget *AnalysisTab::createAnalysisPage(const QString &kind)
     table->horizontalHeader()->setMinimumSectionSize(72);
     table->setWordWrap(false);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    table->setSelectionMode(QAbstractItemView::SingleSelection);
+    table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     table->setAlternatingRowColors(true);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->verticalHeader()->setVisible(false);
@@ -409,6 +500,114 @@ void AnalysisTab::populateSensorData(QTableWidget *table)
             table->setItem(row, col, makeItem(rows[row][col]));
 }
 
+void AnalysisTab::loadPersistentRecords()
+{
+    const QVector<AnalysisRecord> benchmarkRecords =
+        m_analysisManager->records(QStringLiteral("benchmark"));
+    for (auto it = benchmarkRecords.crbegin(); it != benchmarkRecords.crend(); ++it) {
+        ensureFilterOption(m_boardFilter, it->cells.value(2));
+        ensureFilterOption(m_modelFilter, it->cells.value(6));
+        prependRow(m_benchmarkTable, it->cells, it->id);
+    }
+
+    const QVector<AnalysisRecord> simulationRecords =
+        m_analysisManager->records(QStringLiteral("simulation"));
+    for (auto it = simulationRecords.crbegin(); it != simulationRecords.crend(); ++it) {
+        ensureFilterOption(m_boardFilter, it->cells.value(2));
+        ensureFilterOption(m_modelFilter, it->cells.value(6));
+        prependRow(m_simulationTable, it->cells, it->id);
+    }
+
+    const QVector<AnalysisRecord> sensorRecords =
+        m_analysisManager->records(QStringLiteral("sensor"));
+    for (auto it = sensorRecords.crbegin(); it != sensorRecords.crend(); ++it) {
+        ensureFilterOption(m_boardFilter, it->cells.value(2));
+        ensureFilterOption(m_modelFilter, it->cells.value(6));
+        prependRow(m_sensorTable, it->cells, it->id);
+    }
+}
+
+void AnalysisTab::prependRow(QTableWidget *table, const QStringList &cells, int recordId)
+{
+    if (!table)
+        return;
+
+    table->insertRow(0);
+    for (int col = 0; col < table->columnCount(); ++col) {
+        QTableWidgetItem *item = makeItem(cells.value(col, QStringLiteral("--")));
+        if (col == 0)
+            item->setData(Qt::UserRole, recordId);
+        table->setItem(0, col, item);
+    }
+}
+
+void AnalysisTab::ensureFilterOption(QComboBox *combo, const QString &text)
+{
+    if (!combo || text.isEmpty() || text == QStringLiteral("--"))
+        return;
+    if (combo->findText(text) < 0)
+        combo->addItem(text);
+}
+
+void AnalysisTab::addBenchmarkResult(const BenchData &data, const BoardInfo &board)
+{
+    const QString model = data.model.isEmpty() ? QStringLiteral("--") : data.model;
+    const QString boardName = boardNameForRow(data.card, board);
+    const QString modelType = modelTypeFromName(model);
+    const ModelReportDetails report = loadModelReportDetails();
+    const QStringList cells = {
+        QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm"),
+        QString("BENCH-LIVE-%1").arg(data.samples),
+        boardName,
+        chipNameForRow(board),
+        cpuNameForRow(board),
+        model,
+        modelType,
+        report.sensor,
+        QString("%1 ms").arg(data.avg_us / 1000.0, 0, 'f', 3),
+        QString("%1 KiB").arg(data.ram_b / 1024.0, 0, 'f', 2),
+        report.weights,
+        QString("label=%1").arg(data.label.isEmpty() ? QStringLiteral("--") : data.label)
+    };
+
+    ensureFilterOption(m_boardFilter, boardName);
+    ensureFilterOption(m_modelFilter, modelType);
+    const int id = m_analysisManager->addRecord(QStringLiteral("benchmark"), cells);
+    prependRow(m_benchmarkTable, cells, id);
+    applyFilters();
+}
+
+void AnalysisTab::addSimulationResult(const InferenceData &data, const BoardInfo &board, quint32 samples)
+{
+    const QString model = data.model.isEmpty() ? QStringLiteral("--") : data.model;
+    const QString boardName = boardNameForRow(data.card, board);
+    const QString modelType = modelTypeFromName(model);
+    const ModelReportDetails report = loadModelReportDetails();
+    const QStringList cells = {
+        QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm"),
+        QString("SIM-LIVE-%1").arg(m_simulationTable ? m_simulationTable->rowCount() + 1 : 1),
+        boardName,
+        chipNameForRow(board),
+        cpuNameForRow(board),
+        model,
+        modelType,
+        report.sensor == QStringLiteral("--") ? QStringLiteral("UART Sim") : report.sensor,
+        QString("%1 ms").arg(data.inf_us / 1000.0, 0, 'f', 3),
+        QString("%1 KiB").arg(data.ram_b / 1024.0, 0, 'f', 2),
+        report.weights,
+        QString("avg %1% | last=%2 | n=%3")
+            .arg(data.acc_pct)
+            .arg(data.label.isEmpty() ? QStringLiteral("--") : data.label)
+            .arg(samples)
+    };
+
+    ensureFilterOption(m_boardFilter, boardName);
+    ensureFilterOption(m_modelFilter, modelType);
+    const int id = m_analysisManager->addRecord(QStringLiteral("simulation"), cells);
+    prependRow(m_simulationTable, cells, id);
+    applyFilters();
+}
+
 QTableWidget *AnalysisTab::currentTable() const
 {
     if (!m_tabs)
@@ -440,9 +639,6 @@ void AnalysisTab::applyFilters()
 
 void AnalysisTab::onRefreshClicked()
 {
-    populateBenchmarkData(m_benchmarkTable);
-    populateSimulationData(m_simulationTable);
-    populateSensorData(m_sensorTable);
     applyFilters();
 }
 
@@ -451,9 +647,20 @@ void AnalysisTab::onDeleteClicked()
     QTableWidget *table = currentTable();
     if (!table)
         return;
-    const int row = table->currentRow();
-    if (row >= 0)
+
+    QList<int> rows;
+    const QModelIndexList selected = table->selectionModel()->selectedRows();
+    for (const QModelIndex &index : selected)
+        rows.append(index.row());
+    std::sort(rows.begin(), rows.end(), std::greater<int>());
+
+    for (int row : rows) {
+        const QTableWidgetItem *item = table->item(row, 0);
+        const int id = item ? item->data(Qt::UserRole).toInt() : -1;
+        if (id >= 0)
+            m_analysisManager->deleteRecord(id);
         table->removeRow(row);
+    }
 }
 
 void AnalysisTab::onExportCsvClicked()

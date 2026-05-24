@@ -4,6 +4,9 @@
 #include <QStringList>
 #include <QWidget>
 
+#include "modules/board/BoardPresets.h"
+#include "modules/serial/PacketParser.h"
+
 class AnalysisManager;
 class QTableWidget;
 class QChartView;
@@ -18,6 +21,10 @@ class AnalysisTab : public QWidget
 public:
     explicit AnalysisTab(QWidget *parent = nullptr);
     ~AnalysisTab() override;
+
+public slots:
+    void addBenchmarkResult(const BenchData &data, const BoardInfo &board);
+    void addSimulationResult(const InferenceData &data, const BoardInfo &board, quint32 samples = 1);
 
 private slots:
     void onRefreshClicked();
@@ -41,6 +48,9 @@ private:
     void populateBenchmarkData(QTableWidget *table);
     void populateSimulationData(QTableWidget *table);
     void populateSensorData(QTableWidget *table);
+    void loadPersistentRecords();
+    void prependRow(QTableWidget *table, const QStringList &cells, int recordId = -1);
+    void ensureFilterOption(QComboBox *combo, const QString &text);
 
     AnalysisManager *m_analysisManager = nullptr;
 
