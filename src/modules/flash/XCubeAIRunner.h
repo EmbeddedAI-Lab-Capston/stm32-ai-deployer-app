@@ -37,6 +37,11 @@ public:
     void cancel();
 
 public slots:
+    void analyze(const QString &modelPath,
+                 const QString &targetBoard,
+                 const QString &quantization,
+                 const QString &outputDir);
+
     void generate(const QString &modelPath,
                   const QString &targetBoard,
                   const QString &quantization,
@@ -60,8 +65,15 @@ private:
     QString   m_cliPath;
     QString   m_outputDir;
     QString   m_stdoutBuffer;
+    QString   m_stderrBuffer;
 
-    QStringList   buildArgs(const QString &modelPath,
+    void          runCommand(const QString &command,
+                             const QString &modelPath,
+                             const QString &targetBoard,
+                             const QString &quantization,
+                             const QString &outputDir);
+    QStringList   buildArgs(const QString &command,
+                            const QString &modelPath,
                             const QString &targetBoard,
                             const QString &quantization,
                             const QString &outputDir) const;

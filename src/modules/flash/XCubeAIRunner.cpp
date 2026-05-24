@@ -137,10 +137,27 @@ bool XCubeAIRunner::isAvailable()
 
 // ── Slot: generate ─────────────────────────────────────────────────────────
 
+void XCubeAIRunner::analyze(const QString &modelPath,
+                            const QString &targetBoard,
+                            const QString &quantization,
+                            const QString &outputDir)
+{
+    runCommand(QStringLiteral("analyze"), modelPath, targetBoard, quantization, outputDir);
+}
+
 void XCubeAIRunner::generate(const QString &modelPath,
                              const QString &targetBoard,
                              const QString &quantization,
                              const QString &outputDir)
+{
+    runCommand(QStringLiteral("generate"), modelPath, targetBoard, quantization, outputDir);
+}
+
+void XCubeAIRunner::runCommand(const QString &command,
+                               const QString &modelPath,
+                               const QString &targetBoard,
+                               const QString &quantization,
+                               const QString &outputDir)
 {
     if (isRunning()) return;
 
@@ -153,12 +170,13 @@ void XCubeAIRunner::generate(const QString &modelPath,
         return;
     }
 
-    m_outputDir     = outputDir;
+    m_outputDir = outputDir;
     m_stdoutBuffer.clear();
+    m_stderrBuffer.clear();
 
     QDir().mkpath(outputDir);
 
-    const QStringList args = buildArgs(modelPath, targetBoard, quantization, outputDir);
+    const QStringList args = buildArgs(command, modelPath, targetBoard, quantization, outputDir);
 
     emit outputLine(QString("> %1 %2").arg(execPath, args.join(' ')));
     emit started();
@@ -168,7 +186,8 @@ void XCubeAIRunner::generate(const QString &modelPath,
 
 // ── Private: buildArgs ─────────────────────────────────────────────────────
 
-QStringList XCubeAIRunner::buildArgs(const QString &modelPath,
+QStringList XCubeAIRunner::buildArgs(const QString &command,
+                                     const QString &modelPath,
                                      const QString &targetBoard,
                                      const QString &quantization,
                                      const QString &outputDir) const
@@ -180,7 +199,7 @@ QStringList XCubeAIRunner::buildArgs(const QString &modelPath,
     Q_UNUSED(targetBoard); // stedgeai only accepts "stm32" as target (MCU series-agnostic)
 
     QStringList args = {
-        "generate",
+        command,
         "--model", modelPath,
         "--target", "stm32",
         "--output", outputDir,
@@ -193,6 +212,9 @@ QStringList XCubeAIRunner::buildArgs(const QString &modelPath,
         args << "--compression" << "low";
     }
     // Float32 → no --compression flag (default is none)
+
+    if (command == "analyze")
+        args << "--no-workspace";
 
     return args;
 }
@@ -214,11 +236,14 @@ void XCubeAIRunner::onReadyReadStdOut()
 
 void XCubeAIRunner::onReadyReadStdErr()
 {
-    while (m_process->canReadLine()) {
-        const QString line =
-            QString::fromLocal8Bit(m_process->readLine()).trimmed();
-        if (!line.isEmpty())
+    const QString chunk = QString::fromLocal8Bit(m_process->readAllStandardError());
+    const QStringList lines = chunk.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts);
+    for (const QString &rawLine : lines) {
+        const QString line = rawLine.trimmed();
+        if (!line.isEmpty()) {
+            m_stderrBuffer += line + '\n';
             emit errorLine(line);
+        }
     }
 }
 
@@ -260,7 +285,22 @@ XCubeAIResult XCubeAIRunner::parseResult(int exitCode) const
     result.success   = (exitCode == 0);
     result.outputDir = m_outputDir;
 
-    if (!result.success) return result;
+    if (!result.success) {
+        const QString details = (m_stdoutBuffer + '\n' + m_stderrBuffer).trimmed();
+        result.errorMessage = details;
+
+        const QString upper = details.toUpper();
+        if (upper.contains("FLEXTENSORLIST") || upper.contains("WHILE")
+            || upper.contains("TENSORLIST")) {
+            result.errorMessage +=
+                "\n\nLSTM uyumluluk notu: Bu model TFLite icinde WHILE/FlexTensorList "
+                "operatorleriyle export edilmis. ST Edge AI bu operatorleri desteklemez. "
+                "Modeli fused TFLite UNIDIRECTIONAL_SEQUENCE_LSTM operatoru uretecek "
+                "sekilde yeniden export edin veya orijinal .h5/.keras modeliyle deneyin. "
+                "Ayrinti: docs/lstm_stm32_export.md";
+        }
+        return result;
+    }
 
     static const QRegularExpression flashRe(R"(Flash.*?(\d+\.?\d*)\s*KByte)",
                                             QRegularExpression::CaseInsensitiveOption);

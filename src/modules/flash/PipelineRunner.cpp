@@ -180,7 +180,7 @@ void PipelineRunner::run(const PipelineConfig &config)
     m_cancelled = false;
 
     emit progressChanged(0);
-    stepXCubeAI();
+    stepAnalyze();
 }
 
 void PipelineRunner::cancel()
@@ -193,9 +193,9 @@ void PipelineRunner::cancel()
 
 // ── Step 1: X-CUBE-AI code generation ─────────────────────────────────────
 
-void PipelineRunner::stepXCubeAI()
+void PipelineRunner::stepAnalyze()
 {
-    emit stageChanged(tr("1/4 — X-CUBE-AI: C kodu üretiliyor..."));
+    emit stageChanged(tr("1/5 - X-CUBE-AI: model uyumlulugu kontrol ediliyor..."));
     emit progressChanged(5);
 
     const QString xcubeOut = m_config.outputDir + "/xcubeai_output";
@@ -208,7 +208,51 @@ void PipelineRunner::stepXCubeAI()
     connect(m_xcubeRunner, &XCubeAIRunner::errorLine,
             this, &PipelineRunner::errorLine);
     connect(m_xcubeRunner, &XCubeAIRunner::progressChanged,
-            this, [this](int p) { emit progressChanged(5 + p / 5); });
+            this, [this](int p) { emit progressChanged(5 + p / 10); });
+    connect(m_xcubeRunner, &XCubeAIRunner::finished,
+            this, &PipelineRunner::onXCubeAnalyzeFinished);
+
+    m_xcubeRunner->analyze(m_config.modelPath,
+                           m_config.targetBoard,
+                           m_config.quantization,
+                           xcubeOut);
+}
+
+void PipelineRunner::onXCubeAnalyzeFinished(const XCubeAIResult &result)
+{
+    if (m_cancelled) { emit finished(false); return; }
+
+    if (!result.success) {
+        fail(tr("X-CUBE-AI analiz adimi basarisiz. Model desteklenmiyor veya donusturme gerekiyor."));
+        if (!result.errorMessage.isEmpty())
+            emit errorLine(result.errorMessage);
+        return;
+    }
+
+    emit outputLine(tr("Model X-CUBE-AI tarafinda destekleniyor, C kodu uretimine geciliyor."));
+    emit progressChanged(15);
+
+    m_xcubeRunner->deleteLater();
+    m_xcubeRunner = nullptr;
+    stepXCubeAI();
+}
+
+void PipelineRunner::stepXCubeAI()
+{
+    emit stageChanged(tr("2/5 - X-CUBE-AI: C kodu uretiliyor..."));
+    emit progressChanged(20);
+
+    const QString xcubeOut = m_config.outputDir + "/xcubeai_output";
+
+    m_xcubeRunner = new XCubeAIRunner(this);
+    m_xcubeRunner->setCliPath(m_config.xcubeCliPath);
+
+    connect(m_xcubeRunner, &XCubeAIRunner::outputLine,
+            this, &PipelineRunner::outputLine);
+    connect(m_xcubeRunner, &XCubeAIRunner::errorLine,
+            this, &PipelineRunner::errorLine);
+    connect(m_xcubeRunner, &XCubeAIRunner::progressChanged,
+            this, [this](int p) { emit progressChanged(20 + p / 5); });
     connect(m_xcubeRunner, &XCubeAIRunner::finished,
             this, &PipelineRunner::onXCubeFinished);
 
@@ -230,7 +274,7 @@ void PipelineRunner::onXCubeFinished(const XCubeAIResult &result)
     }
 
     emit outputLine(tr("✓ C kodu üretildi: ") + result.outputDir);
-    emit progressChanged(25);
+    emit progressChanged(35);
     stepPrepare();
 }
 
@@ -238,8 +282,8 @@ void PipelineRunner::onXCubeFinished(const XCubeAIResult &result)
 
 void PipelineRunner::stepPrepare()
 {
-    emit stageChanged(tr("2/4 — Şablon proje hazırlanıyor..."));
-    emit progressChanged(30);
+    emit stageChanged(tr("3/5 - Sablon proje hazirlaniyor..."));
+    emit progressChanged(40);
 
     if (m_cancelled) { emit finished(false); return; }
 
@@ -357,7 +401,7 @@ void PipelineRunner::stepPrepare()
     }
 
     emit outputLine(tr("✓ Proje hazırlandı: ") + m_config.outputDir);
-    emit progressChanged(45);
+    emit progressChanged(50);
     stepBuild();
 }
 
@@ -365,8 +409,8 @@ void PipelineRunner::stepPrepare()
 
 void PipelineRunner::stepBuild()
 {
-    emit stageChanged(tr("3/4 — Derleniyor (arm-none-eabi-gcc)..."));
-    emit progressChanged(50);
+    emit stageChanged(tr("4/5 - Derleniyor (arm-none-eabi-gcc)..."));
+    emit progressChanged(55);
 
     if (m_cancelled) { emit finished(false); return; }
 
@@ -476,7 +520,7 @@ void PipelineRunner::onBuildFinished(bool success, int /*exitCode*/)
 
     emit outputLine(tr("✓ Derleme tamamlandı: ")
                     + QFileInfo(m_builtElfPath).fileName());
-    emit progressChanged(80);
+    emit progressChanged(82);
     stepFlash();
 }
 
@@ -484,7 +528,7 @@ void PipelineRunner::onBuildFinished(bool success, int /*exitCode*/)
 
 void PipelineRunner::stepFlash()
 {
-    emit stageChanged(tr("4/4 — Karta yükleniyor (ST-Link)..."));
+    emit stageChanged(tr("5/5 - Karta yukleniyor (ST-Link)..."));
 
     if (m_cancelled) { emit finished(false); return; }
 

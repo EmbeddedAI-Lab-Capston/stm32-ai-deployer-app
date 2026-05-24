@@ -33,11 +33,13 @@ signals:
     void finished(bool success);
 
 private slots:
+    void onXCubeAnalyzeFinished(const XCubeAIResult &result);
     void onXCubeFinished(const XCubeAIResult &result);
     void onBuildFinished(bool success, int exitCode);
     void onFlashFinished(bool success, int exitCode);
 
 private:
+    void stepAnalyze();
     void stepXCubeAI();
     void stepPrepare();
     void stepBuild();
