@@ -2,7 +2,6 @@
 
 #include <QCoreApplication>
 #include <QDir>
-#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
@@ -465,14 +464,15 @@ void PipelineRunner::onBuildFinished(bool success, int /*exitCode*/)
         return;
     }
 
-    // Find produced .elf
-    QDirIterator it(m_config.outputDir, {"*.elf"},
-                    QDir::Files, QDirIterator::Subdirectories);
-    if (!it.hasNext()) {
+    const QString expectedElfPath = QDir(m_config.outputDir).filePath(
+        QStringLiteral("build/%1_%2.elf")
+            .arg(m_config.modelName, m_config.targetBoard));
+
+    if (!QFileInfo::exists(expectedElfPath)) {
         fail(tr("✗ .elf dosyası üretilemedi."));
         return;
     }
-    m_builtElfPath = it.next();
+    m_builtElfPath = expectedElfPath;
 
     emit outputLine(tr("✓ Derleme tamamlandı: ")
                     + QFileInfo(m_builtElfPath).fileName());
