@@ -18,6 +18,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLocale>
 #include <QMessageBox>
 #include <QPageLayout>
 #include <QPageSize>
@@ -31,6 +32,7 @@
 #include <QTextStream>
 #include <QVBoxLayout>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <QStringConverter>
 
 #include <QtCharts/QBarCategoryAxis>
@@ -157,6 +159,9 @@ QString cpuNameForRow(const BoardInfo &board)
 struct ModelReportDetails {
     QString sensor = QStringLiteral("--");
     QString weights = QStringLiteral("--");
+    QString params = QStringLiteral("--");
+    QString macc = QStringLiteral("--");
+    QString input = QStringLiteral("--");
 };
 
 ModelReportDetails loadModelReportDetails()
@@ -186,6 +191,36 @@ ModelReportDetails loadModelReportDetails()
                 .value(QStringLiteral("size")).toInteger();
             if (size > 0)
                 details.weights = QString("%1 KiB").arg(size / 1024.0, 0, 'f', 2);
+            const qint64 params = tools.first().toObject()
+                .value(QStringLiteral("input_model")).toObject()
+                .value(QStringLiteral("n_params")).toInteger();
+            if (params > 0)
+                details.params = QString::number(params);
+        }
+
+        quint64 macc = 0;
+        const QJsonArray graphs = doc.object().value(QStringLiteral("graphs")).toArray();
+        for (const QJsonValue &graphValue : graphs) {
+            const QJsonArray nodes = graphValue.toObject().value(QStringLiteral("nodes")).toArray();
+            for (const QJsonValue &nodeValue : nodes)
+                macc += static_cast<quint64>(nodeValue.toObject()
+                    .value(QStringLiteral("macc")).toInteger());
+        }
+        if (macc > 0)
+            details.macc = QLocale().toString(macc);
+
+        if (!graphs.isEmpty()) {
+            const QJsonArray inputs = graphs.first().toObject()
+                .value(QStringLiteral("original_inputs")).toArray();
+            if (!inputs.isEmpty()) {
+                const QJsonObject input = inputs.first().toObject();
+                const QJsonArray shape = input.value(QStringLiteral("shape")).toArray();
+                QStringList dims;
+                for (const QJsonValue &dim : shape)
+                    dims << QString::number(dim.toInt());
+                if (!dims.isEmpty())
+                    details.input = dims.join(QStringLiteral("x"));
+            }
         }
     }
 
@@ -217,6 +252,7 @@ void AnalysisTab::setupUi()
     auto *refreshBtn = new QPushButton(tr("Yenile"), this);
     auto *deleteBtn = new QPushButton(tr("Seçili Kaydı Sil"), this);
     deleteBtn->setObjectName("dangerBtn");
+    m_flashCompiledBtn = new QPushButton(tr("Seçili Modeli Tekrar Yükle"), this);
     auto *csvBtn = new QPushButton(tr("CSV Dışa Aktar"), this);
     auto *pdfBtn = new QPushButton(tr("PDF Rapor"), this);
 
@@ -227,6 +263,7 @@ void AnalysisTab::setupUi()
     toolbar->addStretch();
     toolbar->addWidget(refreshBtn);
     toolbar->addWidget(deleteBtn);
+    toolbar->addWidget(m_flashCompiledBtn);
     toolbar->addWidget(csvBtn);
     toolbar->addWidget(pdfBtn);
     mainLayout->addLayout(toolbar);
@@ -235,11 +272,13 @@ void AnalysisTab::setupUi()
     m_tabs->addTab(createAnalysisPage(QStringLiteral("benchmark")), tr("Benchmark Analizleri"));
     m_tabs->addTab(createAnalysisPage(QStringLiteral("simulation")), tr("Simülasyon Veri Analizleri"));
     m_tabs->addTab(createAnalysisPage(QStringLiteral("sensor")), tr("Gerçek Sensör Veri Analizleri"));
+    m_tabs->addTab(createAnalysisPage(QStringLiteral("compiled")), tr("Derlenen Modeller"));
     mainLayout->addWidget(m_tabs, 1);
     loadPersistentRecords();
 
     connect(refreshBtn, &QPushButton::clicked, this, &AnalysisTab::onRefreshClicked);
     connect(deleteBtn, &QPushButton::clicked, this, &AnalysisTab::onDeleteClicked);
+    connect(m_flashCompiledBtn, &QPushButton::clicked, this, &AnalysisTab::onFlashCompiledClicked);
     connect(csvBtn, &QPushButton::clicked, this, &AnalysisTab::onExportCsvClicked);
     connect(pdfBtn, &QPushButton::clicked, this, &AnalysisTab::onExportPdfClicked);
     connect(m_boardFilter, &QComboBox::currentTextChanged, this, &AnalysisTab::applyFilters);
@@ -291,7 +330,7 @@ QWidget *AnalysisTab::createAnalysisPage(const QString &kind)
         ramValues = {6.44, 3.0, 22.1, 12.8};
         flashValues = {65.83, 58.2, 128.4, 74.6};
         weightValues = {6.70, 12.4, 96.8, 18.9};
-    } else {
+    } else if (kind == "sensor") {
         summaryGrid->addWidget(makeMetric(tr("Saha Oturumu"), "9", page)->parentWidget(), 0, 0);
         summaryGrid->addWidget(makeMetric(tr("Sensör Örneği"), "21,640", page)->parentWidget(), 0, 1);
         summaryGrid->addWidget(makeMetric(tr("Ortalama Güven"), "91.6%", page)->parentWidget(), 0, 2);
@@ -303,17 +342,37 @@ QWidget *AnalysisTab::createAnalysisPage(const QString &kind)
         ramValues = {6.44, 6.44, 6.44, 6.44};
         flashValues = {65.83, 65.83, 65.83, 65.83};
         weightValues = {6.70, 6.70, 6.70, 6.70};
+    } else {
+        summaryGrid->addWidget(makeMetric(tr("Arşivlenen Model"), "4", page)->parentWidget(), 0, 0);
+        summaryGrid->addWidget(makeMetric(tr("En Küçük Firmware"), "58.2 KiB", page)->parentWidget(), 0, 1);
+        summaryGrid->addWidget(makeMetric(tr("En Düşük MACC"), "15,136", page)->parentWidget(), 0, 2);
+        summaryGrid->addWidget(makeMetric(tr("Son Derleme"), "INT8-H7", page)->parentWidget(), 0, 3);
+        chartTitle = tr("Derlenen Modellerde MACC");
+        chartCategories = {"anomaly", "har_mlp", "kws_lstm", "float32"};
+        chartValues = {15136, 22800, 90400, 15136};
+        resourceTitle = tr("Derlenen Model Artefakt Boyutları");
+        ramValues = {6.44, 3.0, 22.1, 18.2};
+        flashValues = {65.83, 58.2, 128.4, 63.97};
+        weightValues = {6.70, 12.4, 96.8, 25.2};
     }
     layout->addLayout(summaryGrid);
 
     auto *tableBox = new QGroupBox(tr("Detaylı Test Kayıtları"), page);
     auto *tableLayout = new QVBoxLayout(tableBox);
     auto *table = new QTableWidget(0, 12, tableBox);
-    table->setHorizontalHeaderLabels({
-        tr("Tarih"), tr("Oturum"), tr("Kart"), tr("Chip"), tr("CPU"),
-        tr("Model"), tr("Tür"), tr("Sensör"), tr("Ortalama"), tr("RAM"),
-        tr("Weights"), tr("Sonuç")
-    });
+    if (kind == "compiled") {
+        table->setHorizontalHeaderLabels({
+            tr("Tarih"), tr("Model"), tr("Tür"), tr("Kart"), tr("Chip"),
+            tr("Sensör"), tr("Input"), tr("Params"), tr("MACC"), tr("Weights"),
+            tr("Firmware"), tr("Arşiv")
+        });
+    } else {
+        table->setHorizontalHeaderLabels({
+            tr("Tarih"), tr("Oturum"), tr("Kart"), tr("Chip"), tr("CPU"),
+            tr("Model"), tr("Tür"), tr("Sensör"), tr("Ortalama"), tr("RAM"),
+            tr("Weights"), tr("Sonuç")
+        });
+    }
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table->horizontalHeader()->setStretchLastSection(true);
     table->horizontalHeader()->setMinimumSectionSize(72);
@@ -331,9 +390,12 @@ QWidget *AnalysisTab::createAnalysisPage(const QString &kind)
     } else if (kind == "simulation") {
         m_simulationTable = table;
         populateSimulationData(table);
-    } else {
+    } else if (kind == "sensor") {
         m_sensorTable = table;
         populateSensorData(table);
+    } else {
+        m_compiledModelTable = table;
+        populateCompiledModelData(table);
     }
 
     tableLayout->addWidget(table);
@@ -500,6 +562,20 @@ void AnalysisTab::populateSensorData(QTableWidget *table)
             table->setItem(row, col, makeItem(rows[row][col]));
 }
 
+void AnalysisTab::populateCompiledModelData(QTableWidget *table)
+{
+    const QList<QStringList> rows = {
+        {"2026-05-24 12:41", "anomaly_cnn", "INT8", "NUCLEO-H723ZG", "STM32H723ZG", "BME280", "1x3x1", "6,466", "15,136", "6.70 KiB", "65.83 KiB", "Örnek kayıt"},
+        {"2026-05-24 11:58", "anomaly_cnn", "Float32", "NUCLEO-H723ZG", "STM32H723ZG", "BME280", "1x3x1", "6,466", "15,136", "25.2 KiB", "63.97 KiB", "Örnek kayıt"},
+        {"2026-05-22 18:12", "har_mlp", "INT8", "STM32F407 Discovery", "STM32F407VG", "MPU6050", "1x6", "12,840", "22,800", "12.4 KiB", "58.2 KiB", "Örnek kayıt"},
+        {"2026-05-20 16:40", "kws_lstm", "INT8", "STM32N6570-DK", "STM32N657", "PDM_MIC", "1x16000", "96,120", "90,400", "96.8 KiB", "128.4 KiB", "Örnek kayıt"},
+    };
+    table->setRowCount(rows.size());
+    for (int row = 0; row < rows.size(); ++row)
+        for (int col = 0; col < rows[row].size(); ++col)
+            table->setItem(row, col, makeItem(rows[row][col]));
+}
+
 void AnalysisTab::loadPersistentRecords()
 {
     const QVector<AnalysisRecord> benchmarkRecords =
@@ -525,6 +601,14 @@ void AnalysisTab::loadPersistentRecords()
         ensureFilterOption(m_modelFilter, it->cells.value(6));
         prependRow(m_sensorTable, it->cells, it->id);
     }
+
+    const QVector<AnalysisRecord> compiledRecords =
+        m_analysisManager->records(QStringLiteral("compiled"));
+    for (auto it = compiledRecords.crbegin(); it != compiledRecords.crend(); ++it) {
+        ensureFilterOption(m_boardFilter, it->cells.value(3));
+        ensureFilterOption(m_modelFilter, it->cells.value(2));
+        prependRow(m_compiledModelTable, it->cells, it->id);
+    }
 }
 
 void AnalysisTab::prependRow(QTableWidget *table, const QStringList &cells, int recordId)
@@ -535,8 +619,11 @@ void AnalysisTab::prependRow(QTableWidget *table, const QStringList &cells, int 
     table->insertRow(0);
     for (int col = 0; col < table->columnCount(); ++col) {
         QTableWidgetItem *item = makeItem(cells.value(col, QStringLiteral("--")));
-        if (col == 0)
+        if (col == 0) {
             item->setData(Qt::UserRole, recordId);
+            item->setData(Qt::UserRole + 1, cells.value(12));
+            item->setData(Qt::UserRole + 2, cells.value(1));
+        }
         table->setItem(0, col, item);
     }
 }
@@ -608,6 +695,67 @@ void AnalysisTab::addSimulationResult(const InferenceData &data, const BoardInfo
     applyFilters();
 }
 
+void AnalysisTab::addCompiledModel(const PipelineConfig &config, const BoardInfo &board)
+{
+    const QString expectedElf = QDir(config.outputDir).filePath(
+        QStringLiteral("build/%1_%2.elf").arg(config.modelName, config.targetBoard));
+    if (!QFile::exists(expectedElf))
+        return;
+
+    const QString archiveRoot = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+        + QStringLiteral("/compiled_models");
+    const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_hhmmss"));
+    const QString archiveDirPath = QDir(archiveRoot).filePath(
+        QStringLiteral("%1_%2_%3").arg(stamp, config.modelName, config.targetBoard));
+    QDir().mkpath(archiveDirPath);
+
+    const QString archivedElf = QDir(archiveDirPath).filePath(QFileInfo(expectedElf).fileName());
+    QFile::remove(archivedElf);
+    QFile::copy(expectedElf, archivedElf);
+
+    const QString reportPath = QDir(config.outputDir).filePath(
+        QStringLiteral("xcubeai_output/network_c_info.json"));
+    if (QFile::exists(reportPath)) {
+        const QString archivedReport = QDir(archiveDirPath).filePath(QStringLiteral("network_c_info.json"));
+        QFile::remove(archivedReport);
+        QFile::copy(reportPath, archivedReport);
+    }
+
+    const ModelReportDetails report = loadModelReportDetails();
+    const QString boardName = boardNameForRow(config.targetBoard, board);
+    const QString firmwareSize = QString("%1 KiB")
+        .arg(QFileInfo(archivedElf).size() / 1024.0, 0, 'f', 2);
+    QString modelType = config.quantization.contains(QStringLiteral("Float"), Qt::CaseInsensitive)
+        ? QStringLiteral("Float32")
+        : modelTypeFromName(config.modelName);
+    if (modelType == QStringLiteral("--"))
+        modelType = config.quantization;
+
+    const QStringList cells = {
+        QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm"),
+        config.modelName,
+        modelType,
+        boardName,
+        chipNameForRow(board),
+        config.sensorType,
+        report.input,
+        report.params,
+        report.macc,
+        report.weights,
+        firmwareSize,
+        QStringLiteral("Arşivlendi"),
+        archivedElf,
+        config.modelPath,
+        archiveDirPath
+    };
+
+    ensureFilterOption(m_boardFilter, boardName);
+    ensureFilterOption(m_modelFilter, modelType);
+    const int id = m_analysisManager->addRecord(QStringLiteral("compiled"), cells);
+    prependRow(m_compiledModelTable, cells, id);
+    applyFilters();
+}
+
 QTableWidget *AnalysisTab::currentTable() const
 {
     if (!m_tabs)
@@ -616,7 +764,9 @@ QTableWidget *AnalysisTab::currentTable() const
         return m_benchmarkTable;
     if (m_tabs->currentIndex() == 1)
         return m_simulationTable;
-    return m_sensorTable;
+    if (m_tabs->currentIndex() == 2)
+        return m_sensorTable;
+    return m_compiledModelTable;
 }
 
 void AnalysisTab::applyFilters()
@@ -629,10 +779,13 @@ void AnalysisTab::applyFilters()
     const QString modelType = m_modelFilter->currentText();
     const bool allBoards = board == tr("Tüm Kartlar");
     const bool allModels = modelType == tr("Tüm Model Türleri");
+    const bool compiled = table == m_compiledModelTable;
+    const int boardColumn = compiled ? 3 : 2;
+    const int modelColumn = compiled ? 2 : 6;
 
     for (int row = 0; row < table->rowCount(); ++row) {
-        const bool boardMatch = allBoards || tableCellText(table, row, 2) == board;
-        const bool modelMatch = allModels || tableCellText(table, row, 6) == modelType;
+        const bool boardMatch = allBoards || tableCellText(table, row, boardColumn) == board;
+        const bool modelMatch = allModels || tableCellText(table, row, modelColumn) == modelType;
         table->setRowHidden(row, !(boardMatch && modelMatch));
     }
 }
@@ -661,6 +814,34 @@ void AnalysisTab::onDeleteClicked()
             m_analysisManager->deleteRecord(id);
         table->removeRow(row);
     }
+}
+
+void AnalysisTab::onFlashCompiledClicked()
+{
+    if (!m_tabs || m_tabs->currentWidget() != m_compiledModelTable->parentWidget()->parentWidget())
+        m_tabs->setCurrentIndex(3);
+
+    QTableWidget *table = m_compiledModelTable;
+    if (!table)
+        return;
+
+    const int row = table->currentRow();
+    if (row < 0) {
+        QMessageBox::information(this, tr("Model Yükle"),
+            tr("Tekrar yüklenecek derlenmiş modeli seçin."));
+        return;
+    }
+
+    const QTableWidgetItem *first = table->item(row, 0);
+    const QString firmwarePath = first ? first->data(Qt::UserRole + 1).toString() : QString();
+    const QString modelName = tableCellText(table, row, 1);
+    if (firmwarePath.isEmpty() || !QFile::exists(firmwarePath)) {
+        QMessageBox::warning(this, tr("Model Yükle"),
+            tr("Arşivlenmiş firmware dosyası bulunamadı."));
+        return;
+    }
+
+    emit flashCompiledModelRequested(firmwarePath, modelName);
 }
 
 void AnalysisTab::onExportCsvClicked()

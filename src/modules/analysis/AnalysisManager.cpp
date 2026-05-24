@@ -54,8 +54,12 @@ void AnalysisManager::migrate()
         "kind TEXT NOT NULL,"
         "created_at TEXT NOT NULL,"
         "c0 TEXT, c1 TEXT, c2 TEXT, c3 TEXT, c4 TEXT, c5 TEXT,"
-        "c6 TEXT, c7 TEXT, c8 TEXT, c9 TEXT, c10 TEXT, c11 TEXT"
+        "c6 TEXT, c7 TEXT, c8 TEXT, c9 TEXT, c10 TEXT, c11 TEXT,"
+        "c12 TEXT, c13 TEXT, c14 TEXT"
         ")"));
+    q.exec(QStringLiteral("ALTER TABLE analysis_records ADD COLUMN c12 TEXT"));
+    q.exec(QStringLiteral("ALTER TABLE analysis_records ADD COLUMN c13 TEXT"));
+    q.exec(QStringLiteral("ALTER TABLE analysis_records ADD COLUMN c14 TEXT"));
 }
 
 int AnalysisManager::addRecord(const QString &kind, const QStringList &cells)
@@ -66,10 +70,10 @@ int AnalysisManager::addRecord(const QString &kind, const QStringList &cells)
     QSqlQuery q(QSqlDatabase::database(m_connectionName));
     q.prepare(QStringLiteral(
         "INSERT INTO analysis_records "
-        "(kind, created_at, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11) "
-        "VALUES (:kind, datetime('now'), :c0, :c1, :c2, :c3, :c4, :c5, :c6, :c7, :c8, :c9, :c10, :c11)"));
+        "(kind, created_at, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14) "
+        "VALUES (:kind, datetime('now'), :c0, :c1, :c2, :c3, :c4, :c5, :c6, :c7, :c8, :c9, :c10, :c11, :c12, :c13, :c14)"));
     q.bindValue(QStringLiteral(":kind"), kind);
-    for (int i = 0; i < 12; ++i)
+    for (int i = 0; i < 15; ++i)
         q.bindValue(QStringLiteral(":c%1").arg(i), cells.value(i));
 
     if (!q.exec())
@@ -85,7 +89,7 @@ QVector<AnalysisRecord> AnalysisManager::records(const QString &kind) const
 
     QSqlQuery q(QSqlDatabase::database(m_connectionName));
     q.prepare(QStringLiteral(
-        "SELECT id, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11 "
+        "SELECT id, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14 "
         "FROM analysis_records WHERE kind = :kind ORDER BY id DESC"));
     q.bindValue(QStringLiteral(":kind"), kind);
     if (!q.exec())
@@ -95,7 +99,7 @@ QVector<AnalysisRecord> AnalysisManager::records(const QString &kind) const
         AnalysisRecord record;
         record.id = q.value(0).toInt();
         record.kind = kind;
-        for (int i = 0; i < 12; ++i)
+        for (int i = 0; i < 15; ++i)
             record.cells << q.value(i + 1).toString();
         out.append(record);
     }

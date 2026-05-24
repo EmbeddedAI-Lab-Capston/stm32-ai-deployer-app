@@ -514,6 +514,8 @@ void FlashTab::onPipelineWizardClicked()
 {
     auto *wizard = new PipelineWizard(m_appState, this);
     wizard->setAttribute(Qt::WA_DeleteOnClose);
+    connect(wizard, &PipelineWizard::pipelineSucceeded,
+            this, &FlashTab::pipelineModelFlashed);
     wizard->exec();
 }
 

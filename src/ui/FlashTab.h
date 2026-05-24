@@ -2,6 +2,7 @@
 
 #include <QWidget>
 #include "modules/flash/FlashManager.h"
+#include "modules/flash/PipelineConfig.h"
 #include "modules/flash/XCubeAIRunner.h"
 #include "core/AppState.h"
 
@@ -29,6 +30,9 @@ public:
     // Re-reads AppSettings and updates CLI status labels + manager paths
     void refreshCliStatus();
     void refreshXCubeAIStatus();
+
+signals:
+    void pipelineModelFlashed(const PipelineConfig &config);
 
 private slots:
     // Hex firmware panel

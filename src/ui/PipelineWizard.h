@@ -23,6 +23,11 @@ public:
     // Valid only after the wizard has been accepted.
     const PipelineConfig &config() const { return m_config; }
 
+    void notifyPipelineSucceeded();
+
+signals:
+    void pipelineSucceeded(const PipelineConfig &config);
+
 private:
     void setupPages();
 

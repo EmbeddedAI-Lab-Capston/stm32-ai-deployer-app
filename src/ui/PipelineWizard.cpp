@@ -609,6 +609,8 @@ private slots:
         m_resultLabel->setVisible(true);
 
         if (success) {
+            if (auto *pipelineWizard = qobject_cast<PipelineWizard *>(wizard()))
+                pipelineWizard->notifyPipelineSucceeded();
             m_stageLabel->setText(tr("Pipeline tamamlandı!"));
             m_resultLabel->setText(
                 "<span style='color:#A6E3A1; font-size:13px; font-weight:bold;'>"
@@ -677,4 +679,9 @@ void PipelineWizard::setupPages()
     addPage(new SensorPage(&m_config, this));
     addPage(new SummaryPage(&m_config, this));
     addPage(new BuildPage(&m_config, this));
+}
+
+void PipelineWizard::notifyPipelineSucceeded()
+{
+    emit pipelineSucceeded(m_config);
 }

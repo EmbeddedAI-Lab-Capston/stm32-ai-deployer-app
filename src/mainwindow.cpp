@@ -7,6 +7,7 @@
 #include <QAction>
 #include <QStatusBar>
 #include <QMessageBox>
+#include <QProgressDialog>
 #include <QTimer>
 #include <QStyle>
 #include <QFile>
@@ -295,6 +296,57 @@ void MainWindow::setupConnections()
             this, [this](const InferenceData &data, quint32 samples) {
                 if (m_analysisTab)
                     m_analysisTab->addSimulationResult(data, m_appState->activeBoard(), samples);
+            });
+
+    connect(m_flashTab, &FlashTab::pipelineModelFlashed,
+            this, [this](const PipelineConfig &config) {
+                if (m_analysisTab)
+                    m_analysisTab->addCompiledModel(config, m_appState->activeBoard());
+            });
+
+    connect(m_analysisTab, &AnalysisTab::flashCompiledModelRequested,
+            this, [this](const QString &firmwarePath, const QString &modelName) {
+                auto *dialog = new QProgressDialog(
+                    tr("Derlenmiş model karta yükleniyor...\n%1").arg(modelName),
+                    tr("İptal"),
+                    0,
+                    100,
+                    this);
+                dialog->setWindowTitle(tr("Model Yükleniyor"));
+                dialog->setWindowModality(Qt::ApplicationModal);
+                dialog->setMinimumDuration(0);
+                dialog->setAutoClose(false);
+                dialog->setAutoReset(false);
+                dialog->setValue(0);
+
+                connect(dialog, &QProgressDialog::canceled,
+                        m_flashManager, &FlashManager::cancel);
+                connect(m_flashManager, &FlashManager::progressChanged,
+                        dialog, &QProgressDialog::setValue);
+                connect(m_flashManager, &FlashManager::flashFinished,
+                        dialog, [this, dialog, modelName](bool success, const FlashConfig &) {
+                            dialog->setValue(100);
+                            dialog->close();
+                            dialog->deleteLater();
+                            if (success) {
+                                QMessageBox::information(
+                                    this,
+                                    tr("Model Yüklendi"),
+                                    tr("%1 modeli karta başarıyla yüklendi.").arg(modelName));
+                            } else {
+                                QMessageBox::warning(
+                                    this,
+                                    tr("Model Yüklenemedi"),
+                                    tr("%1 modeli karta yüklenemedi. ST-Link bağlantısını ve logları kontrol edin.")
+                                        .arg(modelName));
+                            }
+                        });
+
+                FlashConfig config;
+                config.hexPath = firmwarePath;
+                config.modelName = modelName;
+                config.simulationMode = false;
+                m_flashManager->flash(config);
             });
 
     // Refresh CLI status after settings change
