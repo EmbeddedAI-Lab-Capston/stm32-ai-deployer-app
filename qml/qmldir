@@ -1,0 +1,32 @@
+module STM32AiDeployer
+
+singleton Theme 1.0 Theme.qml
+singleton MockData 1.0 mock/MockData.qml
+
+Main 1.0 Main.qml
+
+# Components
+AppButton 1.0 components/AppButton.qml
+Card 1.0 components/Card.qml
+DataTable 1.0 components/DataTable.qml
+FormField 1.0 components/FormField.qml
+InfoCard 1.0 components/InfoCard.qml
+MetricBar 1.0 components/MetricBar.qml
+MetricIcon 1.0 components/MetricIcon.qml
+SectionHeader 1.0 components/SectionHeader.qml
+StatusPill 1.0 components/StatusPill.qml
+Terminal 1.0 components/Terminal.qml
+TitleBar 1.0 components/TitleBar.qml
+TopTabBar 1.0 components/TopTabBar.qml
+
+# Dialogs
+SettingsDialog 1.0 dialogs/SettingsDialog.qml
+AboutDialog 1.0 dialogs/AboutDialog.qml
+
+# Screens
+DashboardScreen 1.0 screens/DashboardScreen.qml
+BoardScreen 1.0 screens/BoardScreen.qml
+FlashScreen 1.0 screens/FlashScreen.qml
+MonitorScreen 1.0 screens/MonitorScreen.qml
+BenchmarkScreen 1.0 screens/BenchmarkScreen.qml
+AnalysisScreen 1.0 screens/AnalysisScreen.qml

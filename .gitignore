@@ -67,3 +67,6 @@ $RECYCLE.BIN/
 .Spotlight-V100
 .Trashes
 TODO.md
+
+# Local QML preview junction (STM32AiDeployer -> qml)
+STM32AiDeployer/

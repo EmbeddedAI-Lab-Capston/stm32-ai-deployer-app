@@ -11,6 +11,10 @@
 #include <QTimer>
 #include <QStyle>
 #include <QFile>
+#include <QQuickWidget>
+#include <QQmlEngine>
+#include <QQmlContext>
+#include <QUrl>
 
 #include "core/AppState.h"
 #include "core/AppSettings.h"
@@ -138,6 +142,13 @@ void MainWindow::setupCentralWidget()
     m_flashTab->initialize(m_flashManager);
 
     auto *s = m_tabWidget->style();
+    auto *dashboard = new QQuickWidget(container);
+    dashboard->setResizeMode(QQuickWidget::SizeRootObjectToView);
+    dashboard->engine()->rootContext()->setContextProperty(QStringLiteral("appState"), m_appState);
+    dashboard->setSource(QUrl(QStringLiteral("qrc:/STM32AiDeployer/qml/Dashboard.qml")));
+    m_tabWidget->addTab(dashboard,
+        s->standardIcon(QStyle::SP_DesktopIcon),
+        tr("Dashboard"));
     m_tabWidget->addTab(m_boardTab,
         s->standardIcon(QStyle::SP_ComputerIcon),
         tr("Kart Seçimi ve Bilgileri"));

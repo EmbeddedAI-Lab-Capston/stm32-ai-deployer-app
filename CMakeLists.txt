@@ -14,13 +14,20 @@ find_package(Qt6 REQUIRED COMPONENTS
     SerialPort
     Charts
     Sql
+    Quick
+    QuickControls2
+    QuickWidgets
 )
+
+if(COMMAND qt_policy)
+    qt_policy(SET QTP0004 NEW)
+endif()
 
 set(PROJECT_SOURCES
     src/main.cpp
 
-    src/mainwindow.h
-    src/mainwindow.cpp
+    src/bridge/Backend.h
+    src/bridge/Backend.cpp
 
     src/core/AppSettings.h
     src/core/AppSettings.cpp
@@ -105,12 +112,52 @@ qt_add_executable(STM32AiDeployer
     ${PROJECT_SOURCES}
 )
 
+set_source_files_properties(qml/Theme.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE
+)
+set_source_files_properties(qml/mock/MockData.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE
+)
+
+qt_add_qml_module(STM32AiDeployer
+    URI STM32AiDeployer
+    VERSION 1.0
+    RESOURCE_PREFIX /
+    QML_FILES
+        qml/Main.qml
+        qml/Theme.qml
+        qml/mock/MockData.qml
+        qml/components/AppButton.qml
+        qml/components/Card.qml
+        qml/components/DataTable.qml
+        qml/components/FormField.qml
+        qml/components/InfoCard.qml
+        qml/components/MetricBar.qml
+        qml/components/MetricIcon.qml
+        qml/components/SectionHeader.qml
+        qml/components/StatusPill.qml
+        qml/components/Terminal.qml
+        qml/components/TitleBar.qml
+        qml/components/TopTabBar.qml
+        qml/dialogs/SettingsDialog.qml
+        qml/dialogs/AboutDialog.qml
+        qml/screens/DashboardScreen.qml
+        qml/screens/BoardScreen.qml
+        qml/screens/FlashScreen.qml
+        qml/screens/MonitorScreen.qml
+        qml/screens/BenchmarkScreen.qml
+        qml/screens/AnalysisScreen.qml
+)
+
 target_link_libraries(STM32AiDeployer PRIVATE
     Qt6::Core
     Qt6::Widgets
     Qt6::SerialPort
     Qt6::Charts
     Qt6::Sql
+    Qt6::Quick
+    Qt6::QuickControls2
+    Qt6::QuickWidgets
 )
 
 target_include_directories(STM32AiDeployer PRIVATE
@@ -130,3 +177,18 @@ add_custom_command(TARGET STM32AiDeployer POST_BUILD
         "$<TARGET_FILE_DIR:STM32AiDeployer>/templates"
     COMMENT "Copying templates to build directory"
 )
+
+# Deploy Qt runtime DLLs + QML plugins next to the executable so the app runs
+# standalone (windeployqt is required for the QtQuick/Controls/Dialogs plugins).
+find_program(WINDEPLOYQT_EXE windeployqt HINTS "${Qt6_DIR}/../../../bin")
+if(WINDEPLOYQT_EXE)
+    add_custom_command(TARGET STM32AiDeployer POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXE}"
+            --qmldir "${CMAKE_SOURCE_DIR}/qml"
+            --no-translations
+            --no-system-d3d-compiler
+            "$<TARGET_FILE:STM32AiDeployer>"
+        COMMENT "Deploying Qt runtime and QML plugins"
+        VERBATIM
+    )
+endif()

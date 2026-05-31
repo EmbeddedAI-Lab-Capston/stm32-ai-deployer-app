@@ -1,10 +1,18 @@
 #include <QApplication>
-#include <QFile>
-#include <QStyleFactory>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickStyle>
+#include <QQuickWindow>
 #include <QIcon>
+#include <QFile>
 #include <QTimer>
-#include "mainwindow.h"
+
+#include "core/AppState.h"
 #include "core/AppSettings.h"
+#include "modules/serial/SerialManager.h"
+#include "modules/flash/FlashManager.h"
+#include "modules/analysis/AnalysisManager.h"
+#include "bridge/Backend.h"
 #include "ui/SplashScreen.h"
 
 int main(int argc, char *argv[])
@@ -16,30 +24,58 @@ int main(int argc, char *argv[])
     app.setOrganizationDomain("marmara.edu.tr");
     app.setWindowIcon(QIcon(":/app_icon.png"));
 
-    // Load stylesheet
-    QFile styleFile(":/style.qss");
-    if (styleFile.open(QFile::ReadOnly | QFile::Text)) {
-        QString style = QLatin1String(styleFile.readAll());
-        app.setStyleSheet(style);
-        styleFile.close();
+    // QtQuick.Controls customisation requires a non-native style.
+    QQuickStyle::setStyle("Basic");
+
+    // ── Core objects (owned by the app, outlive the engine) ────────────────
+    auto *appState  = new AppState(&app);
+    auto *serial    = new SerialManager(&app);
+    auto *flash     = new FlashManager(&app);
+    auto *analysis  = new AnalysisManager(&app);
+
+    // Resolve programmer CLI path (same bootstrap as the old MainWindow).
+    {
+        AppSettings settings;
+        QString cliPath = settings.programmerCliPath();
+        if (cliPath.isEmpty() || !QFile::exists(cliPath)) {
+            cliPath = FlashManager::detectCliPath();
+            if (!cliPath.isEmpty())
+                settings.setProgrammerCliPath(cliPath);
+        }
+        flash->setCliPath(cliPath);
     }
 
-    // Show splash screen
-    SplashScreen *splash = new SplashScreen();
+    auto *backend = new Backend(appState, serial, flash, analysis, &app);
+
+    // ── QML engine ─────────────────────────────────────────────────────────
+    // The QML window is the primary window; closing the transient splash must
+    // not quit the app.
+    app.setQuitOnLastWindowClosed(true);
+
+    QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty("appState", appState);
+    engine.rootContext()->setContextProperty("backend",  backend);
+    engine.loadFromModule("STM32AiDeployer", "Main");
+
+    if (engine.rootObjects().isEmpty())
+        return -1;
+
+    auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+
+    // ── Splash screen (kept from the old app) ──────────────────────────────
+    auto *splash = new SplashScreen();
     splash->show();
     app.processEvents();
 
-    // Create main window (hidden for now)
-    MainWindow *window = new MainWindow();
-
-    // When splash is done, show main window
-    QObject::connect(splash, &SplashScreen::done, [splash, window]() {
-        window->show();
-        splash->hide();
+    QObject::connect(splash, &SplashScreen::done, &app, [splash, window]() {
+        if (window) {
+            window->show();
+            window->raise();
+            window->requestActivate();
+        }
+        splash->close();
         splash->deleteLater();
     });
-
-    // Start the closing sequence after 3.5 seconds
     splash->startClosingSequence(3500);
 
     return app.exec();

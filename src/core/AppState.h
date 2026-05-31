@@ -1,6 +1,8 @@
 #pragma once
 #include <QObject>
 #include <QString>
+#include <QVariant>
+#include <QVariantList>
 #include "modules/board/BoardPresets.h"
 
 // ── AppState ──────────────────────────────────────────────────────────────
@@ -10,6 +12,21 @@
 class AppState : public QObject
 {
     Q_OBJECT
+
+    // QML-accessible properties
+    Q_PROPERTY(bool connected       READ isConnected    NOTIFY connectionChanged)
+    Q_PROPERTY(QString connInfo     READ connectionInfo NOTIFY connectionChanged)
+    Q_PROPERTY(QString boardName    READ boardName      NOTIFY activeBoardChanged)
+    Q_PROPERTY(QString boardSpec    READ boardSpec      NOTIFY activeBoardChanged)
+    Q_PROPERTY(int boardFlashKb     READ boardFlashKb   NOTIFY activeBoardChanged)
+    Q_PROPERTY(int boardRamKb       READ boardRamKb     NOTIFY activeBoardChanged)
+    Q_PROPERTY(int boardClockMhz    READ boardClockMhz  NOTIFY activeBoardChanged)
+    Q_PROPERTY(QString activePort   READ activePort     NOTIFY activePortChanged)
+    Q_PROPERTY(qint32 activeBaud    READ activeBaud     NOTIFY activeBaudChanged)
+    Q_PROPERTY(QString lastModel    READ lastModelName  NOTIFY lastModelChanged)
+    Q_PROPERTY(double lastInfMs     READ lastInferenceMs NOTIFY lastModelChanged)
+    Q_PROPERTY(int lastAcc          READ lastAccuracyPct NOTIFY lastModelChanged)
+    Q_PROPERTY(QVariantList boardInfoRows READ boardInfoRows NOTIFY activeBoardChanged)
 
 public:
     explicit AppState(QObject *parent = nullptr);
@@ -23,6 +40,21 @@ public:
     QString    lastModelName()     const { return m_lastModelName; }
     double     lastInferenceMs()   const { return m_lastInferenceMs; }
     quint8     lastAccuracy()      const { return m_lastAccuracy; }
+
+    // QML helper getters (flat types)
+    QString boardName()    const { return m_activeBoard.name; }
+    int     boardFlashKb() const { return m_activeBoard.flashKb; }
+    int     boardRamKb()   const { return m_activeBoard.ramKb; }
+    int     boardClockMhz()const { return m_activeBoard.clockMhz; }
+    int     lastAccuracyPct() const { return static_cast<int>(m_lastAccuracy); }
+    QString boardSpec() const {
+        if (m_activeBoard.isNull()) return QString();
+        return QString("%1 KB Flash  |  %2 KB RAM  |  %3 MHz")
+               .arg(m_activeBoard.flashKb)
+               .arg(m_activeBoard.ramKb)
+               .arg(m_activeBoard.clockMhz);
+    }
+    QVariantList boardInfoRows() const;   // [[label,value], ...] for Board screen
 
 public slots:
     void setActiveBoard(const BoardInfo &board);

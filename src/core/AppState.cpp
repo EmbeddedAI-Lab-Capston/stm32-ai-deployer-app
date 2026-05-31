@@ -8,6 +8,31 @@ AppState::AppState(QObject *parent)
     qRegisterMetaType<BoardInfo>("BoardInfo");
 }
 
+// ── QML helper getters ─────────────────────────────────────────────────────
+QVariantList AppState::boardInfoRows() const
+{
+    const BoardInfo &b = m_activeBoard;
+    auto row = [](const QString &k, const QString &v) {
+        return QVariant(QVariantList{ k, v.isEmpty() ? QStringLiteral("—") : v });
+    };
+    QVariantList rows;
+    rows << row("Model", b.name);
+    rows << row("Flash", b.flashKb > 0 ? QString("%1 KB").arg(b.flashKb) : QString());
+    rows << row("RAM",   b.ramKb   > 0 ? QString("%1 KB").arg(b.ramKb)   : QString());
+    rows << row("Hız",   b.clockMhz > 0 ? QString("%1 MHz").arg(b.clockMhz) : QString());
+    rows << row("COM",        b.portName);
+    rows << row("Board",      b.probeBoardName);
+    rows << row("Device ID",  b.deviceId);
+    rows << row("Revision",   b.revisionId);
+    rows << row("Device",     b.deviceName);
+    rows << row("NVM",        b.nvmSize);
+    rows << row("CPU",        b.deviceCpu);
+    rows << row("ST-LINK",    b.stlinkSn.isEmpty() ? b.stlinkFw
+                                                   : (b.stlinkSn + "  ·  " + b.stlinkFw));
+    rows << row("Voltage",    b.voltage);
+    return rows;
+}
+
 void AppState::setActiveBoard(const BoardInfo &board)
 {
     if (m_activeBoard.name == board.name &&
