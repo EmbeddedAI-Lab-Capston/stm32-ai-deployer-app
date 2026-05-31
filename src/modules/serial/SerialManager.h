@@ -34,6 +34,7 @@ signals:
     void bootReceived(const BootData &data);
     void errorReceived(const ErrorData &data);
     void benchReceived(const BenchData &data);
+    void sensorReceived(const SensorData &data);
     void rawLineReceived(const QString &line);
     void connectionChanged(bool connected, const QString &info);
     void errorOccurred(const QString &msg);

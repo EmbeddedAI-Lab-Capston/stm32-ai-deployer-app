@@ -686,6 +686,47 @@ void AnalysisTab::addSimulationResult(const InferenceData &data, const BoardInfo
     applyFilters();
 }
 
+void AnalysisTab::addSensorResult(const SensorData &data, const BoardInfo &board)
+{
+    const QString model = data.model.isEmpty() ? QStringLiteral("--") : data.model;
+    const QString boardName = boardNameForRow(data.card, board);
+    const QString modelType = modelTypeFromName(model);
+    const ModelReportDetails report = loadModelReportDetails();
+    const QString sensor = data.sensor.isEmpty()
+        ? (report.sensor == QStringLiteral("--") ? QStringLiteral("UART Sensor") : report.sensor)
+        : data.sensor;
+    const QString sampleSummary = data.values.isEmpty()
+        ? QStringLiteral("--")
+        : data.values.join(data.unit.isEmpty() ? QStringLiteral(", ") : QStringLiteral(" ") + data.unit + QStringLiteral(", "))
+            + (data.unit.isEmpty() ? QString() : QStringLiteral(" ") + data.unit);
+    const QString result = QString("%1 %2% | n=%3 | %4")
+        .arg(data.label.isEmpty() ? QStringLiteral("--") : data.label)
+        .arg(data.acc_pct)
+        .arg(data.samples)
+        .arg(sampleSummary);
+
+    const QStringList cells = {
+        QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm"),
+        QString("REAL-LIVE-%1").arg(data.seq > 0 ? data.seq : (m_sensorTable ? m_sensorTable->rowCount() + 1 : 1)),
+        boardName,
+        chipNameForRow(board),
+        cpuNameForRow(board),
+        model,
+        modelType,
+        sensor,
+        data.inf_us > 0 ? QString("%1 ms").arg(data.inf_us / 1000.0, 0, 'f', 3) : QStringLiteral("--"),
+        data.ram_b > 0 ? QString("%1 KiB").arg(data.ram_b / 1024.0, 0, 'f', 2) : QStringLiteral("--"),
+        report.weights,
+        result
+    };
+
+    ensureFilterOption(m_boardFilter, boardName);
+    ensureFilterOption(m_modelFilter, modelType);
+    const int id = m_analysisManager->addRecord(QStringLiteral("sensor"), cells);
+    prependRow(m_sensorTable, cells, id);
+    applyFilters();
+}
+
 void AnalysisTab::addCompiledModel(const PipelineConfig &config, const BoardInfo &board)
 {
     const QString expectedElf = QDir(config.outputDir).filePath(

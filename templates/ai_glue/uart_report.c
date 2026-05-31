@@ -129,3 +129,37 @@ void UART_Report_Benchmark(const char *model,
              card);
     send_packet(json);
 }
+
+void UART_Report_Sensor(const char *sensor,
+                        uint32_t seq,
+                        int32_t value0,
+                        int32_t value1,
+                        int32_t value2,
+                        const char *unit,
+                        const char *model,
+                        uint32_t inf_us,
+                        uint32_t ram_b,
+                        uint8_t acc_pct,
+                        const char *label,
+                        const char *card)
+{
+    char json[256];
+    snprintf(json, sizeof(json),
+             "{\"t\":\"sensor\",\"sensor\":\"%s\",\"seq\":%lu,"
+             "\"values\":[%ld,%ld,%ld],\"unit\":\"%s\","
+             "\"model\":\"%s\",\"inf_us\":%lu,\"ram_b\":%lu,"
+             "\"acc_pct\":%u,\"label\":\"%s\",\"card\":\"%s\"}",
+             sensor,
+             (unsigned long)seq,
+             (long)value0,
+             (long)value1,
+             (long)value2,
+             unit,
+             model,
+             (unsigned long)inf_us,
+             (unsigned long)ram_b,
+             (unsigned)acc_pct,
+             label,
+             card);
+    send_packet(json);
+}

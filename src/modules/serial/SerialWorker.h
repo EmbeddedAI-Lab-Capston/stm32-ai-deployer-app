@@ -26,6 +26,7 @@ signals:
     void bootReceived(const BootData &data);
     void errorReceived(const ErrorData &data);
     void benchReceived(const BenchData &data);
+    void sensorReceived(const SensorData &data);
     void rawLineReceived(const QString &line);
     void malformedPacket(const QByteArray &raw);
 

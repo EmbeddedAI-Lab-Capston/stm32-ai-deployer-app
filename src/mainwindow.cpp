@@ -292,6 +292,13 @@ void MainWindow::setupConnections()
                 }
             });
 
+    connect(m_serialManager, &SerialManager::sensorReceived,
+            this, [this, applyBoardFromWire](const SensorData &data) {
+                applyBoardFromWire(data.card, 0, 0, 0);
+                if (m_analysisTab)
+                    m_analysisTab->addSensorResult(data, m_appState->activeBoard());
+            });
+
     connect(m_monitorTab, &MonitorTab::simulationSessionFinished,
             this, [this](const InferenceData &data, quint32 samples) {
                 if (m_analysisTab)

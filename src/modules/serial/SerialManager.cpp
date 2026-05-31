@@ -16,6 +16,8 @@ SerialManager::SerialManager(QObject *parent) : QObject(parent)
             this,     &SerialManager::errorReceived);
     connect(m_worker, &SerialWorker::benchReceived,
             this,     &SerialManager::benchReceived);
+    connect(m_worker, &SerialWorker::sensorReceived,
+            this,     &SerialManager::sensorReceived);
     connect(m_worker, &SerialWorker::rawLineReceived,
             this,     &SerialManager::rawLineReceived);
 

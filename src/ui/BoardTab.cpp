@@ -195,8 +195,12 @@ void BoardTab::populateBoards()
     m_boardCombo->blockSignals(true);
     m_boardCombo->clear();
 
-    for (const BoardInfo &b : BoardPresets::all())
-        m_boardCombo->addItem(b.name, QVariant::fromValue(b));
+    for (const BoardInfo &b : BoardPresets::all()) {
+        const QString label = b.name.contains("N6", Qt::CaseInsensitive)
+            ? tr("%1 (experimental)").arg(b.name)
+            : b.name;
+        m_boardCombo->addItem(label, QVariant::fromValue(b));
+    }
 
     AppSettings settings;
     for (const BoardInfo &b : settings.customBoards())
@@ -303,6 +307,9 @@ void BoardTab::updateStatusLabel()
     if (m_stlinkDetected) {
         text       = tr("● ST-Link'ten Algılandı");
         objectName = "statusOk";
+    } else if (m_appState->activeBoard().name.contains("N6", Qt::CaseInsensitive)) {
+        text       = tr("● Experimental Template");
+        objectName = "statusWarn";
     } else if (!m_serialConnected) {
         text       = tr("● Manuel Seçim");
         objectName = "statusOk";

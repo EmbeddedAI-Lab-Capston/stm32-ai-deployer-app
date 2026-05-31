@@ -72,6 +72,18 @@ int main(void)
                               result.confidence_pct,
                               result.label,
                               AI_TARGET_BOARD);
+        UART_Report_Sensor(AI_SENSOR_TYPE,
+                           cycle + 1,
+                           (int32_t)(input[0] * 1000.0f),
+                           (int32_t)(AI_INPUT_SIZE > 1 ? input[1] * 1000.0f : 0),
+                           (int32_t)(AI_INPUT_SIZE > 2 ? input[2] * 1000.0f : 0),
+                           "milli",
+                           AI_MODEL_NAME,
+                           inf_us,
+                           AI_Runner_GetRamUsage(),
+                           result.confidence_pct,
+                           result.label,
+                           AI_TARGET_BOARD);
 
         /* Periodic system status (every 60 inference cycles ≈ 1 Hz at 60 Hz) */
         if (++cycle % 60 == 0) {

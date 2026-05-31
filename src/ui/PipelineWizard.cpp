@@ -326,13 +326,16 @@ public:
         m_xcubeLabel     = new QLabel(this);
         m_progLabel      = new QLabel(this);
         m_sdkLabel       = new QLabel(this);
+        m_targetLabel    = new QLabel(this);
 
         m_gccLabel->setTextFormat(Qt::RichText);
         m_makeLabel->setTextFormat(Qt::RichText);
         m_xcubeLabel->setTextFormat(Qt::RichText);
         m_progLabel->setTextFormat(Qt::RichText);
         m_sdkLabel->setTextFormat(Qt::RichText);
+        m_targetLabel->setTextFormat(Qt::RichText);
         m_sdkLabel->setWordWrap(true);
+        m_targetLabel->setWordWrap(true);
         m_sdkBrowseBtn = new QPushButton(tr("Seç"), this);
         m_sdkBrowseBtn->setFixedWidth(60);
         auto *sdkRow = new QHBoxLayout;
@@ -344,6 +347,7 @@ public:
         toolForm->addRow("stedgeai:",          m_xcubeLabel);
         toolForm->addRow("STM32_Prog_CLI:",    m_progLabel);
         toolForm->addRow("STM32Cube SDK:",     sdkRow);
+        toolForm->addRow(tr("Hedef Kart:"),    m_targetLabel);
         layout->addWidget(toolBox);
 
         // Output directory
@@ -384,6 +388,13 @@ public:
         m_makeLabel->setText(mkLabel(s.makePath()));
         m_xcubeLabel->setText(mkLabel(s.xcubeAICliPath()));
         m_progLabel->setText(mkLabel(s.programmerCliPath()));
+        if (m_cfg->targetBoard.contains("N6", Qt::CaseInsensitive)) {
+            m_targetLabel->setText(tr("<span style='color:#FAB387;'>%1 experimental: N6 template'i henüz tam HAL/startup/linker setiyle doğrulanmadı.</span>")
+                .arg(m_cfg->targetBoard.toHtmlEscaped()));
+        } else {
+            m_targetLabel->setText(tr("<span style='color:#A6E3A1;'>%1 hazır</span>")
+                .arg(m_cfg->targetBoard.toHtmlEscaped()));
+        }
 
         // Detect STM32Cube SDK
         m_detectedSdkPath = s.cubeSdkPath();
@@ -499,7 +510,7 @@ private:
     }
 
     PipelineConfig *m_cfg;
-    QLabel    *m_gccLabel, *m_makeLabel, *m_xcubeLabel, *m_progLabel, *m_sdkLabel;
+    QLabel    *m_gccLabel, *m_makeLabel, *m_xcubeLabel, *m_progLabel, *m_sdkLabel, *m_targetLabel;
     QPushButton *m_sdkBrowseBtn;
     QLineEdit *m_outEdit;
     QString    m_detectedSdkPath;

@@ -37,6 +37,8 @@ MonitorTab::MonitorTab(AppState *state, SerialManager *serial, QWidget *parent)
             this, &MonitorTab::appendRawLog);
     connect(m_serialManager, &SerialManager::inferenceReceived,
             this, &MonitorTab::onInferenceReceived);
+    connect(m_serialManager, &SerialManager::sensorReceived,
+            this, &MonitorTab::onSensorReceived);
     connect(m_serialManager, &SerialManager::bootReceived,
             this, &MonitorTab::onBootReceived);
     connect(m_serialManager, &SerialManager::sysReceived,
@@ -411,6 +413,30 @@ void MonitorTab::onInferenceReceived(const InferenceData &data)
 
     // TODO(asama-5): SQLite'a yaz
     // TODO(asama-6): Grafik güncelle
+}
+
+void MonitorTab::onSensorReceived(const SensorData &data)
+{
+    const double ms = data.inf_us / 1000.0;
+    const double ramKb = data.ram_b / 1024.0;
+    const QString values = data.values.isEmpty()
+        ? QStringLiteral("--")
+        : data.values.join(QStringLiteral(", "));
+
+    if (data.inf_us > 0)
+        m_metricInfValue->setText(QString("%1 ms").arg(ms, 0, 'f', 1));
+    if (data.ram_b > 0)
+        m_metricRamValue->setText(QString("%1 KB").arg(ramKb, 0, 'f', 1));
+    if (!data.label.isEmpty())
+        m_metricLabelValue->setText(QString("%1\n%2%").arg(data.label).arg(data.acc_pct));
+
+    appendHtmlLine("#94E2D5",
+        QString("§ sensor  %1  model=%2  values=[%3]  %4%  label=%5")
+            .arg(data.sensor.isEmpty() ? "--" : data.sensor)
+            .arg(data.model.isEmpty() ? "--" : data.model)
+            .arg(values)
+            .arg(data.acc_pct)
+            .arg(data.label.isEmpty() ? "--" : data.label));
 }
 
 void MonitorTab::onSysReceived(const SysData &data)

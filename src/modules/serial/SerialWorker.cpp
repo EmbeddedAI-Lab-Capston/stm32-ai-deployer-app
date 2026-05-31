@@ -16,6 +16,8 @@ SerialWorker::SerialWorker(QObject *parent)
             this,     &SerialWorker::errorReceived);
     connect(m_parser, &PacketParser::benchReceived,
             this,     &SerialWorker::benchReceived);
+    connect(m_parser, &PacketParser::sensorReceived,
+            this,     &SerialWorker::sensorReceived);
     connect(m_parser, &PacketParser::rawLineReceived,
             this,     &SerialWorker::rawLineReceived);
     connect(m_parser, &PacketParser::malformedPacket,

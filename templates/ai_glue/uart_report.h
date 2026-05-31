@@ -44,3 +44,17 @@ void UART_Report_Benchmark(const char *model,
                            uint32_t free_ram_b,
                            const char *label,
                            const char *card);
+
+/* {"t":"sensor","sensor":"...","seq":N,"values":[N,N,N],"unit":"...","model":"...","inf_us":N,"ram_b":N,"acc_pct":N,"label":"...","card":"..."} */
+void UART_Report_Sensor(const char *sensor,
+                        uint32_t seq,
+                        int32_t value0,
+                        int32_t value1,
+                        int32_t value2,
+                        const char *unit,
+                        const char *model,
+                        uint32_t inf_us,
+                        uint32_t ram_b,
+                        uint8_t acc_pct,
+                        const char *label,
+                        const char *card);

@@ -44,6 +44,7 @@ private slots:
     void appendRawLog(const QString &line);
     void onBootReceived(const BootData &data);
     void onInferenceReceived(const InferenceData &data);
+    void onSensorReceived(const SensorData &data);
     void onSysReceived(const SysData &data);
     void onSerialError(const QString &msg);
 

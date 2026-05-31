@@ -186,8 +186,12 @@ void Sidebar::populateBoards()
     m_boardCombo->blockSignals(true);
     m_boardCombo->clear();
 
-    for (const BoardInfo &b : BoardPresets::all())
-        m_boardCombo->addItem(b.name, QVariant::fromValue(b));
+    for (const BoardInfo &b : BoardPresets::all()) {
+        const QString label = b.name.contains("N6", Qt::CaseInsensitive)
+            ? tr("%1 (experimental)").arg(b.name)
+            : b.name;
+        m_boardCombo->addItem(label, QVariant::fromValue(b));
+    }
 
     AppSettings settings;
     for (const BoardInfo &b : settings.customBoards())
@@ -199,7 +203,8 @@ void Sidebar::populateBoards()
     // Select the current AppState board
     const QString current = m_state->activeBoard().name;
     for (int i = 0; i < m_boardCombo->count(); ++i) {
-        if (m_boardCombo->itemText(i) == current) {
+        const QVariant data = m_boardCombo->itemData(i);
+        if (data.isValid() && data.value<BoardInfo>().name == current) {
             m_boardCombo->setCurrentIndex(i);
             break;
         }

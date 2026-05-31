@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QString>
+#include <QStringList>
 
 struct InferenceData {
     QString   model;
@@ -53,11 +54,27 @@ struct BenchData {
     QDateTime timestamp;
 };
 
+struct SensorData {
+    QString model;
+    QString sensor;
+    QString card;
+    quint32 seq = 0;
+    quint32 samples = 1;
+    quint32 inf_us = 0;
+    quint32 ram_b = 0;
+    quint8 acc_pct = 0;
+    QString label;
+    QString unit;
+    QStringList values;
+    QDateTime timestamp;
+};
+
 Q_DECLARE_METATYPE(InferenceData)
 Q_DECLARE_METATYPE(SysData)
 Q_DECLARE_METATYPE(BootData)
 Q_DECLARE_METATYPE(ErrorData)
 Q_DECLARE_METATYPE(BenchData)
+Q_DECLARE_METATYPE(SensorData)
 
 // Parses the §{JSON}\r\n protocol. Call feed() with raw bytes as they arrive.
 class PacketParser : public QObject
@@ -76,6 +93,7 @@ signals:
     void bootReceived(const BootData &data);
     void errorReceived(const ErrorData &data);
     void benchReceived(const BenchData &data);
+    void sensorReceived(const SensorData &data);
     void rawLineReceived(const QString &line);
     void malformedPacket(const QByteArray &raw);
 

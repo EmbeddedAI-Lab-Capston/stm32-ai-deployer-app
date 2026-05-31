@@ -1,6 +1,7 @@
 #include "PacketParser.h"
 
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonParseError>
 
@@ -11,6 +12,7 @@ PacketParser::PacketParser(QObject *parent) : QObject(parent)
     qRegisterMetaType<BootData>("BootData");
     qRegisterMetaType<ErrorData>("ErrorData");
     qRegisterMetaType<BenchData>("BenchData");
+    qRegisterMetaType<SensorData>("SensorData");
 }
 
 void PacketParser::feed(const QByteArray &data)
@@ -106,6 +108,34 @@ void PacketParser::processPacket(const QByteArray &jsonBytes)
         d.card       = obj.value("card").toString();
         d.timestamp  = QDateTime::currentDateTime();
         emit benchReceived(d);
+    }
+    else if (type == "sensor") {
+        SensorData d;
+        d.model     = obj.value("model").toString();
+        d.sensor    = obj.value("sensor").toString();
+        d.card      = obj.value("card").toString();
+        d.seq       = static_cast<quint32>(obj.value("seq").toInt());
+        d.samples   = static_cast<quint32>(obj.value("samples").toInt(1));
+        d.inf_us    = static_cast<quint32>(obj.value("inf_us").toInt());
+        d.ram_b     = static_cast<quint32>(obj.value("ram_b").toInt());
+        d.acc_pct   = static_cast<quint8>(obj.value("acc_pct").toInt());
+        d.label     = obj.value("label").toString();
+        d.unit      = obj.value("unit").toString();
+        const QJsonValue values = obj.value("values");
+        if (values.isArray()) {
+            for (const QJsonValue &value : values.toArray()) {
+                if (value.isDouble())
+                    d.values << QString::number(value.toDouble(), 'f', 3);
+                else
+                    d.values << value.toString();
+            }
+        } else {
+            const QString text = values.toString();
+            if (!text.isEmpty())
+                d.values = text.split(',', Qt::SkipEmptyParts);
+        }
+        d.timestamp = QDateTime::currentDateTime();
+        emit sensorReceived(d);
     }
     else {
         emit malformedPacket(jsonBytes);

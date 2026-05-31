@@ -27,6 +27,7 @@ public:
 public slots:
     void addBenchmarkResult(const BenchData &data, const BoardInfo &board);
     void addSimulationResult(const InferenceData &data, const BoardInfo &board, quint32 samples = 1);
+    void addSensorResult(const SensorData &data, const BoardInfo &board);
     void addCompiledModel(const PipelineConfig &config, const BoardInfo &board);
 
 signals:
