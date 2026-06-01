@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import STM32AiDeployer
 
 Item {
@@ -8,6 +9,8 @@ Item {
 
     // Sub-tab index: 0=Benchmark, 1=Simulation, 2=Sensor, 3=Compiled
     property int subIndex: 0
+    property string exportMessage: ""
+    property bool exportOk: true
 
     readonly property var _subTabs: ["Benchmark", "Simülasyon", "Gerçek Sensör", "Derlenen Modeller"]
 
@@ -47,9 +50,9 @@ Item {
 
     function mockRows(i) {
         if (i === 0) return MockData.analysisRows
-        if (i === 1) return [["—","—","—","—","—","—","—","—","—","—","—","Kayıt yok"]]
-        if (i === 2) return [["—","—","—","—","—","—","—","—","—","—","—","Kayıt yok"]]
-        return [["—","—","—","—","—","—","—","—","—","—","—","Kayıt yok"]]
+        if (i === 1) return []
+        if (i === 2) return []
+        return []
     }
 
     // Summary stats computed from current records
@@ -69,12 +72,67 @@ Item {
                 { title:"Model Sayısı",  value: uniqueCount(rows, 5), accent: Theme.warning }
             ]
         }
+        if (i === 1 || i === 2) {
+            return [
+                { title:"Toplam Kayıt",  value: String(total), accent: Theme.primary },
+                { title:"Ort. Süre",     value: averageTime(rows, 8), accent: Theme.success },
+                { title:"Ort. Güven",    value: averagePercent(rows, 11), accent: Theme.cyan },
+                { title:i === 1 ? "Label Sayısı" : "Model Sayısı",
+                  value:i === 1 ? uniqueLabels(rows, 11) : uniqueCount(rows, 5),
+                  accent: Theme.warning }
+            ]
+        }
+        if (i === 3) {
+            return [
+                { title:"Toplam Kayıt",  value: String(total),  accent: Theme.primary },
+                { title:"Kart Sayısı",   value: uniqueCount(rows, 3), accent: Theme.cyan },
+                { title:"Model Sayısı",  value: uniqueCount(rows, 1), accent: Theme.success },
+                { title:"Firmware",      value: uniqueCount(rows, 10), accent: Theme.warning }
+            ]
+        }
         return [
             { title:"Toplam Kayıt",  value: String(total),  accent: Theme.primary },
             { title:"—", value:"—", accent: Theme.cyan },
             { title:"—", value:"—", accent: Theme.success },
             { title:"—", value:"—", accent: Theme.warning }
         ]
+    }
+
+    function averageTime(rows, col) {
+        var sum = 0
+        var count = 0
+        for (var k = 0; k < rows.length; ++k) {
+            var n = parseNumber(rows[k][col])
+            if (!isNaN(n)) {
+                sum += n
+                count++
+            }
+        }
+        return count > 0 ? (sum / count).toFixed(2) + " ms" : "—"
+    }
+
+    function averagePercent(rows, col) {
+        var sum = 0
+        var count = 0
+        for (var k = 0; k < rows.length; ++k) {
+            var match = String(rows[k][col] || "").match(/(\d+(?:[.,]\d+)?)\s*%/)
+            if (match) {
+                sum += parseFloat(match[1].replace(",", "."))
+                count++
+            }
+        }
+        return count > 0 ? "%" + Math.round(sum / count) : "—"
+    }
+
+    function uniqueLabels(rows, col) {
+        var seen = {}
+        for (var k = 0; k < rows.length; ++k) {
+            var raw = String(rows[k][col] || "")
+            var label = raw.replace(/\s+\d+(?:[.,]\d+)?\s*%.*$/, "").trim()
+            if (label.length > 0 && label !== "—")
+                seen[label] = true
+        }
+        return String(Object.keys(seen).length)
     }
 
     function uniqueCount(rows, col) {
@@ -85,14 +143,62 @@ Item {
         return String(Object.keys(seen).length)
     }
 
-    // Bar chart values from inference column (col 8)
-    function barData(rows) {
+    function chartTitle(i) {
+        return i === 3 ? "Model Kaynakları" : "Inference Süresi"
+    }
+
+    function chartSubtitle(i) {
+        return i === 3 ? "Weights / MACC karşılaştırması" : "Model karşılaştırması"
+    }
+
+    function parseNumber(text) {
+        if (!text || text === "—") return NaN
+        var n = parseFloat(String(text).replace(",", "."))
+        return n
+    }
+
+    function exportBaseName() {
+        return "stm32_ai_" + root._subTabs[root.subIndex].toLowerCase()
+            .replace(/\s+/g, "_").replace(/ü/g, "u").replace(/ö/g, "o")
+            .replace(/ı/g, "i").replace(/ğ/g, "g").replace(/ş/g, "s")
+            .replace(/ç/g, "c")
+    }
+
+    function localPath(url) {
+        return String(url).replace("file:///", "")
+    }
+
+    function showExportResult(ok, path, type) {
+        root.exportOk = ok
+        root.exportMessage = ok
+            ? (type + " dosyası kaydedildi:\n" + path)
+            : (type + " dosyası kaydedilemedi.")
+        exportNote.open()
+    }
+
+    function exportRows() {
+        var rows = rowsForIndex(root.subIndex)
+        return rows.length > 0 ? rows : []
+    }
+
+    // Bar chart values from inference/resource columns.
+    function barData(i, rows) {
         var out = []
+        var maxValue = 0
         for (var k = 0; k < Math.min(rows.length, 6); ++k) {
-            var label = rows[k][5] || ("Kayıt " + (k+1))
-            var t = rows[k][8] || "0 ms"
-            var ms = parseFloat(t)
-            out.push({ label: label, text: isNaN(ms) ? t : (ms.toFixed(2) + " ms"), value: isNaN(ms) ? 0.1 : Math.min(ms / 5.0, 1.0) })
+            var raw = i === 3 ? (rows[k][9] || rows[k][8]) : rows[k][8]
+            var value = parseNumber(raw)
+            if (!isNaN(value)) maxValue = Math.max(maxValue, value)
+        }
+        for (var j = 0; j < Math.min(rows.length, 6); ++j) {
+            var label = i === 3 ? (rows[j][1] || ("Model " + (j + 1))) : (rows[j][5] || ("Kayıt " + (j + 1)))
+            var text = i === 3 ? (rows[j][9] || rows[j][8] || "—") : (rows[j][8] || "—")
+            var n = parseNumber(text)
+            out.push({
+                label: label,
+                text: isNaN(n) ? text : (i === 3 ? text : (n.toFixed(2) + " ms")),
+                value: isNaN(n) || maxValue <= 0 ? 0 : Math.max(0.04, n / maxValue)
+            })
         }
         return out
     }
@@ -112,8 +218,16 @@ Item {
             }
             AppButton { text: "Yenile"; iconText: "↻"; variant: "secondary"
                 onClicked: { var s = root.subIndex; root.subIndex = -1; root.subIndex = s } }
-            AppButton { text: "CSV"; iconText: "⭳"; variant: "secondary" }
-            AppButton { text: "PDF"; iconText: "⭳"; variant: "secondary" }
+            AppButton {
+                text: "CSV Dışa Aktar"; iconText: "↓"; variant: "secondary"
+                enabled: root.exportRows().length > 0
+                onClicked: csvDialog.open()
+            }
+            AppButton {
+                text: "PDF Rapor"; iconText: "↓"; variant: "secondary"
+                enabled: root.exportRows().length > 0
+                onClicked: pdfDialog.open()
+            }
         }
 
         // ── Sub-tab pills ─────────────────────────────────────────────────
@@ -188,8 +302,9 @@ Item {
             }
 
             Card {
-                title: "Inference Süresi"; subtitle: "Model karşılaştırması"
-                Layout.preferredWidth: 380; Layout.fillWidth: false; Layout.fillHeight: true
+                title: root.chartTitle(root.subIndex); subtitle: root.chartSubtitle(root.subIndex)
+                Layout.preferredWidth: root.subIndex === 3 ? 460 : 380
+                Layout.fillWidth: false; Layout.fillHeight: true
 
                 ColumnLayout {
                     anchors.fill: parent; spacing: 0
@@ -200,7 +315,7 @@ Item {
                         spacing: Theme.spacingSm
 
                         Repeater {
-                            model: root.barData(root.rowsForIndex(root.subIndex))
+                            model: root.barData(root.subIndex, root.rowsForIndex(root.subIndex))
                             delegate: ColumnLayout {
                                 Layout.fillWidth: true; Layout.fillHeight: true; spacing: 4
 
@@ -249,6 +364,65 @@ Item {
                     }
                 }
             }
+        }
+    }
+
+    FileDialog {
+        id: csvDialog
+        title: "CSV dosyasını kaydet"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["CSV dosyası (*.csv)", "Tüm dosyalar (*)"]
+        currentFile: root.exportBaseName() + ".csv"
+        onAccepted: {
+            var path = root.localPath(selectedFile)
+            var ok = typeof backend !== "undefined" && backend
+                ? backend.exportAnalysisCsv(path, root.colsForIndex(root.subIndex), root.exportRows())
+                : false
+            root.showExportResult(ok, path, "CSV")
+        }
+    }
+
+    FileDialog {
+        id: pdfDialog
+        title: "PDF raporunu kaydet"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["PDF dosyası (*.pdf)", "Tüm dosyalar (*)"]
+        currentFile: root.exportBaseName() + ".pdf"
+        onAccepted: {
+            var path = root.localPath(selectedFile)
+            var ok = typeof backend !== "undefined" && backend
+                ? backend.exportAnalysisPdf(path, "STM32 AI " + root._subTabs[root.subIndex] + " Raporu",
+                                            root.colsForIndex(root.subIndex), root.exportRows())
+                : false
+            root.showExportResult(ok, path, "PDF")
+        }
+    }
+
+    Popup {
+        id: exportNote
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: 420
+        padding: Theme.spacingLg
+        background: Rectangle { color: Theme.surface; radius: Theme.radiusLg; border.color: Theme.border }
+        contentItem: ColumnLayout {
+            spacing: Theme.spacingMd
+            Text {
+                text: root.exportOk ? "Kaydedildi" : "Kaydetme başarısız"
+                color: root.exportOk ? Theme.success : Theme.danger
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontMd
+                font.weight: Font.DemiBold
+            }
+            Text {
+                Layout.fillWidth: true
+                text: root.exportMessage
+                color: Theme.textMuted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSm
+                wrapMode: Text.WrapAnywhere
+            }
+            AppButton { Layout.alignment: Qt.AlignRight; text: "Tamam"; onClicked: exportNote.close() }
         }
     }
 }

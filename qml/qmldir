@@ -10,6 +10,7 @@ AppButton 1.0 components/AppButton.qml
 Card 1.0 components/Card.qml
 DataTable 1.0 components/DataTable.qml
 FormField 1.0 components/FormField.qml
+ComboField 1.0 components/ComboField.qml
 InfoCard 1.0 components/InfoCard.qml
 MetricBar 1.0 components/MetricBar.qml
 MetricIcon 1.0 components/MetricIcon.qml
@@ -22,6 +23,7 @@ TopTabBar 1.0 components/TopTabBar.qml
 # Dialogs
 SettingsDialog 1.0 dialogs/SettingsDialog.qml
 AboutDialog 1.0 dialogs/AboutDialog.qml
+PipelineWizard 1.0 dialogs/PipelineWizard.qml
 
 # Screens
 DashboardScreen 1.0 screens/DashboardScreen.qml

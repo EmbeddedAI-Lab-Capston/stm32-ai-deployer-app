@@ -32,7 +32,7 @@ Item {
             AppButton {
                 text: "Pipeline Sihirbazı"
                 iconText: "✦"
-                onClicked: pipelineNote.open()
+                onClicked: pipelineWizard.open()
             }
         }
 
@@ -89,7 +89,7 @@ Item {
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontSm
                             }
-                            MouseArea { anchors.fill: parent; onClicked: pipelineNote.open() }
+                            MouseArea { anchors.fill: parent; onClicked: pipelineWizard.open() }
                         }
                     }
                 }
@@ -135,8 +135,8 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: Theme.spacingMd
-                            FormField { id: archField; label: "Mimari"; options: root._arch }
-                            FormField { id: quantField; label: "Kuantizasyon"; options: root._quant }
+                            ComboField { id: archField; label: "Mimari"; options: root._arch }
+                            ComboField { id: quantField; label: "Kuantizasyon"; options: root._quant }
                         }
 
                         // firmware path + pick
@@ -276,34 +276,7 @@ Item {
         }
     }
 
-    // ── Pipeline wizard placeholder (full wizard wired in a later pass) ──────
-    Popup {
-        id: pipelineNote
-        modal: true
-        anchors.centerIn: Overlay.overlay
-        width: 420
-        padding: Theme.spacingLg
-        background: Rectangle { color: Theme.surface; radius: Theme.radiusLg; border.color: Theme.border }
-        contentItem: ColumnLayout {
-            spacing: Theme.spacingMd
-            Text {
-                text: "Pipeline Sihirbazı"
-                color: Theme.text
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontMd
-                font.weight: Font.DemiBold
-            }
-            Text {
-                Layout.fillWidth: true
-                text: ".tflite → C kodu → derleme → flash akışı. Bu sihirbaz bir sonraki adımda tam bağlanacaktır."
-                color: Theme.textMuted
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSm
-                wrapMode: Text.WordWrap
-            }
-            AppButton { Layout.alignment: Qt.AlignRight; text: "Tamam"; onClicked: pipelineNote.close() }
-        }
-    }
+    PipelineWizard { id: pipelineWizard }
 
     // small inline progress bar component
     component ProgressShim: Rectangle {

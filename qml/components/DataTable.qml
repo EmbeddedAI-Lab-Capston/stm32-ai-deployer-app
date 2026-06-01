@@ -43,9 +43,10 @@ Rectangle {
                         font.weight: Font.Bold
                         font.capitalization: Font.AllUppercase
                         elide: Text.ElideRight
-                        Layout.fillWidth: (modelData.width === undefined || modelData.width === 0)
-                        Layout.preferredWidth: (modelData.width !== undefined && modelData.width > 0)
-                                               ? modelData.width : 0
+                        readonly property int colWidth: modelData.width !== undefined ? modelData.width
+                                                        : (modelData.w !== undefined ? modelData.w : 0)
+                        Layout.fillWidth: colWidth === 0
+                        Layout.preferredWidth: colWidth > 0 ? colWidth : 0
                     }
                 }
             }
@@ -93,9 +94,10 @@ Rectangle {
                             font.pixelSize: Theme.fontSm
                             font.weight: colIndex === 0 ? Font.DemiBold : Font.Normal
                             elide: Text.ElideRight
-                            Layout.fillWidth: (modelData.width === undefined || modelData.width === 0)
-                            Layout.preferredWidth: (modelData.width !== undefined && modelData.width > 0)
-                                                   ? modelData.width : 0
+                            readonly property int colWidth: modelData.width !== undefined ? modelData.width
+                                                            : (modelData.w !== undefined ? modelData.w : 0)
+                            Layout.fillWidth: colWidth === 0
+                            Layout.preferredWidth: colWidth > 0 ? colWidth : 0
                         }
                     }
                 }

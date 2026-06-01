@@ -6,18 +6,61 @@ import STM32AiDeployer
 Item {
     id: root
 
+    // Live state from backend
     readonly property var _boardRows: (typeof appState !== "undefined" && appState && appState.boardInfoRows.length > 0)
                                       ? appState.boardInfoRows : MockData.boardInfo
-    property var _ports: ["COM5 (ST-Link)", "COM3", "COM7"]
-    readonly property bool _connected: (typeof appState !== "undefined" && appState) ? appState.connected : true
+    readonly property bool _connected: (typeof appState !== "undefined" && appState) ? appState.connected : false
+    readonly property string _boardName: (typeof appState !== "undefined" && appState) ? appState.boardName : "STM32F4"
+
+    property var _ports: ["COM5", "COM3", "COM7"]
+    property var _customBoards: []
+    property int _portIdx: 0
+    property int _baudIdx: 0
+
+    readonly property var _baudList: ["9600", "115200", "230400", "460800", "921600"]
+
+    // Preset list (always includes the 3 fixed + any custom)
+    readonly property var _basePresets: [
+        { name: "STM32F4", spec: "1024 KB · 192 KB · 168 MHz", target: "MLP INT8" },
+        { name: "STM32H7", spec: "2048 KB · 1024 KB · 480 MHz", target: "1D CNN INT8" },
+        { name: "STM32N6", spec: "4096 KB · 4096 KB · 800 MHz", target: "LSTM / KWS" }
+    ]
+
+    function boardPresets() {
+        var out = root._basePresets.slice()
+        for (var i = 0; i < root._customBoards.length; ++i) {
+            var b = root._customBoards[i]
+            out.push({
+                name: b.name,
+                spec: b.flashKb + " KB · " + b.ramKb + " KB · " + b.clockMhz + " MHz",
+                target: "Özel"
+            })
+        }
+        return out
+    }
+
+    function activePresetIndex() {
+        var bn = root._boardName
+        var presets = root.boardPresets()
+        for (var i = 0; i < presets.length; i++)
+            if (bn === presets[i].name || bn.includes(presets[i].name) || presets[i].name.includes(bn.split(/\W+/)[0])) return i
+        return -1
+    }
 
     function refreshPorts() {
         if (typeof backend !== "undefined" && backend) {
             var p = backend.availablePorts()
-            _ports = (p.length > 0) ? p : ["(port bulunamadı)"]
+            _ports = (p && p.length > 0) ? p : ["(port bulunamadı)"]
         }
     }
-    Component.onCompleted: refreshPorts()
+    function refreshCustomBoards() {
+        if (typeof backend !== "undefined" && backend)
+            _customBoards = backend.customBoards()
+    }
+    Component.onCompleted: {
+        refreshPorts()
+        refreshCustomBoards()
+    }
 
     ScrollView {
         anchors.fill: parent
@@ -28,7 +71,7 @@ Item {
             width: root.width
             spacing: Theme.spacingLg
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.spacingXs }
+            Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.spacingMd }
 
             ColumnLayout {
                 Layout.fillWidth: true
@@ -36,19 +79,26 @@ Item {
                 Layout.rightMargin: Theme.spacingLg
                 spacing: Theme.spacingLg
 
-                SectionHeader {
-                    title: "Kart Seçimi ve Bilgileri"
-                    subtitle: "Aktif kartın özellikleri ve bağlantı yönetimi"
+                // ── Page header ───────────────────────────────────────────
+                RowLayout {
                     Layout.fillWidth: true
+                    SectionHeader {
+                        title: "Kart Seçimi ve Bilgileri"
+                        subtitle: "Aktif kartın özellikleri ve bağlantı yönetimi"
+                        Layout.fillWidth: true
+                    }
+                    StatusPill {
+                        text: root._connected ? "Bağlı" : "Bağlı değil"
+                        status: root._connected ? "connected" : "offline"
+                    }
                 }
 
                 GridLayout {
                     Layout.fillWidth: true
                     columns: root.width > 1080 ? 2 : 1
-                    columnSpacing: Theme.spacingMd
-                    rowSpacing: Theme.spacingMd
+                    columnSpacing: Theme.spacingMd; rowSpacing: Theme.spacingMd
 
-                    // ── Active board info ─────────────────────────────────
+                    // ── Board info panel ──────────────────────────────────
                     Card {
                         title: "Aktif Kart Bilgileri"
                         Layout.fillWidth: true
@@ -62,33 +112,25 @@ Item {
                                 model: root._boardRows
                                 delegate: RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: Theme.spacingMd
                                     Text {
-                                        text: modelData[0]
+                                        text: Array.isArray(modelData) ? modelData[0] : (modelData.label || "--")
                                         color: Theme.textMuted
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.fontSm
+                                        font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                                         Layout.preferredWidth: 110
                                     }
                                     Text {
-                                        text: modelData[1]
+                                        text: Array.isArray(modelData) ? modelData[1] : (modelData.value || "--")
                                         color: Theme.text
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.fontSm
+                                        font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                                         font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                        Layout.fillWidth: true
+                                        elide: Text.ElideRight; Layout.fillWidth: true
                                     }
                                 }
                             }
 
                             Item { Layout.fillHeight: true }
 
-                            RowLayout {
-                                spacing: Theme.spacingSm
-                                StatusPill { text: "Uyumlu"; status: "ok" }
-                                Item { Layout.fillWidth: true }
-                            }
+                            StatusPill { text: "Uyumlu"; status: "ok" }
                         }
                     }
 
@@ -98,6 +140,7 @@ Item {
                         Layout.preferredHeight: 460
                         spacing: Theme.spacingMd
 
+                        // Preset cards
                         Card {
                             title: "Kart Seçimi"
                             Layout.fillWidth: true
@@ -108,14 +151,17 @@ Item {
                                 spacing: Theme.spacingSm
 
                                 Repeater {
-                                    model: MockData.boardPresets
+                                    model: root.boardPresets()
                                     delegate: Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 64
+                                        Layout.fillWidth: true; Layout.preferredHeight: 62
                                         radius: Theme.radiusMd
-                                        color: index === 1 ? Theme.primarySoft : Theme.surfaceRaised
-                                        border.color: index === 1 ? Theme.primary : Theme.border
-                                        border.width: index === 1 ? 2 : 1
+                                        property bool isActive: index === root.activePresetIndex()
+                                        color: isActive ? Theme.primarySoft : Theme.surfaceRaised
+                                        border.color: isActive ? Theme.primary : Theme.border
+                                        border.width: isActive ? 2 : 1
+
+                                        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                                        Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
 
                                         RowLayout {
                                             anchors.fill: parent
@@ -123,51 +169,75 @@ Item {
                                             spacing: Theme.spacingMd
 
                                             ColumnLayout {
-                                                spacing: 2
-                                                Layout.fillWidth: true
+                                                spacing: 2; Layout.fillWidth: true
                                                 Text {
-                                                    text: modelData.name
-                                                    color: Theme.text
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: Theme.fontMd
+                                                    text: modelData.name; color: Theme.text
+                                                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontMd
                                                     font.weight: Font.DemiBold
                                                 }
                                                 Text {
-                                                    text: modelData.spec
-                                                    color: Theme.textMuted
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: Theme.fontXs
+                                                    text: modelData.spec; color: Theme.textMuted
+                                                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
                                                 }
                                             }
 
                                             StatusPill { text: modelData.target; status: "info" }
                                         }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            onClicked: {
+                                                if (typeof backend !== "undefined" && backend)
+                                                    backend.selectBoard(modelData.name)
+                                            }
+                                            cursorShape: Qt.PointingHandCursor
+                                        }
                                     }
+                                }
+
+                                // Custom board button
+                                AppButton {
+                                    text: "Özel Kart Ekle"; iconText: "+"; variant: "secondary"
+                                    Layout.fillWidth: true
+                                    onClicked: customBoardDialog.open()
                                 }
 
                                 Item { Layout.fillHeight: true }
                             }
                         }
 
+                        // Connection card
                         Card {
                             title: "Bağlantı"
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 196
+                            Layout.preferredHeight: 200
 
                             ColumnLayout {
                                 anchors.fill: parent
                                 spacing: Theme.spacingMd
 
                                 RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Theme.spacingMd
-                                    FormField { id: portField; label: "Port"; options: root._ports }
-                                    FormField { id: baudField; label: "Baud"; options: ["115200", "230400", "921600", "460800"] }
+                                    Layout.fillWidth: true; spacing: Theme.spacingMd
+
+                                    ComboField {
+                                        label: "Port"; Layout.fillWidth: true
+                                        options: root._ports
+                                        currentIndex: root._portIdx
+                                        onActivated: (idx) => root._portIdx = idx
+                                    }
+
+                                    ComboField {
+                                        label: "Baud"; Layout.fillWidth: true
+                                        options: root._baudList
+                                        currentIndex: root._baudIdx
+                                        onActivated: (idx) => root._baudIdx = idx
+                                    }
                                 }
 
                                 RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Theme.spacingSm
+                                    Layout.fillWidth: true; spacing: Theme.spacingSm
+
                                     AppButton {
                                         text: root._connected ? "Bağlantıyı Kes" : "Bağlan"
                                         iconText: "⏻"
@@ -177,20 +247,24 @@ Item {
                                             if (root._connected) {
                                                 backend.disconnectSerial()
                                             } else {
-                                                var port = root._ports[portField.currentIndex]
-                                                var baud = parseInt(["115200","230400","921600","460800"][baudField.currentIndex])
+                                                var port = root._ports[root._portIdx] || ""
+                                                var baud = parseInt(root._baudList[root._baudIdx]) || 115200
                                                 backend.connectSerial(port, baud)
                                             }
                                         }
                                     }
+
                                     AppButton {
-                                        text: "Yenile"
-                                        variant: "secondary"
+                                        text: "Yenile"; iconText: "⟳"; variant: "secondary"
                                         onClicked: root.refreshPorts()
                                     }
+
                                     Item { Layout.fillWidth: true }
+
                                     StatusPill {
-                                        text: root._connected ? "Bağlı" : "Bağlı değil"
+                                        text: root._connected
+                                              ? ((root._ports[root._portIdx] || "COM") + " @ " + root._baudList[root._baudIdx])
+                                              : "Bağlı değil"
                                         status: root._connected ? "connected" : "offline"
                                     }
                                 }
@@ -202,6 +276,73 @@ Item {
                 }
 
                 Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.spacingLg }
+            }
+        }
+    }
+
+    // ── Custom board dialog ────────────────────────────────────────────────
+    Popup {
+        id: customBoardDialog
+        modal: true; anchors.centerIn: Overlay.overlay; width: 360; padding: Theme.spacingLg
+        background: Rectangle { color: Theme.surface; radius: Theme.radiusLg; border.color: Theme.border }
+
+        contentItem: ColumnLayout {
+            spacing: Theme.spacingMd
+
+            Text { text: "Özel Kart Ekle"; color: Theme.text; font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontMd; font.weight: Font.DemiBold }
+
+            ColumnLayout { spacing: Theme.spacingXs; Layout.fillWidth: true
+                Text { text: "Kart Adı"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                TextField { id: customNameField; Layout.fillWidth: true; placeholderText: "ör. MyBoard-F401"
+                    color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                    background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: customNameField.activeFocus ? Theme.primary : Theme.border }
+                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true; spacing: Theme.spacingMd
+
+                ColumnLayout { spacing: Theme.spacingXs; Layout.fillWidth: true
+                    Text { text: "Flash (KB)"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                    TextField { id: flashField; Layout.fillWidth: true; text: "512"; inputMethodHints: Qt.ImhDigitsOnly
+                        color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                        background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: flashField.activeFocus ? Theme.primary : Theme.border }
+                        leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm }
+                }
+                ColumnLayout { spacing: Theme.spacingXs; Layout.fillWidth: true
+                    Text { text: "RAM (KB)"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                    TextField { id: ramField; Layout.fillWidth: true; text: "128"; inputMethodHints: Qt.ImhDigitsOnly
+                        color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                        background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: ramField.activeFocus ? Theme.primary : Theme.border }
+                        leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm }
+                }
+                ColumnLayout { spacing: Theme.spacingXs; Layout.fillWidth: true
+                    Text { text: "MHz"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                    TextField { id: mhzField; Layout.fillWidth: true; text: "120"; inputMethodHints: Qt.ImhDigitsOnly
+                        color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                        background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: mhzField.activeFocus ? Theme.primary : Theme.border }
+                        leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true; spacing: Theme.spacingSm
+                AppButton { text: "İptal"; variant: "ghost"; onClicked: customBoardDialog.close() }
+                Item { Layout.fillWidth: true }
+                AppButton {
+                    text: "Ekle ve Seç"
+                    enabled: customNameField.text.trim().length > 0
+                    onClicked: {
+                        if (typeof backend === "undefined" || !backend) { customBoardDialog.close(); return }
+                        backend.addCustomBoard(customNameField.text.trim(),
+                                               parseInt(flashField.text) || 0,
+                                               parseInt(ramField.text) || 0,
+                                               parseInt(mhzField.text) || 0)
+                        root.refreshCustomBoards()
+                        customBoardDialog.close()
+                    }
+                }
             }
         }
     }

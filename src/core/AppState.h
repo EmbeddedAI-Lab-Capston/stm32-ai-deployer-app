@@ -26,6 +26,11 @@ class AppState : public QObject
     Q_PROPERTY(QString lastModel    READ lastModelName  NOTIFY lastModelChanged)
     Q_PROPERTY(double lastInfMs     READ lastInferenceMs NOTIFY lastModelChanged)
     Q_PROPERTY(int lastAcc          READ lastAccuracyPct NOTIFY lastModelChanged)
+    Q_PROPERTY(double lastRamKb     READ lastRamKb      NOTIFY liveMetricsChanged)
+    Q_PROPERTY(QString lastLabel    READ lastLabel      NOTIFY liveMetricsChanged)
+    Q_PROPERTY(double lastTempC     READ lastTempC      NOTIFY systemMetricsChanged)
+    Q_PROPERTY(int lastUptime       READ lastUptime     NOTIFY systemMetricsChanged)
+    Q_PROPERTY(double lastFreeRamKb READ lastFreeRamKb  NOTIFY systemMetricsChanged)
     Q_PROPERTY(QVariantList boardInfoRows READ boardInfoRows NOTIFY activeBoardChanged)
 
 public:
@@ -40,6 +45,11 @@ public:
     QString    lastModelName()     const { return m_lastModelName; }
     double     lastInferenceMs()   const { return m_lastInferenceMs; }
     quint8     lastAccuracy()      const { return m_lastAccuracy; }
+    double     lastRamKb()         const { return m_lastRamKb; }
+    QString    lastLabel()         const { return m_lastLabel; }
+    double     lastTempC()         const { return m_lastTempC; }
+    int        lastUptime()        const { return m_lastUptime; }
+    double     lastFreeRamKb()     const { return m_lastFreeRamKb; }
 
     // QML helper getters (flat types)
     QString boardName()    const { return m_activeBoard.name; }
@@ -62,6 +72,9 @@ public slots:
     void setActiveBaud(qint32 baud);
     void setConnected(bool connected, const QString &info = QString());
     void setLastModel(const QString &name, double infMs, quint8 acc);
+    void setLiveMetrics(const QString &model, double infMs, quint8 acc,
+                        double ramKb, const QString &label);
+    void setSystemMetrics(int uptime, double tempC, double freeRamKb);
 
 signals:
     void activeBoardChanged(const BoardInfo &board);
@@ -69,6 +82,8 @@ signals:
     void activeBaudChanged(qint32 baud);
     void connectionChanged(bool connected, const QString &info);
     void lastModelChanged(const QString &name, double infMs, quint8 acc);
+    void liveMetricsChanged();
+    void systemMetricsChanged();
 
 private:
     BoardInfo  m_activeBoard      { BoardPresets::defaultBoard() };
@@ -79,4 +94,9 @@ private:
     QString    m_lastModelName;
     double     m_lastInferenceMs  = 0.0;
     quint8     m_lastAccuracy     = 0;
+    double     m_lastRamKb        = 0.0;
+    QString    m_lastLabel;
+    double     m_lastTempC        = 0.0;
+    int        m_lastUptime       = 0;
+    double     m_lastFreeRamKb    = 0.0;
 };

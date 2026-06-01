@@ -10,6 +10,7 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS
     Core
+    Gui
     Widgets
     SerialPort
     Charts
@@ -130,6 +131,7 @@ qt_add_qml_module(STM32AiDeployer
         qml/components/AppButton.qml
         qml/components/Card.qml
         qml/components/DataTable.qml
+        qml/components/ComboField.qml
         qml/components/FormField.qml
         qml/components/InfoCard.qml
         qml/components/MetricBar.qml
@@ -141,6 +143,7 @@ qt_add_qml_module(STM32AiDeployer
         qml/components/TopTabBar.qml
         qml/dialogs/SettingsDialog.qml
         qml/dialogs/AboutDialog.qml
+        qml/dialogs/PipelineWizard.qml
         qml/screens/DashboardScreen.qml
         qml/screens/BoardScreen.qml
         qml/screens/FlashScreen.qml
@@ -151,6 +154,7 @@ qt_add_qml_module(STM32AiDeployer
 
 target_link_libraries(STM32AiDeployer PRIVATE
     Qt6::Core
+    Qt6::Gui
     Qt6::Widgets
     Qt6::SerialPort
     Qt6::Charts

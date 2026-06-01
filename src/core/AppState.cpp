@@ -82,3 +82,23 @@ void AppState::setLastModel(const QString &name, double infMs, quint8 acc)
     m_lastAccuracy     = acc;
     emit lastModelChanged(name, infMs, acc);
 }
+
+void AppState::setLiveMetrics(const QString &model, double infMs, quint8 acc,
+                              double ramKb, const QString &label)
+{
+    m_lastModelName   = model;
+    m_lastInferenceMs = infMs;
+    m_lastAccuracy    = acc;
+    m_lastRamKb       = ramKb;
+    m_lastLabel       = label;
+    emit lastModelChanged(model, infMs, acc);
+    emit liveMetricsChanged();
+}
+
+void AppState::setSystemMetrics(int uptime, double tempC, double freeRamKb)
+{
+    m_lastUptime    = uptime;
+    m_lastTempC     = tempC;
+    m_lastFreeRamKb = freeRamKb;
+    emit systemMetricsChanged();
+}

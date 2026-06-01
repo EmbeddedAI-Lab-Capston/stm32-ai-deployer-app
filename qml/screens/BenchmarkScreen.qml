@@ -55,7 +55,7 @@ Item {
 
                 Card {
                     title: "Benchmark Ayarları"
-                    Layout.fillWidth: true; Layout.preferredHeight: 260
+                    Layout.fillWidth: true; Layout.preferredHeight: 330
 
                     ColumnLayout {
                         anchors.fill: parent; spacing: Theme.spacingMd
