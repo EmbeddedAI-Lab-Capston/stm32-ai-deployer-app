@@ -12,7 +12,7 @@ Item {
     readonly property bool _connected: (typeof appState !== "undefined" && appState) ? appState.connected : false
     readonly property string _boardName: (typeof appState !== "undefined" && appState) ? appState.boardName : "STM32F4"
 
-    property var _ports: ["COM5", "COM3", "COM7"]
+    property var _portEntries: [{ label: "COM5", portName: "COM5", isStlink: false }]
     property var _customBoards: []
     property int _portIdx: 0
     property int _baudIdx: 0
@@ -49,9 +49,43 @@ Item {
 
     function refreshPorts() {
         if (typeof backend !== "undefined" && backend) {
-            var p = backend.availablePorts()
-            _ports = (p && p.length > 0) ? p : ["(port bulunamadı)"]
+            var p = backend.availablePortEntries()
+            _portEntries = (p && p.length > 0) ? p : [{ label: "(port bulunamadi)", portName: "", isStlink: false }]
+            if (_portIdx >= _portEntries.length) _portIdx = 0
         }
+    }
+    function portLabels() {
+        var out = []
+        for (var i = 0; i < root._portEntries.length; ++i)
+            out.push(root._portEntries[i].label || root._portEntries[i].portName || "")
+        return out
+    }
+    function selectedPortName() {
+        var entry = root._portEntries[root._portIdx]
+        return entry ? (entry.portName || entry.label || "") : ""
+    }
+    function rowLabel(row) {
+        if (!row) return "--"
+        if (row[0] !== undefined) return row[0]
+        return row.label || "--"
+    }
+    function rowValue(row) {
+        if (!row) return "--"
+        if (row[1] !== undefined) return row[1]
+        return row.value || "--"
+    }
+    function boardStatusText() {
+        if (typeof backend !== "undefined" && backend && backend.probeBusy) return "Taraniyor"
+        if (typeof backend !== "undefined" && backend && backend.probeStatus.length > 0) return backend.probeStatus
+        if (root._boardRows.length > 0) {
+            for (var i = 0; i < root._boardRows.length; ++i) {
+                var row = root._boardRows[i]
+                var label = root.rowLabel(row)
+                if ((label || "").toLowerCase().indexOf("st-link") >= 0) return "ST-Link'ten algilandi"
+            }
+        }
+        if (root._boardName.indexOf("N6") >= 0) return "Experimental template"
+        return root._boardName.length > 0 ? "Manuel secim" : "Kart bilgisi bekleniyor"
     }
     function refreshCustomBoards() {
         if (typeof backend !== "undefined" && backend)
@@ -113,13 +147,13 @@ Item {
                                 delegate: RowLayout {
                                     Layout.fillWidth: true
                                     Text {
-                                        text: Array.isArray(modelData) ? modelData[0] : (modelData.label || "--")
+                                        text: root.rowLabel(modelData)
                                         color: Theme.textMuted
                                         font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                                         Layout.preferredWidth: 110
                                     }
                                     Text {
-                                        text: Array.isArray(modelData) ? modelData[1] : (modelData.value || "--")
+                                        text: root.rowValue(modelData)
                                         color: Theme.text
                                         font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                                         font.weight: Font.DemiBold
@@ -130,7 +164,10 @@ Item {
 
                             Item { Layout.fillHeight: true }
 
-                            StatusPill { text: "Uyumlu"; status: "ok" }
+                            StatusPill {
+                                text: root.boardStatusText()
+                                status: (typeof backend !== "undefined" && backend && backend.probeBusy) ? "warning" : "ok"
+                            }
                         }
                     }
 
@@ -222,7 +259,7 @@ Item {
 
                                     ComboField {
                                         label: "Port"; Layout.fillWidth: true
-                                        options: root._ports
+                                        options: root.portLabels()
                                         currentIndex: root._portIdx
                                         onActivated: (idx) => root._portIdx = idx
                                     }
@@ -247,9 +284,10 @@ Item {
                                             if (root._connected) {
                                                 backend.disconnectSerial()
                                             } else {
-                                                var port = root._ports[root._portIdx] || ""
+                                                var port = root.selectedPortName()
                                                 var baud = parseInt(root._baudList[root._baudIdx]) || 115200
-                                                backend.connectSerial(port, baud)
+                                                if (port.length > 0)
+                                                    backend.connectSerial(port, baud)
                                             }
                                         }
                                     }
@@ -259,11 +297,19 @@ Item {
                                         onClicked: root.refreshPorts()
                                     }
 
+                                    AppButton {
+                                        text: (typeof backend !== "undefined" && backend && backend.probeBusy) ? "Taraniyor" : "ST-Link Tara"
+                                        iconText: "?"
+                                        variant: "secondary"
+                                        enabled: !(typeof backend !== "undefined" && backend && backend.probeBusy)
+                                        onClicked: if (typeof backend !== "undefined" && backend) backend.probeStLinkBoard()
+                                    }
+
                                     Item { Layout.fillWidth: true }
 
                                     StatusPill {
                                         text: root._connected
-                                              ? ((root._ports[root._portIdx] || "COM") + " @ " + root._baudList[root._baudIdx])
+                                              ? ((root.selectedPortName() || "COM") + " @ " + root._baudList[root._baudIdx])
                                               : "Bağlı değil"
                                         status: root._connected ? "connected" : "offline"
                                     }

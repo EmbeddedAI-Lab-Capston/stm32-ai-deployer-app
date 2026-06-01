@@ -26,11 +26,21 @@ void PacketParser::feed(const QByteArray &data)
     }
 
     while (true) {
-        int end = m_buffer.indexOf("\r\n");
+        const int lf = m_buffer.indexOf('\n');
+        const int cr = m_buffer.indexOf('\r');
+        int end = -1;
+        if (lf >= 0 && cr >= 0)
+            end = qMin(lf, cr);
+        else
+            end = lf >= 0 ? lf : cr;
         if (end < 0) break;
 
+        int removeLen = end + 1;
+        if (m_buffer.at(end) == '\r' && m_buffer.size() > end + 1 && m_buffer.at(end + 1) == '\n')
+            removeLen++;
+
         QByteArray line = m_buffer.left(end).trimmed();
-        m_buffer.remove(0, end + 2);
+        m_buffer.remove(0, removeLen);
 
         if (line.isEmpty()) continue;
 

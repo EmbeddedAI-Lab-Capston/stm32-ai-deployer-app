@@ -6,6 +6,35 @@ import STM32AiDeployer
 Item {
     id: root
     property bool compact: width < 1100
+    signal openPipelineRequested()
+    signal openLogsRequested()
+
+    function recentRows() {
+        if (typeof backend === "undefined" || !backend) return []
+        var records = backend.recentAnalysisRecords(5)
+        var out = []
+        for (var i = 0; i < records.length; ++i)
+            out.push(records[i].cells || records[i])
+        return out
+    }
+
+    function pipelineBars() {
+        var progress = (typeof backend !== "undefined" && backend) ? backend.pipelineProgress : 0
+        var flashProgress = (typeof backend !== "undefined" && backend) ? backend.flashProgress : 0
+        return [
+            { label: "Pipeline", value: progress / 100, text: progress + "%", color: Theme.primary },
+            { label: "Flash", value: flashProgress / 100, text: flashProgress + "%", color: Theme.success }
+        ]
+    }
+
+    function liveBars() {
+        if (typeof appState === "undefined" || !appState) return []
+        return [
+            { label: "Inference", value: appState.lastInfMs > 0 ? Math.min(appState.lastInfMs / 100, 1) : 0, text: appState.lastInfMs > 0 ? (appState.lastInfMs.toFixed(2) + " ms") : "-", accent: Theme.primary },
+            { label: "RAM", value: appState.lastRamKb > 0 ? Math.min(appState.lastRamKb / 1024, 1) : 0, text: appState.lastRamKb > 0 ? (appState.lastRamKb.toFixed(1) + " KB") : "-", accent: Theme.success },
+            { label: "Free RAM", value: appState.lastFreeRamKb > 0 ? Math.min(appState.lastFreeRamKb / 1024, 1) : 0, text: appState.lastFreeRamKb > 0 ? (appState.lastFreeRamKb.toFixed(1) + " KB") : "-", accent: Theme.cyan }
+        ]
+    }
 
     readonly property var _cards: {
         if (typeof appState !== "undefined" && appState && appState.boardName.length > 0) {
@@ -55,9 +84,16 @@ Item {
                         Layout.fillWidth: true
                     }
 
-                    StatusPill { text: "ST-Link bağlı"; status: "connected" }
-                    StatusPill { visible: !root.compact; text: "N6 experimental"; status: "experimental" }
-                    AppButton { text: "Pipeline"; iconText: "+" }
+                    StatusPill {
+                        text: (typeof appState !== "undefined" && appState && appState.connected) ? "UART bagli" : "Bagli degil"
+                        status: (typeof appState !== "undefined" && appState && appState.connected) ? "connected" : "offline"
+                    }
+                    StatusPill {
+                        visible: !root.compact
+                        text: (typeof backend !== "undefined" && backend) ? backend.pipelineStage : "Pipeline hazir"
+                        status: (typeof backend !== "undefined" && backend && backend.pipelineBusy) ? "warning" : "ready"
+                    }
+                    AppButton { text: "Pipeline"; iconText: "+"; onClicked: root.openPipelineRequested() }
                 }
 
                 // ── Summary cards ─────────────────────────────────────────
@@ -105,7 +141,7 @@ Item {
                             }
 
                             Repeater {
-                                model: MockData.pipelineSteps
+                                model: root.pipelineBars()
                                 delegate: MetricBar {
                                     label: modelData.label
                                     value: modelData.value
@@ -119,8 +155,8 @@ Item {
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: Theme.spacingSm
-                                AppButton { text: "Model Derle"; iconText: "▶" }
-                                AppButton { text: "Logları Aç"; iconText: "≡"; variant: "secondary" }
+                                AppButton { text: "Model Derle"; iconText: ">"; onClicked: root.openPipelineRequested() }
+                                AppButton { text: "Loglari Ac"; iconText: "="; variant: "secondary"; onClicked: root.openLogsRequested() }
                             }
                         }
                     }
@@ -136,7 +172,7 @@ Item {
                             spacing: Theme.spacingMd
 
                             Repeater {
-                                model: MockData.liveMetrics
+                                model: root.liveBars()
                                 delegate: MetricBar {
                                     label: modelData.label
                                     value: modelData.value
@@ -155,7 +191,12 @@ Item {
                                 Text {
                                     anchors.centerIn: parent
                                     width: parent.width - Theme.spacingLg
-                                    text: "sensor: BME280   ·   label: normal   ·   confidence: %90"
+                                    text: {
+                                        if (typeof appState === "undefined" || !appState) return "Canli veri bekleniyor"
+                                        var label = appState.lastLabel.length > 0 ? appState.lastLabel : appState.lastModel
+                                        var temp = appState.lastTempC > 0 ? ("   temp: " + appState.lastTempC.toFixed(1) + " C") : ""
+                                        return "label: " + (label.length > 0 ? label : "-") + "   confidence: %" + appState.lastAcc + temp
+                                    }
                                     color: Theme.textMuted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontSm
@@ -184,7 +225,7 @@ Item {
                             { title: "Sonuç", width: 0 },
                             { title: "Durum", width: 110 }
                         ]
-                        rows: MockData.recentRecords
+                        rows: root.recentRows()
                     }
                 }
 

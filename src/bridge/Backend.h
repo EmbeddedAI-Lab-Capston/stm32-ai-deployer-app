@@ -174,6 +174,7 @@ private:
     PipelineConfig pipelineConfigFromMap(const QVariantMap &config) const;
     void addCompiledRecord(const PipelineConfig &config);
     void applyDetectedStLinkBoard(const QString &probeOutput);
+    void requestBoardInfoBurst();
     void wireSerial();
     void wireFlash();
     void wireAnalysis();

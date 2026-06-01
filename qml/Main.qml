@@ -64,7 +64,16 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 currentIndex: tabBar.currentIndex
 
-                DashboardScreen {}
+                DashboardScreen {
+                    onOpenPipelineRequested: {
+                        tabBar.currentIndex = 2
+                        stack.currentIndex = 2
+                    }
+                    onOpenLogsRequested: {
+                        tabBar.currentIndex = 3
+                        stack.currentIndex = 3
+                    }
+                }
                 BoardScreen {}
                 FlashScreen {}
                 MonitorScreen {}

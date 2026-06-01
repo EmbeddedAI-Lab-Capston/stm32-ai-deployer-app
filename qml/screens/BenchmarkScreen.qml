@@ -7,7 +7,12 @@ import STM32AiDeployer
 Item {
     id: root
 
+    signal settingsRequested()
+
     property string _modelPath: ""
+    readonly property bool _busy: (typeof backend !== "undefined" && backend) ? backend.benchmarkBusy : false
+    readonly property var _lines: (typeof backend !== "undefined" && backend) ? backend.benchmarkLines : []
+    readonly property var _metrics: (typeof backend !== "undefined" && backend) ? backend.benchmarkMetrics : ({})
     readonly property bool _xcubeReady: {
         if (typeof backend === "undefined" || !backend) return false
         var tools = backend.toolPaths
@@ -15,31 +20,46 @@ Item {
             if (tools[i].key === "tools/xcubeai_cli_path") return tools[i].found
         return false
     }
-    readonly property var _metricsMock: MockData.benchMetrics
-    readonly property var _terminalMock: MockData.benchTerminal
+
+    function metricRows() {
+        var m = root._metrics || {}
+        return [
+            ["Model", m.model || "-"],
+            ["Ortalama", m.avg || "-"],
+            ["Min / Max", (m.min || "-") + " / " + (m.max || "-")],
+            ["RAM", m.ram || "-"],
+            ["Free RAM", m.freeRam || "-"],
+            ["Ornek", m.samples ? String(m.samples) : "-"]
+        ]
+    }
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.spacingLg
         spacing: Theme.spacingLg
 
-        // ── Header ────────────────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
             SectionHeader {
                 title: "Kart Benchmark Testleri"
-                subtitle: "Modeli kart üzerinde ölç ve raporla"
+                subtitle: "UART BENCH komutu ile kart uzerinde olcum al"
                 Layout.fillWidth: true
             }
             StatusPill {
-                text: root._xcubeReady ? "X-CUBE-AI hazır" : "X-CUBE-AI bulunamadı"
-                status: root._xcubeReady ? "ready" : "error"
+                text: root._xcubeReady ? "X-CUBE-AI hazir" : "X-CUBE-AI yok"
+                status: root._xcubeReady ? "ready" : "warning"
             }
             AppButton {
-                text: "Benchmark Başlat"
-                iconText: "▶"
-                enabled: root._modelPath.length > 0
-                onClicked: benchNote.open()
+                text: root._busy ? "Calisiyor..." : "Benchmark Baslat"
+                iconText: ">"
+                enabled: !root._busy
+                onClicked: {
+                    if (typeof backend === "undefined" || !backend) return
+                    backend.startBenchmark(parseInt(samplesField.text) || 20,
+                                           parseFloat(minField.text) || 0.0,
+                                           parseFloat(maxField.text) || 1.0,
+                                           parseInt(seedField.text) || 42)
+                }
             }
         }
 
@@ -47,93 +67,209 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             columns: root.width > 1100 ? 2 : 1
-            columnSpacing: Theme.spacingMd; rowSpacing: Theme.spacingMd
+            columnSpacing: Theme.spacingMd
+            rowSpacing: Theme.spacingMd
 
-            // ── Left: config + metrics ────────────────────────────────────
             ColumnLayout {
-                Layout.fillWidth: true; Layout.fillHeight: true; spacing: Theme.spacingMd
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: Theme.spacingMd
 
                 Card {
-                    title: "Benchmark Ayarları"
-                    Layout.fillWidth: true; Layout.preferredHeight: 330
+                    title: "Benchmark Ayarlari"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 330
 
                     ColumnLayout {
-                        anchors.fill: parent; spacing: Theme.spacingMd
+                        anchors.fill: parent
+                        spacing: Theme.spacingMd
 
-                        // model file picker
                         ColumnLayout {
-                            Layout.fillWidth: true; spacing: Theme.spacingXs
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingXs
                             Text {
-                                text: "Model Dosyası (.tflite / .h5)"
+                                text: "Model dosyasi opsiyonel; UART BENCH icin zorunlu degil"
                                 color: Theme.textMuted
-                                font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontXs
+                                font.weight: Font.DemiBold
                             }
                             RowLayout {
-                                Layout.fillWidth: true; spacing: Theme.spacingSm
+                                Layout.fillWidth: true
+                                spacing: Theme.spacingSm
                                 Rectangle {
-                                    Layout.fillWidth: true; Layout.preferredHeight: 36
-                                    radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: Theme.border
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 36
+                                    radius: Theme.radiusMd
+                                    color: Theme.surfaceRaised
+                                    border.color: Theme.border
                                     Text {
-                                        anchors.verticalCenter: parent.verticalCenter; anchors.left: parent.left
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.left: parent.left
                                         anchors.leftMargin: Theme.spacingSm
-                                        text: root._modelPath.length > 0
-                                              ? root._modelPath.split(/[\\/]/).pop() : "Dosya seçilmedi"
+                                        width: parent.width - Theme.spacingMd
+                                        text: root._modelPath.length > 0 ? root._modelPath.split(/[\\/]/).pop() : "Dosya secilmedi"
                                         color: root._modelPath.length > 0 ? Theme.text : Theme.textFaint
-                                        font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
-                                        elide: Text.ElideLeft; width: parent.width - Theme.spacingMd
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontSm
+                                        elide: Text.ElideLeft
                                     }
                                 }
-                                AppButton {
-                                    text: "Seç"; variant: "secondary"
-                                    onClicked: modelDialog.open()
+                                AppButton { text: "Sec"; variant: "secondary"; onClicked: modelDialog.open() }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingMd
+                            ColumnLayout {
+                                spacing: Theme.spacingXs
+                                Layout.fillWidth: true
+                                Text { text: "Tekrar"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                                TextField {
+                                    id: samplesField
+                                    Layout.fillWidth: true
+                                    text: "20"
+                                    enabled: !root._busy
+                                    selectByMouse: true
+                                    inputMethodHints: Qt.ImhDigitsOnly
+                                    color: Theme.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSm
+                                    background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: samplesField.activeFocus ? Theme.primary : Theme.border }
+                                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                                }
+                            }
+                            ColumnLayout {
+                                spacing: Theme.spacingXs
+                                Layout.fillWidth: true
+                                Text { text: "Seed"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                                TextField {
+                                    id: seedField
+                                    Layout.fillWidth: true
+                                    text: "42"
+                                    enabled: !root._busy
+                                    selectByMouse: true
+                                    inputMethodHints: Qt.ImhDigitsOnly
+                                    color: Theme.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSm
+                                    background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: seedField.activeFocus ? Theme.primary : Theme.border }
+                                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                                }
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingMd
+                            ColumnLayout {
+                                spacing: Theme.spacingXs
+                                Layout.fillWidth: true
+                                Text { text: "Min"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                                TextField {
+                                    id: minField
+                                    Layout.fillWidth: true
+                                    text: "0.0"
+                                    enabled: !root._busy
+                                    selectByMouse: true
+                                    color: Theme.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSm
+                                    background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: minField.activeFocus ? Theme.primary : Theme.border }
+                                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                                }
+                            }
+                            ColumnLayout {
+                                spacing: Theme.spacingXs
+                                Layout.fillWidth: true
+                                Text { text: "Max"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                                TextField {
+                                    id: maxField
+                                    Layout.fillWidth: true
+                                    text: "1.0"
+                                    enabled: !root._busy
+                                    selectByMouse: true
+                                    color: Theme.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSm
+                                    background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: maxField.activeFocus ? Theme.primary : Theme.border }
+                                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
                                 }
                             }
                         }
 
-                        RowLayout {
-                            Layout.fillWidth: true; spacing: Theme.spacingMd
-                            FormField { label: "Tekrar"; value: "20" }
-                            FormField { label: "Seed"; value: "42" }
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true; spacing: Theme.spacingMd
-                            FormField { label: "Min"; value: "0.0" }
-                            FormField { label: "Max"; value: "1.0" }
+                        Rectangle {
+                            visible: !root._xcubeReady
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 42
+                            radius: Theme.radiusMd
+                            color: Theme.alpha(Theme.warning, 0.12)
+                            border.color: Theme.warning
+                            Text {
+                                anchors.centerIn: parent
+                                width: parent.width - Theme.spacingMd
+                                text: "stedgeai bulunamadi; BENCH UART akisi yine calisir."
+                                color: Theme.textMuted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontXs
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
                         }
 
                         RowLayout {
-                            Layout.fillWidth: true; spacing: Theme.spacingSm
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingSm
                             AppButton {
-                                text: "Başlat"; iconText: "▶"
-                                enabled: root._modelPath.length > 0
-                                onClicked: benchNote.open()
+                                text: root._busy ? "Calisiyor..." : "Baslat"
+                                iconText: ">"
+                                enabled: !root._busy
+                                onClicked: {
+                                    if (typeof backend === "undefined" || !backend) return
+                                    backend.startBenchmark(parseInt(samplesField.text) || 20,
+                                                           parseFloat(minField.text) || 0.0,
+                                                           parseFloat(maxField.text) || 1.0,
+                                                           parseInt(seedField.text) || 42)
+                                }
                             }
-                            AppButton { text: "Model Seç"; iconText: "📁"; variant: "secondary"
-                                onClicked: modelDialog.open() }
+                            AppButton {
+                                text: "Iptal"
+                                variant: "danger"
+                                enabled: root._busy
+                                onClicked: if (typeof backend !== "undefined" && backend) backend.cancelBenchmark()
+                            }
+                            AppButton { text: "Model Sec"; variant: "secondary"; onClicked: modelDialog.open() }
                         }
                     }
                 }
 
                 Card {
                     title: "Metrikler"
-                    Layout.fillWidth: true; Layout.fillHeight: true
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
 
                     ColumnLayout {
-                        anchors.fill: parent; spacing: Theme.spacingXs
-
+                        anchors.fill: parent
+                        spacing: Theme.spacingXs
                         Repeater {
-                            model: root._metricsMock
+                            model: root.metricRows()
                             delegate: RowLayout {
                                 Layout.fillWidth: true
                                 Text {
-                                    text: modelData[0]; color: Theme.textMuted
-                                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                                    text: modelData[0]
+                                    color: Theme.textMuted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSm
                                     Layout.preferredWidth: 120
                                 }
                                 Text {
-                                    text: modelData[1]; color: Theme.text
-                                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
-                                    font.weight: Font.DemiBold; Layout.fillWidth: true
+                                    text: modelData[1]
+                                    color: Theme.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSm
+                                    font.weight: Font.DemiBold
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
                                 }
                             }
                         }
@@ -142,63 +278,40 @@ Item {
                 }
             }
 
-            // ── Right: terminal output ────────────────────────────────────
             Card {
-                title: "Çıktı"; Layout.fillWidth: true; Layout.fillHeight: true
+                title: "Cikti"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
 
                 ColumnLayout {
-                    anchors.fill: parent; spacing: Theme.spacingSm
+                    anchors.fill: parent
+                    spacing: Theme.spacingSm
                     Terminal {
-                        Layout.fillWidth: true; Layout.fillHeight: true
-                        lines: root._terminalMock
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        lines: root._lines
                     }
                     RowLayout {
-                        Layout.fillWidth: true; spacing: Theme.spacingSm
+                        Layout.fillWidth: true
+                        spacing: Theme.spacingSm
                         Item { Layout.fillWidth: true }
-                        AppButton { text: "Temizle"; variant: "secondary" }
+                        AppButton {
+                            text: "Temizle"
+                            variant: "secondary"
+                            enabled: !root._busy
+                            onClicked: if (typeof backend !== "undefined" && backend) backend.clearBenchmarkLog()
+                        }
                     }
                 }
             }
         }
     }
 
-    // ── Model file dialog ──────────────────────────────────────────────────
     FileDialog {
         id: modelDialog
-        title: "Model dosyası seçin"
-        nameFilters: ["AI Model (*.tflite *.h5 *.onnx)", "Tüm dosyalar (*)"]
+        title: "Model dosyasi secin"
+        nameFilters: ["AI Model (*.tflite *.h5 *.onnx)", "Tum dosyalar (*)"]
         onAccepted: root._modelPath = selectedFile.toString().replace("file:///", "")
     }
 
-    // ── Placeholder for full XCubeAI integration ───────────────────────────
-    Popup {
-        id: benchNote
-        modal: true; anchors.centerIn: Overlay.overlay; width: 420; padding: Theme.spacingLg
-        background: Rectangle { color: Theme.surface; radius: Theme.radiusLg; border.color: Theme.border }
-        contentItem: ColumnLayout {
-            spacing: Theme.spacingMd
-            Text { text: "Benchmark Başlatılıyor"; color: Theme.text; font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontMd; font.weight: Font.DemiBold }
-            Text {
-                Layout.fillWidth: true
-                text: root._xcubeReady
-                    ? ("stedgeai validate çalıştırılacak:\n" + root._modelPath)
-                    : "X-CUBE-AI (stedgeai) bulunamadı.\nAraçlar → Ayarlar'dan stedgeai yolunu girin."
-                color: root._xcubeReady ? Theme.textMuted : Theme.danger
-                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm; wrapMode: Text.WordWrap
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                AppButton { text: "Kapat"; variant: "ghost"; onClicked: benchNote.close() }
-                Item { Layout.fillWidth: true }
-                AppButton {
-                    visible: !root._xcubeReady
-                    text: "Ayarları Aç"; variant: "secondary"
-                    onClicked: { benchNote.close(); settingsRequested() }
-                }
-            }
-        }
-    }
-
-    signal settingsRequested()
 }

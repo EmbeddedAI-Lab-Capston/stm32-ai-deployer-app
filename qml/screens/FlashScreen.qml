@@ -12,9 +12,12 @@ Item {
     readonly property var _arch: ["1D CNN", "MLP", "LSTM", "TC-ResNet"]
     readonly property var _quant: ["INT8", "Dynamic Q", "Float32"]
     readonly property var _lines: (typeof backend !== "undefined" && backend && backend.flashLines.length > 0)
-                                  ? backend.flashLines : MockData.flashTerminal
-    readonly property int  _progress: (typeof backend !== "undefined" && backend) ? backend.flashProgress : 100
-    readonly property bool _busy: (typeof backend !== "undefined" && backend) ? backend.flashBusy : false
+                                  ? backend.flashLines
+                                  : ((typeof backend !== "undefined" && backend && backend.pipelineLines.length > 0)
+                                     ? backend.pipelineLines : MockData.flashTerminal)
+    readonly property int  _progress: (typeof backend !== "undefined" && backend)
+                                      ? (backend.flashBusy ? backend.flashProgress : backend.pipelineProgress) : 100
+    readonly property bool _busy: (typeof backend !== "undefined" && backend) ? (backend.flashBusy || backend.pipelineBusy) : false
     readonly property bool _connected: (typeof appState !== "undefined" && appState) ? appState.connected : true
 
     ColumnLayout {
@@ -255,7 +258,11 @@ Item {
                         AppButton {
                             text: "Temizle"
                             variant: "secondary"
-                            onClicked: if (typeof backend !== "undefined" && backend) backend.clearFlashLog()
+                            onClicked: {
+                                if (typeof backend === "undefined" || !backend) return
+                                backend.clearFlashLog()
+                                backend.clearPipelineLog()
+                            }
                         }
                     }
                 }

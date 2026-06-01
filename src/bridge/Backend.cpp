@@ -1,7 +1,10 @@
 #include "Backend.h"
 
+#include <algorithm>
+
 #include <QSerialPortInfo>
 #include <QFileInfo>
+#include <QDir>
 #include <QLocale>
 #include <QRandomGenerator>
 #include <QDateTime>
@@ -170,7 +173,13 @@ QString Backend::detectedStLinkPort() const
 void Backend::connectSerial(const QString &portName, int baud)
 {
     if (!m_serial) return;
-    m_serial->connectToPort(portName.section(' ', 0, 0), baud);
+    const QString cleanPort = portName.section(' ', 0, 0).trimmed();
+    if (cleanPort.isEmpty()) return;
+    if (m_state) {
+        m_state->setActivePort(cleanPort);
+        m_state->setActiveBaud(baud);
+    }
+    m_serial->connectToPort(cleanPort, baud);
 }
 
 void Backend::disconnectSerial()
@@ -619,6 +628,219 @@ void Backend::wireFlash()
             });
 }
 
+// ── Pipeline ───────────────────────────────────────────────────────────────
+void Backend::appendPipelineLine(const QString &text, const QString &type)
+{
+    QVariantMap m;
+    m["text"] = text;
+    m["type"] = type;
+    m_pipelineLines.append(m);
+    emit pipelineChanged();
+    appendFlashLine(text, type);
+}
+
+PipelineConfig Backend::pipelineConfigFromMap(const QVariantMap &config) const
+{
+    auto value = [&config](const QString &key, const QString &fallback = QString()) {
+        return config.value(key, fallback).toString();
+    };
+
+    AppSettings settings;
+    PipelineConfig cfg;
+    cfg.modelPath = value("modelPath");
+    cfg.modelName = value("modelName", QFileInfo(cfg.modelPath).baseName());
+    cfg.architecture = value("architecture", "Bilinmiyor");
+    cfg.quantization = value("quantization", "INT8");
+    cfg.sensorType = value("sensorType", "BME280");
+    cfg.protocol = cfg.sensorType == "PDM_MIC" || cfg.sensorType == "PDM" ? "SAI" : "I2C";
+    cfg.i2cInstance = value("i2cInstance", "I2C1");
+    cfg.sdaPort = value("sdaPort", "GPIOB");
+    cfg.sdaPin = value("sdaPin", "GPIO_PIN_7");
+    cfg.sclPort = value("sclPort", "GPIOB");
+    cfg.sclPin = value("sclPin", "GPIO_PIN_6");
+    cfg.i2cAddress = value("i2cAddress", cfg.sensorType == "MPU6050" ? "0xD0" : "0x76");
+    cfg.saiInstance = value("saiInstance", "SAI1");
+    cfg.clkPort = value("clkPort", "GPIOB");
+    cfg.clkPin = value("clkPin", "GPIO_PIN_5");
+    cfg.dataPort = value("dataPort", "GPIOB");
+    cfg.dataPin = value("dataPin", "GPIO_PIN_3");
+    cfg.targetBoard = value("targetBoard", m_state ? m_state->activeBoard().name : "STM32F4");
+    cfg.gccPath = settings.gccPath();
+    cfg.makePath = settings.makePath();
+    cfg.xcubeCliPath = settings.xcubeAICliPath();
+    cfg.programmerCliPath = settings.programmerCliPath();
+    cfg.outputDir = value("outputDir", settings.lastOutputDir());
+    cfg.cubeSdkPath = settings.cubeSdkPath();
+    return cfg;
+}
+
+void Backend::runPipeline(const QVariantMap &config)
+{
+    if (m_pipelineBusy) return;
+    m_lastPipelineConfig = pipelineConfigFromMap(config);
+    if (m_lastPipelineConfig.modelPath.isEmpty() || !QFileInfo::exists(m_lastPipelineConfig.modelPath)) {
+        appendPipelineLine("HATA: Model dosyası seçilmedi veya bulunamadı.", "err");
+        return;
+    }
+    if (m_lastPipelineConfig.outputDir.isEmpty()) {
+        appendPipelineLine("HATA: Çıktı dizini seçilmedi.", "err");
+        return;
+    }
+
+    if (m_pipelineRunner)
+        m_pipelineRunner->deleteLater();
+    m_pipelineRunner = new PipelineRunner(this);
+    m_pipelineLines.clear();
+    m_pipelineProgress = 0;
+    m_pipelineBusy = true;
+    m_pipelineStage = "Pipeline başlatılıyor...";
+    emit pipelineChanged();
+
+    connect(m_pipelineRunner, &PipelineRunner::stageChanged, this, [this](const QString &stage) {
+        m_pipelineStage = stage;
+        emit pipelineChanged();
+    });
+    connect(m_pipelineRunner, &PipelineRunner::progressChanged, this, [this](int p) {
+        m_pipelineProgress = p;
+        emit pipelineChanged();
+    });
+    connect(m_pipelineRunner, &PipelineRunner::outputLine, this,
+            [this](const QString &line) { appendPipelineLine(line, "info"); });
+    connect(m_pipelineRunner, &PipelineRunner::errorLine, this,
+            [this](const QString &line) { appendPipelineLine(line, "err"); });
+    connect(m_pipelineRunner, &PipelineRunner::finished, this, [this](bool success) {
+        m_pipelineBusy = false;
+        m_pipelineProgress = success ? 100 : m_pipelineProgress;
+        m_pipelineStage = success ? "Pipeline tamamlandı" : "Pipeline başarısız";
+        if (success) {
+            addCompiledRecord(m_lastPipelineConfig);
+            if (m_state)
+                m_state->setLastModel(m_lastPipelineConfig.modelName, m_state->lastInferenceMs(), m_state->lastAccuracy());
+        }
+        QVariantMap artifact;
+        artifact["modelName"] = m_lastPipelineConfig.modelName;
+        artifact["outputDir"] = m_lastPipelineConfig.outputDir;
+        artifact["targetBoard"] = m_lastPipelineConfig.targetBoard;
+        emit pipelineChanged();
+        emit pipelineFinished(success, artifact);
+    });
+
+    m_pipelineRunner->run(m_lastPipelineConfig);
+}
+
+void Backend::cancelPipeline()
+{
+    if (m_pipelineRunner && m_pipelineBusy)
+        m_pipelineRunner->cancel();
+}
+
+void Backend::clearPipelineLog()
+{
+    m_pipelineLines.clear();
+    emit pipelineChanged();
+}
+
+void Backend::addCompiledRecord(const PipelineConfig &config)
+{
+    if (!m_analysis) return;
+
+    const QString expectedElf = QDir(config.outputDir).filePath(
+        QString("build/%1_%2.elf").arg(config.modelName, config.targetBoard));
+    const QString firmwarePath = QFileInfo::exists(expectedElf) ? expectedElf : QString();
+    const QFileInfo fwInfo(firmwarePath);
+    const QString firmwareSize = fwInfo.exists()
+        ? QString("%1 KiB").arg(fwInfo.size() / 1024.0, 0, 'f', 2)
+        : QString("--");
+
+    QStringList cells;
+    cells << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+          << config.modelName
+          << config.quantization
+          << config.targetBoard
+          << (m_state ? m_state->activeBoard().deviceName : QString("--"))
+          << config.sensorType
+          << "--"
+          << "--"
+          << "--"
+          << "--"
+          << firmwareSize
+          << (firmwarePath.isEmpty() ? "Derlendi" : "Arşivlendi")
+          << firmwarePath
+          << config.modelPath
+          << config.outputDir;
+    m_analysis->addRecord("compiled", cells);
+    emit analysisChanged();
+}
+
+// ── Benchmark ──────────────────────────────────────────────────────────────
+void Backend::appendBenchmarkLine(const QString &text, const QString &type)
+{
+    QVariantMap m;
+    m["text"] = text;
+    m["type"] = type;
+    m_benchmarkLines.append(m);
+    emit benchmarkChanged();
+}
+
+void Backend::startBenchmark(int samples, double minValue, double maxValue, int seed)
+{
+    if (!m_serial || !m_state || m_benchmarkBusy) return;
+    const QString port = m_state->activePort();
+    if (port.isEmpty()) {
+        appendBenchmarkLine("Aktif COM port yok. Kartlar ekranından port seçin.", "err");
+        return;
+    }
+
+    m_benchmarkLines.clear();
+    m_benchmarkMetrics.clear();
+    m_benchmarkBusy = true;
+    emit benchmarkChanged();
+
+    auto sendCommand = [this, samples, minValue, maxValue, seed]() {
+        if (!m_state || !m_state->isConnected()) {
+            appendBenchmarkLine("UART bağlantısı kurulamadı.", "err");
+            m_benchmarkBusy = false;
+            emit benchmarkChanged();
+            return;
+        }
+        const int minMilli = qRound(minValue * 1000.0);
+        const int maxMilli = qRound(maxValue * 1000.0);
+        const QByteArray command = QString("BENCH %1 %2 %3 %4")
+            .arg(qMax(1, samples))
+            .arg(minMilli)
+            .arg(maxMilli)
+            .arg(qMax(0, seed))
+            .toUtf8();
+        appendBenchmarkLine("> " + QString::fromUtf8(command), "cmd");
+        m_serial->writeLine(command);
+        m_benchmarkTimeout->start(10000);
+    };
+
+    if (m_state->isConnected()) {
+        sendCommand();
+    } else {
+        appendBenchmarkLine(QString("UART bağlantısı açılıyor: %1 @ %2")
+                                .arg(port).arg(m_state->activeBaud()), "cmd");
+        m_serial->connectToPort(port, m_state->activeBaud());
+        QTimer::singleShot(1200, this, sendCommand);
+    }
+}
+
+void Backend::cancelBenchmark()
+{
+    if (!m_benchmarkBusy) return;
+    if (m_benchmarkTimeout) m_benchmarkTimeout->stop();
+    m_benchmarkBusy = false;
+    appendBenchmarkLine("Benchmark iptal edildi.", "warn");
+    emit benchmarkChanged();
+}
+
+void Backend::clearBenchmarkLog()
+{
+    m_benchmarkLines.clear();
+    emit benchmarkChanged();
+}
+
 // ── Analysis ────────────────────────────────────────────────────────────────
 QVariantList Backend::recordsForKind(const QString &kind) const
 {
@@ -638,10 +860,51 @@ QVariantList Backend::benchmarkRecords()  const { return recordsForKind("benchma
 QVariantList Backend::simulationRecords() const { return recordsForKind("simulation"); }
 QVariantList Backend::sensorRecords()     const { return recordsForKind("sensor"); }
 QVariantList Backend::compiledRecords()   const { return recordsForKind("compiled"); }
+QVariantList Backend::recordsForKindQml(const QString &kind) const { return recordsForKind(kind); }
+
+QVariantList Backend::recentAnalysisRecords(int limit) const
+{
+    QVariantList all;
+    const QStringList kinds = {"benchmark", "simulation", "sensor", "compiled"};
+    for (const QString &kind : kinds) {
+        for (const AnalysisRecord &r : m_analysis ? m_analysis->records(kind) : QVector<AnalysisRecord>{}) {
+            QVariantMap m;
+            m["id"] = r.id;
+            m["kind"] = kind;
+            m["cells"] = QVariant::fromValue(r.cells);
+            all.append(m);
+        }
+    }
+    std::sort(all.begin(), all.end(), [](const QVariant &a, const QVariant &b) {
+        const QString ad = a.toMap().value("cells").toStringList().value(0);
+        const QString bd = b.toMap().value("cells").toStringList().value(0);
+        return ad > bd;
+    });
+    while (limit > 0 && all.size() > limit)
+        all.removeLast();
+    return all;
+}
 
 void Backend::deleteAnalysisRecord(int id)
 {
     if (m_analysis) { m_analysis->deleteRecord(id); emit analysisChanged(); }
+}
+
+bool Backend::flashCompiledModel(int recordId)
+{
+    if (!m_analysis || !m_flash) return false;
+    for (const AnalysisRecord &record : m_analysis->records("compiled")) {
+        if (record.id != recordId) continue;
+        const QString firmwarePath = record.cells.value(12);
+        const QString modelName = record.cells.value(1);
+        if (firmwarePath.isEmpty() || !QFileInfo::exists(firmwarePath)) {
+            appendFlashLine("HATA: Arşivlenmiş firmware bulunamadı.", "err");
+            return false;
+        }
+        flashFirmware(firmwarePath, modelName, record.cells.value(2), "INT8", false);
+        return true;
+    }
+    return false;
 }
 
 static QString normalizedLocalPath(QString path, const QString &suffix)
@@ -792,6 +1055,17 @@ void Backend::wireAnalysis()
     // Benchmark results from real hardware
     connect(m_serial, &SerialManager::benchReceived, this,
             [this](const BenchData &d) {
+                if (m_benchmarkTimeout) m_benchmarkTimeout->stop();
+                m_benchmarkBusy = false;
+                m_benchmarkMetrics["model"] = d.model.isEmpty() ? (m_state ? m_state->lastModelName() : "--") : d.model;
+                m_benchmarkMetrics["avg"] = QString("%1 us").arg(d.avg_us);
+                m_benchmarkMetrics["min"] = QString("%1 us").arg(d.min_us);
+                m_benchmarkMetrics["max"] = QString("%1 us").arg(d.max_us);
+                m_benchmarkMetrics["ram"] = QString("%1 B").arg(d.ram_b);
+                m_benchmarkMetrics["freeRam"] = QString("%1 B").arg(d.free_ram_b);
+                m_benchmarkMetrics["samples"] = d.samples;
+                appendBenchmarkLine(QString("BENCH result: samples=%1 avg=%2us min=%3us max=%4us ram=%5B")
+                                        .arg(d.samples).arg(d.avg_us).arg(d.min_us).arg(d.max_us).arg(d.ram_b), "ok");
                 if (!m_analysis) return;
                 const BoardInfo board = m_state ? m_state->activeBoard() : BoardInfo{};
                 QStringList cells;
@@ -807,6 +1081,7 @@ void Backend::wireAnalysis()
                       << "--" << "Tamamlandı";
                 m_analysis->addRecord("benchmark", cells);
                 emit analysisChanged();
+                emit benchmarkChanged();
             });
 
     // Real sensor results
@@ -833,9 +1108,10 @@ void Backend::wireAnalysis()
     connect(m_simParser, &PacketParser::inferenceReceived, this,
             [this](const InferenceData &d) {
                 if (m_state)
-                    m_state->setLastModel(
+                    m_state->setLiveMetrics(
                         d.model.isEmpty() ? m_state->lastModelName() : d.model,
-                        d.inf_us / 1000.0, static_cast<quint8>(d.acc_pct));
+                        d.inf_us / 1000.0, static_cast<quint8>(d.acc_pct),
+                        d.ram_b / 1024.0, d.label);
             });
 }
 
@@ -849,7 +1125,7 @@ void Backend::wireSerial()
                 if (m_state) m_state->setConnected(connected, info);
                 appendMonitorLine(connected ? ("[bağlandı] " + info) : "[bağlantı kesildi]",
                                   connected ? "ok" : "warn");
-                if (connected) m_serial->requestBoardInfo();
+                if (connected) requestBoardInfoBurst();
             });
 
     connect(m_serial, &SerialManager::rawLineReceived, this,
@@ -862,6 +1138,17 @@ void Backend::wireSerial()
                 if (m_state) {
                     if (!boot.model.isEmpty()) m_state->setLastModel(boot.model, 0.0, 0);
                     if (boot.baud > 0) m_state->setActiveBaud(static_cast<qint32>(boot.baud));
+                    if (!boot.card.isEmpty()) {
+                        BoardInfo board = BoardPresets::find(boot.card);
+                        if (board.isNull()) {
+                            board.name = boot.card;
+                            board.isPreset = false;
+                        }
+                        if (boot.flash_kb > 0) board.flashKb = static_cast<int>(boot.flash_kb);
+                        if (boot.ram_kb > 0) board.ramKb = static_cast<int>(boot.ram_kb);
+                        if (boot.clock_mhz > 0) board.clockMhz = static_cast<int>(boot.clock_mhz);
+                        m_state->setActiveBoard(board);
+                    }
                 }
             });
 
@@ -870,19 +1157,49 @@ void Backend::wireSerial()
                 appendMonitorLine(QString("[inf] %1 us · acc %2%% · %3")
                                       .arg(d.inf_us).arg(d.acc_pct).arg(d.label), "ok");
                 if (m_state)
-                    m_state->setLastModel(
+                    m_state->setLiveMetrics(
                         d.model.isEmpty() ? m_state->lastModelName() : d.model,
-                        d.inf_us / 1000.0, static_cast<quint8>(d.acc_pct));
+                        d.inf_us / 1000.0, static_cast<quint8>(d.acc_pct),
+                        d.ram_b / 1024.0, d.label);
+            });
+
+    connect(m_serial, &SerialManager::sensorReceived, this,
+            [this](const SensorData &d) {
+                appendMonitorLine(QString("[sensor] %1 · %2 · acc %3%% · %4")
+                                      .arg(d.sensor, d.model).arg(d.acc_pct).arg(d.label), "ok");
+                if (m_state && (d.inf_us > 0 || d.ram_b > 0 || !d.label.isEmpty())) {
+                    m_state->setLiveMetrics(
+                        d.model.isEmpty() ? m_state->lastModelName() : d.model,
+                        d.inf_us / 1000.0, static_cast<quint8>(d.acc_pct),
+                        d.ram_b / 1024.0, d.label);
+                }
             });
 
     connect(m_serial, &SerialManager::sysReceived, this,
             [this](const SysData &s) {
                 appendMonitorLine(QString("[sys] uptime %1s · %2°C · %3")
                                       .arg(s.uptime_s).arg(s.temp_c).arg(s.state), "info");
+                if (m_state)
+                    m_state->setSystemMetrics(static_cast<int>(s.uptime_s), s.temp_c, s.free_ram_b / 1024.0);
             });
 
     connect(m_serial, &SerialManager::errorReceived, this,
             [this](const ErrorData &e) {
                 appendMonitorLine(QString("[err %1] %2").arg(e.code).arg(e.msg), "err");
             });
+}
+
+void Backend::requestBoardInfoBurst()
+{
+    if (!m_serial) return;
+
+    auto request = [this]() {
+        if (!m_serial || !m_serial->isConnected()) return;
+        appendMonitorLine("[cmd] kart bilgisi isteniyor: INFO? / BOOT?", "cmd");
+        m_serial->requestBoardInfo();
+    };
+
+    QTimer::singleShot(100, this, request);
+    QTimer::singleShot(700, this, request);
+    QTimer::singleShot(1500, this, request);
 }

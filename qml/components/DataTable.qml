@@ -7,9 +7,23 @@ Rectangle {
     id: root
 
     // columns: [{ title, width(optional, 0=stretch) }]
-    // rows: list of arrays (each array = cell strings, same length as columns)
+    // rows: list of arrays or { id, kind, cells }
     property var columns: []
     property var rows: []
+    property int selectedIndex: -1
+    property int selectedId: -1
+    property var selectedCells: []
+    signal rowSelected(int id, var cells, int index)
+
+    function rowCells(row) {
+        if (row && row.cells !== undefined)
+            return row.cells
+        return row || []
+    }
+
+    function rowId(row) {
+        return row && row.id !== undefined ? row.id : -1
+    }
 
     radius: Theme.radiusMd
     color: Theme.surface
@@ -65,11 +79,15 @@ Rectangle {
             ScrollBar.vertical: ScrollBar { width: 8 }
 
             delegate: Rectangle {
+                id: rowDelegate
                 width: list.width
                 height: 46
-                color: (index % 2 === 0) ? "transparent" : Theme.alpha(Theme.surfaceRaised, 0.5)
+                color: root.selectedIndex === index
+                       ? Theme.primarySoft
+                       : ((index % 2 === 0) ? "transparent" : Theme.alpha(Theme.surfaceRaised, 0.5))
 
-                property var rowData: modelData
+                property var rowData: root.rowCells(modelData)
+                property int recordId: root.rowId(modelData)
 
                 Rectangle {
                     anchors.bottom: parent.bottom
@@ -88,7 +106,7 @@ Rectangle {
                         model: root.columns
                         delegate: Text {
                             property int colIndex: index
-                            text: rowData[colIndex] !== undefined ? rowData[colIndex] : ""
+                            text: rowDelegate.rowData[colIndex] !== undefined ? rowDelegate.rowData[colIndex] : ""
                             color: colIndex === 0 ? Theme.text : Theme.textMuted
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSm
@@ -99,6 +117,16 @@ Rectangle {
                             Layout.fillWidth: colWidth === 0
                             Layout.preferredWidth: colWidth > 0 ? colWidth : 0
                         }
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        root.selectedIndex = index
+                        root.selectedId = rowDelegate.recordId
+                        root.selectedCells = rowDelegate.rowData
+                        root.rowSelected(rowDelegate.recordId, rowDelegate.rowData, index)
                     }
                 }
             }

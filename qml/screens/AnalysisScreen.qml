@@ -11,6 +11,10 @@ Item {
     property int subIndex: 0
     property string exportMessage: ""
     property bool exportOk: true
+    property int selectedRecordId: -1
+    property var selectedCells: []
+    property string boardFilter: "Tüm Kartlar"
+    property string typeFilter: "Tüm Türler"
 
     readonly property var _subTabs: ["Benchmark", "Simülasyon", "Gerçek Sensör", "Derlenen Modeller"]
 
@@ -30,7 +34,7 @@ Item {
 
     function colsForIndex(i) { return i === 3 ? _cols[1] : _cols[0] }
 
-    // Load records from backend or fall back to mock
+    // Load records from backend
     function rowsForIndex(i) {
         if (typeof backend === "undefined" || !backend) return mockRows(i)
         var rec
@@ -39,25 +43,59 @@ Item {
         else if (i === 2) rec = backend.sensorRecords
         else              rec = backend.compiledRecords
 
-        if (!rec || rec.length === 0) return mockRows(i)
+        return rec || []
+    }
+
+    function mockRows(i) {
+        return []
+    }
+
+    function rowCells(row) {
+        if (row && row.cells !== undefined) return row.cells
+        return row || []
+    }
+
+    function rowsAsCells(rows) {
         var out = []
-        for (var j = 0; j < rec.length; ++j) {
-            var r = rec[j]
-            out.push(r.cells)
+        for (var i = 0; i < rows.length; ++i) out.push(rowCells(rows[i]))
+        return out
+    }
+
+    function boardColumn(i) { return i === 3 ? 3 : 2 }
+    function typeColumn(i) { return i === 3 ? 2 : 6 }
+
+    function filterOptions(col, prefix) {
+        var seen = {}
+        var out = [prefix]
+        var rows = rowsForIndex(root.subIndex)
+        for (var i = 0; i < rows.length; ++i) {
+            var cells = rowCells(rows[i])
+            var v = cells[col]
+            if (v && v !== "—" && !seen[v]) {
+                seen[v] = true
+                out.push(v)
+            }
         }
         return out
     }
 
-    function mockRows(i) {
-        if (i === 0) return MockData.analysisRows
-        if (i === 1) return []
-        if (i === 2) return []
-        return []
+    function filteredRows() {
+        var rows = rowsForIndex(root.subIndex)
+        var out = []
+        var bCol = boardColumn(root.subIndex)
+        var tCol = typeColumn(root.subIndex)
+        for (var i = 0; i < rows.length; ++i) {
+            var cells = rowCells(rows[i])
+            var boardOk = root.boardFilter === "Tüm Kartlar" || cells[bCol] === root.boardFilter
+            var typeOk = root.typeFilter === "Tüm Türler" || cells[tCol] === root.typeFilter
+            if (boardOk && typeOk) out.push(rows[i])
+        }
+        return out
     }
 
     // Summary stats computed from current records
     function summaryCards(i) {
-        var rows = rowsForIndex(i)
+        var rows = rowsAsCells(filteredRows())
         var total = rows.length
         if (i === 0) {
             // find fastest inference
@@ -178,7 +216,7 @@ Item {
 
     function exportRows() {
         var rows = rowsForIndex(root.subIndex)
-        return rows.length > 0 ? rows : []
+        return rowsAsCells(filteredRows())
     }
 
     // Bar chart values from inference/resource columns.
@@ -186,13 +224,15 @@ Item {
         var out = []
         var maxValue = 0
         for (var k = 0; k < Math.min(rows.length, 6); ++k) {
-            var raw = i === 3 ? (rows[k][9] || rows[k][8]) : rows[k][8]
+            var cells = rowCells(rows[k])
+            var raw = i === 3 ? (cells[9] || cells[8]) : cells[8]
             var value = parseNumber(raw)
             if (!isNaN(value)) maxValue = Math.max(maxValue, value)
         }
         for (var j = 0; j < Math.min(rows.length, 6); ++j) {
-            var label = i === 3 ? (rows[j][1] || ("Model " + (j + 1))) : (rows[j][5] || ("Kayıt " + (j + 1)))
-            var text = i === 3 ? (rows[j][9] || rows[j][8] || "—") : (rows[j][8] || "—")
+            var c = rowCells(rows[j])
+            var label = i === 3 ? (c[1] || ("Model " + (j + 1))) : (c[5] || ("Kayıt " + (j + 1)))
+            var text = i === 3 ? (c[9] || c[8] || "—") : (c[8] || "—")
             var n = parseNumber(text)
             out.push({
                 label: label,
@@ -217,7 +257,23 @@ Item {
                 Layout.fillWidth: true
             }
             AppButton { text: "Yenile"; iconText: "↻"; variant: "secondary"
-                onClicked: { var s = root.subIndex; root.subIndex = -1; root.subIndex = s } }
+                onClicked: { var s = root.subIndex; root.subIndex = -1; root.subIndex = s; root.selectedRecordId = -1 } }
+            AppButton {
+                text: "Sil"; iconText: "×"; variant: "danger"
+                enabled: root.selectedRecordId >= 0
+                onClicked: {
+                    if (typeof backend !== "undefined" && backend && root.selectedRecordId >= 0) {
+                        backend.deleteAnalysisRecord(root.selectedRecordId)
+                        root.selectedRecordId = -1
+                    }
+                }
+            }
+            AppButton {
+                text: "Tekrar Yükle"; iconText: "▲"; variant: "secondary"
+                visible: root.subIndex === 3
+                enabled: root.selectedRecordId >= 0
+                onClicked: if (typeof backend !== "undefined" && backend) backend.flashCompiledModel(root.selectedRecordId)
+            }
             AppButton {
                 text: "CSV Dışa Aktar"; iconText: "↓"; variant: "secondary"
                 enabled: root.exportRows().length > 0
@@ -249,8 +305,31 @@ Item {
                         font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                         font.weight: active ? Font.DemiBold : Font.Normal
                     }
-                    MouseArea { anchors.fill: parent; onClicked: root.subIndex = index }
+                    MouseArea { anchors.fill: parent; onClicked: {
+                        root.subIndex = index
+                        root.boardFilter = "Tüm Kartlar"
+                        root.typeFilter = "Tüm Türler"
+                        root.selectedRecordId = -1
+                    } }
                 }
+            }
+            Item { Layout.fillWidth: true }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingMd
+            ComboField {
+                label: "Kart"
+                options: root.filterOptions(root.boardColumn(root.subIndex), "Tüm Kartlar")
+                Layout.preferredWidth: 260
+                onActivated: (idx) => root.boardFilter = options[idx]
+            }
+            ComboField {
+                label: "Tür"
+                options: root.filterOptions(root.typeColumn(root.subIndex), "Tüm Türler")
+                Layout.preferredWidth: 220
+                onActivated: (idx) => root.typeFilter = options[idx]
             }
             Item { Layout.fillWidth: true }
         }
@@ -285,7 +364,11 @@ Item {
                         id: mainTable
                         Layout.fillWidth: true; Layout.fillHeight: true
                         columns: root.colsForIndex(root.subIndex)
-                        rows: root.rowsForIndex(root.subIndex)
+                        rows: root.filteredRows()
+                        onRowSelected: (id, cells, rowIndex) => {
+                            root.selectedRecordId = id
+                            root.selectedCells = cells
+                        }
                     }
 
                     Text {
@@ -315,7 +398,7 @@ Item {
                         spacing: Theme.spacingSm
 
                         Repeater {
-                            model: root.barData(root.subIndex, root.rowsForIndex(root.subIndex))
+                            model: root.barData(root.subIndex, root.filteredRows())
                             delegate: ColumnLayout {
                                 Layout.fillWidth: true; Layout.fillHeight: true; spacing: 4
 
@@ -355,7 +438,7 @@ Item {
 
                         // placeholder when no rows
                         Text {
-                            visible: root.rowsForIndex(root.subIndex).length === 0
+                            visible: root.filteredRows().length === 0
                             Layout.fillWidth: true; Layout.fillHeight: true
                             text: "Kayıt\nyok"; color: Theme.textFaint
                             font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm

@@ -1,40 +1,44 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import STM32AiDeployer
 
 Item {
     id: root
 
-    readonly property var _lines: (typeof backend !== "undefined" && backend && backend.monitorLines.length > 0)
-                                  ? backend.monitorLines : MockData.monitorTerminal
-    readonly property bool _connected: (typeof appState !== "undefined" && appState) ? appState.connected : true
+    readonly property var _lines: (typeof backend !== "undefined" && backend) ? backend.monitorLines : []
+    readonly property bool _connected: (typeof appState !== "undefined" && appState) ? appState.connected : false
     readonly property bool _simRunning: (typeof backend !== "undefined" && backend) ? backend.simRunning : false
     readonly property string _connText: _connected
-        ? ((typeof appState !== "undefined" && appState)
-           ? (appState.activePort + " @ " + appState.activeBaud) : "Bağlı")
-        : "Bağlı değil"
+        ? ((typeof appState !== "undefined" && appState) ? (appState.activePort + " @ " + appState.activeBaud) : "Bagli")
+        : "Bagli degil"
+    readonly property string _lastLabel: (typeof appState !== "undefined" && appState && appState.lastLabel.length > 0)
+                                         ? appState.lastLabel
+                                         : ((typeof appState !== "undefined" && appState) ? appState.lastModel : "")
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.spacingLg
         spacing: Theme.spacingLg
 
-        // ── Header ────────────────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
             SectionHeader {
-                title: "UART Monitör"
-                subtitle: "Canlı § protokol akışı ve metrikler"
+                title: "UART Monitor"
+                subtitle: "Canli protokol akisi ve kart metrikleri"
                 Layout.fillWidth: true
             }
-            StatusPill {
-                text: root._connected ? root._connText : "Bağlı değil"
-                status: root._connected ? "connected" : "offline"
+            StatusPill { text: root._connText; status: root._connected ? "connected" : "offline" }
+            AppButton {
+                text: "Temizle"
+                variant: "secondary"
+                onClicked: if (typeof backend !== "undefined" && backend) backend.clearMonitor()
             }
             AppButton {
-                text: "Temizle"; variant: "secondary"
-                onClicked: if (typeof backend !== "undefined" && backend) backend.clearMonitor()
+                text: "Kaydet"
+                variant: "secondary"
+                onClicked: monitorSaveDialog.open()
             }
         }
 
@@ -43,7 +47,6 @@ Item {
             Layout.fillHeight: true
             spacing: Theme.spacingMd
 
-            // ── Terminal (left, fills most of width) ──────────────────────
             Card {
                 title: "Terminal"
                 Layout.fillWidth: true
@@ -56,19 +59,16 @@ Item {
                 }
             }
 
-            // ── Right column: metric cards + simulation ───────────────────
             ColumnLayout {
                 Layout.preferredWidth: 300
-                Layout.fillWidth: false
                 Layout.fillHeight: true
                 spacing: Theme.spacingMd
 
-                // Metric cards (live AppState values)
                 Repeater {
                     model: [
-                        { title: "Inference",  icon: "speed",  accentProp: "primary" },
-                        { title: "RAM",        icon: "memory", accentProp: "success" },
-                        { title: "Son Tahmin", icon: "target", accentProp: "cyan"    }
+                        { title: "Inference", icon: "speed", accentProp: "primary" },
+                        { title: "RAM", icon: "memory", accentProp: "success" },
+                        { title: "Son Tahmin", icon: "target", accentProp: "cyan" }
                     ]
                     delegate: Card {
                         Layout.fillWidth: true
@@ -86,14 +86,16 @@ Item {
                                 color: Theme.alpha(Theme[modelData.accentProp], 0.16)
                                 MetricIcon {
                                     anchors.centerIn: parent
-                                    width: 22; height: 22
+                                    width: 22
+                                    height: 22
                                     name: modelData.icon
                                     color: Theme[modelData.accentProp]
                                 }
                             }
 
                             ColumnLayout {
-                                spacing: 2; Layout.fillWidth: true
+                                spacing: 2
+                                Layout.fillWidth: true
                                 Text {
                                     text: modelData.title
                                     color: Theme.textMuted
@@ -102,28 +104,50 @@ Item {
                                 }
                                 Text {
                                     text: {
-                                        if (typeof appState === "undefined" || !appState) return "—"
+                                        if (typeof appState === "undefined" || !appState) return "-"
                                         if (modelData.accentProp === "primary")
-                                            return appState.lastInfMs > 0
-                                                   ? (appState.lastInfMs.toFixed(2) + " ms") : "—"
+                                            return appState.lastInfMs > 0 ? (appState.lastInfMs.toFixed(2) + " ms") : "-"
                                         if (modelData.accentProp === "success")
-                                            return "—"
-                                        return appState.lastModel.length > 0
-                                               ? (appState.lastModel + " · %" + appState.lastAcc) : "—"
+                                            return appState.lastRamKb > 0 ? (appState.lastRamKb.toFixed(2) + " KB") : "-"
+                                        return root._lastLabel.length > 0 ? (root._lastLabel + " / %" + appState.lastAcc) : "-"
                                     }
                                     color: Theme.text
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontXl
                                     font.weight: Font.Bold
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
                                 }
                             }
                         }
                     }
                 }
 
-                // Simulation card
                 Card {
-                    title: "Simülasyon"
+                    title: "Sistem"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 116
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: Theme.spacingXs
+                        Repeater {
+                            model: [
+                                ["Uptime", (typeof appState !== "undefined" && appState && appState.lastUptime > 0) ? (appState.lastUptime + " s") : "-"],
+                                ["Sicaklik", (typeof appState !== "undefined" && appState && appState.lastTempC > 0) ? (appState.lastTempC.toFixed(1) + " C") : "-"],
+                                ["Free RAM", (typeof appState !== "undefined" && appState && appState.lastFreeRamKb > 0) ? (appState.lastFreeRamKb.toFixed(1) + " KB") : "-"]
+                            ]
+                            delegate: RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: modelData[0]; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; Layout.preferredWidth: 82 }
+                                Text { text: modelData[1]; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold; Layout.fillWidth: true }
+                            }
+                        }
+                    }
+                }
+
+                Card {
+                    title: "Simulasyon"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
@@ -131,17 +155,7 @@ Item {
                         anchors.fill: parent
                         spacing: Theme.spacingMd
 
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Text {
-                                text: "Aralık (ms)"
-                                color: Theme.textMuted
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontXs
-                                font.weight: Font.DemiBold
-                            }
-                        }
-
+                        Text { text: "Aralik (ms)"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
                         TextField {
                             id: intervalField
                             Layout.fillWidth: true
@@ -151,38 +165,48 @@ Item {
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSm
                             selectByMouse: true
-                            background: Rectangle {
-                                radius: Theme.radiusMd
-                                color: Theme.surfaceRaised
-                                border.color: intervalField.activeFocus ? Theme.primary : Theme.border
-                            }
-                            leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                            background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: intervalField.activeFocus ? Theme.primary : Theme.border }
+                            leftPadding: Theme.spacingSm
+                            rightPadding: Theme.spacingSm
                         }
 
-                        // min / max row
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: Theme.spacingSm
-
-                            ColumnLayout { spacing: 4; Layout.fillWidth: true
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
                                 Text { text: "Min"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
                                 TextField {
-                                    id: minField; Layout.fillWidth: true; text: "0.0"; enabled: !root._simRunning
-                                    color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                                    id: minField
+                                    Layout.fillWidth: true
+                                    text: "0.0"
+                                    enabled: !root._simRunning
+                                    color: Theme.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSm
                                     selectByMouse: true
                                     background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: minField.activeFocus ? Theme.primary : Theme.border }
-                                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                                    leftPadding: Theme.spacingSm
+                                    rightPadding: Theme.spacingSm
                                 }
                             }
-
-                            ColumnLayout { spacing: 4; Layout.fillWidth: true
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
                                 Text { text: "Max"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
                                 TextField {
-                                    id: maxField; Layout.fillWidth: true; text: "1.0"; enabled: !root._simRunning
-                                    color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                                    id: maxField
+                                    Layout.fillWidth: true
+                                    text: "1.0"
+                                    enabled: !root._simRunning
+                                    color: Theme.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSm
                                     selectByMouse: true
                                     background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: maxField.activeFocus ? Theme.primary : Theme.border }
-                                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                                    leftPadding: Theme.spacingSm
+                                    rightPadding: Theme.spacingSm
                                 }
                             }
                         }
@@ -191,21 +215,38 @@ Item {
                             Layout.fillWidth: true
                             spacing: Theme.spacingSm
                             AppButton {
-                                text: root._simRunning ? "Çalışıyor…" : "Başlat"
-                                iconText: "▶"
+                                text: root._simRunning ? "Calisiyor..." : "Host"
+                                iconText: ">"
                                 enabled: !root._simRunning
                                 onClicked: {
                                     if (typeof backend === "undefined" || !backend) return
-                                    backend.startSimulation(
-                                        parseInt(intervalField.text) || 500,
-                                        parseFloat(minField.text)    || 0.0,
-                                        parseFloat(maxField.text)    || 1.0)
+                                    backend.startSimulation(parseInt(intervalField.text) || 500,
+                                                            parseFloat(minField.text) || 0.0,
+                                                            parseFloat(maxField.text) || 1.0)
                                 }
                             }
                             AppButton {
-                                text: "Durdur"; iconText: "■"; variant: "danger"
+                                text: "Karta"
+                                iconText: ">"
+                                variant: "secondary"
+                                enabled: !root._simRunning
+                                onClicked: {
+                                    if (typeof backend === "undefined" || !backend) return
+                                    backend.startHardwareSimulation(parseInt(intervalField.text) || 500,
+                                                                    parseFloat(minField.text) || 0.0,
+                                                                    parseFloat(maxField.text) || 1.0)
+                                }
+                            }
+                            AppButton {
+                                text: "Durdur"
+                                iconText: "x"
+                                variant: "danger"
                                 enabled: root._simRunning
-                                onClicked: if (typeof backend !== "undefined" && backend) backend.stopSimulation()
+                                onClicked: {
+                                    if (typeof backend === "undefined" || !backend) return
+                                    backend.stopSimulation()
+                                    backend.stopHardwareSimulation()
+                                }
                             }
                         }
 
@@ -214,5 +255,13 @@ Item {
                 }
             }
         }
+    }
+
+    FileDialog {
+        id: monitorSaveDialog
+        title: "Monitor log kaydet"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["Text (*.txt *.log)", "Tum dosyalar (*)"]
+        onAccepted: if (typeof backend !== "undefined" && backend) backend.saveMonitorLog(selectedFile.toString().replace("file:///", ""))
     }
 }

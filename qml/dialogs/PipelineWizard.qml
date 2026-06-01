@@ -23,6 +23,17 @@ Popup {
     property string sensorType: "BME280"
     property string targetBoard: ""
     property string outputDir: ""
+    property string i2cInstance: "I2C1"
+    property string sdaPort: "GPIOB"
+    property string sdaPin: "GPIO_PIN_7"
+    property string sclPort: "GPIOB"
+    property string sclPin: "GPIO_PIN_6"
+    property string i2cAddress: "0x76"
+    property string saiInstance: "SAI1"
+    property string clkPort: "GPIOB"
+    property string clkPin: "GPIO_PIN_5"
+    property string dataPort: "GPIOB"
+    property string dataPin: "GPIO_PIN_3"
 
     readonly property var steps: ["Model Seç", "Sensör Ayarla", "Araç Doğrulama", "Derleme & Flash"]
     readonly property var quantOptions: ["INT8", "Dynamic Q", "Float32"]
@@ -31,6 +42,31 @@ Popup {
         if (typeof appState !== "undefined" && appState && appState.boardName.length > 0)
             return [appState.boardName, "STM32F4", "STM32H7", "STM32N6"]
         return ["STM32F4", "STM32H7", "STM32N6"]
+    }
+
+    function pipelineConfig() {
+        var isPdm = root.sensorType === "PDM" || root.sensorType === "PDM_MIC"
+        return {
+            modelPath: root.modelPath,
+            modelName: root.modelName.length > 0 ? root.modelName : root.modelPath.split(/[\\/]/).pop().replace(/\.\w+$/,""),
+            architecture: "Bilinmiyor",
+            quantization: root.quantization,
+            sensorType: isPdm ? "PDM_MIC" : root.sensorType,
+            protocol: isPdm ? "SAI" : "I2C",
+            targetBoard: root.targetBoard || "STM32F4",
+            outputDir: root.outputDir,
+            i2cInstance: root.i2cInstance,
+            sdaPort: root.sdaPort,
+            sdaPin: root.sdaPin,
+            sclPort: root.sclPort,
+            sclPin: root.sclPin,
+            i2cAddress: root.i2cAddress,
+            saiInstance: root.saiInstance,
+            clkPort: root.clkPort,
+            clkPin: root.clkPin,
+            dataPort: root.dataPort,
+            dataPin: root.dataPin
+        }
     }
 
     background: Rectangle {
@@ -157,24 +193,42 @@ Popup {
                 }
 
                 ComboField { label: "Sensör Tipi"; options: root.sensorOptions
-                    onActivated: (i) => root.sensorType = root.sensorOptions[i].split(" ")[0]
+                    onActivated: (i) => {
+                        root.sensorType = root.sensorOptions[i].split(" ")[0]
+                        root.i2cAddress = root.sensorType === "MPU6050" ? "0xD0" : "0x76"
+                    }
                 }
 
-                // Pin config (simplified for demo)
                 Card {
-                    title: "Varsayılan Pin Konfigürasyonu"
-                    Layout.fillWidth: true; Layout.preferredHeight: 140
+                    title: "Pin Konfigürasyonu"
+                    Layout.fillWidth: true; Layout.preferredHeight: 180
                     ColumnLayout {
-                        anchors.fill: parent; spacing: Theme.spacingXs
-                        Repeater {
-                            model: root.sensorType === "PDM" ?
-                                [["SAI İnstans", "SAI1"], ["CLK Port/Pin", "GPIOB / GPIO_PIN_5"], ["DATA Port/Pin", "GPIOB / GPIO_PIN_3"]] :
-                                [["I2C İnstans", "I2C1"], ["SDA Port/Pin", "GPIOB / GPIO_PIN_7"], ["SCL Port/Pin", "GPIOB / GPIO_PIN_6"], ["I2C Adres", "0x76"]]
-                            delegate: RowLayout {
-                                Layout.fillWidth: true
-                                Text { text: modelData[0]; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; Layout.preferredWidth: 120 }
-                                Text { text: modelData[1]; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
-                            }
+                        anchors.fill: parent; spacing: Theme.spacingSm
+                        visible: root.sensorType !== "PDM"
+                        RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
+                            TextField { Layout.fillWidth: true; text: root.i2cInstance; placeholderText: "I2C1"; onTextChanged: root.i2cInstance = text }
+                            TextField { Layout.fillWidth: true; text: root.i2cAddress; placeholderText: "0x76"; onTextChanged: root.i2cAddress = text }
+                        }
+                        RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
+                            TextField { Layout.fillWidth: true; text: root.sdaPort; placeholderText: "SDA Port"; onTextChanged: root.sdaPort = text }
+                            TextField { Layout.fillWidth: true; text: root.sdaPin; placeholderText: "SDA Pin"; onTextChanged: root.sdaPin = text }
+                        }
+                        RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
+                            TextField { Layout.fillWidth: true; text: root.sclPort; placeholderText: "SCL Port"; onTextChanged: root.sclPort = text }
+                            TextField { Layout.fillWidth: true; text: root.sclPin; placeholderText: "SCL Pin"; onTextChanged: root.sclPin = text }
+                        }
+                    }
+                    ColumnLayout {
+                        anchors.fill: parent; spacing: Theme.spacingSm
+                        visible: root.sensorType === "PDM"
+                        RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
+                            TextField { Layout.fillWidth: true; text: root.saiInstance; placeholderText: "SAI1"; onTextChanged: root.saiInstance = text }
+                            TextField { Layout.fillWidth: true; text: root.clkPort; placeholderText: "CLK Port"; onTextChanged: root.clkPort = text }
+                            TextField { Layout.fillWidth: true; text: root.clkPin; placeholderText: "CLK Pin"; onTextChanged: root.clkPin = text }
+                        }
+                        RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
+                            TextField { Layout.fillWidth: true; text: root.dataPort; placeholderText: "DATA Port"; onTextChanged: root.dataPort = text }
+                            TextField { Layout.fillWidth: true; text: root.dataPin; placeholderText: "DATA Pin"; onTextChanged: root.dataPin = text }
                         }
                     }
                 }
@@ -237,7 +291,10 @@ Popup {
                 RowLayout {
                     Layout.fillWidth: true
                     Text { text: "Pipeline özeti"; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontMd; font.weight: Font.DemiBold; Layout.fillWidth: true }
-                    StatusPill { text: "Hazır"; status: "ready" }
+                    StatusPill {
+                        text: (typeof backend !== "undefined" && backend) ? backend.pipelineStage : "Hazir"
+                        status: (typeof backend !== "undefined" && backend && backend.pipelineBusy) ? "warning" : "ready"
+                    }
                 }
 
                 Repeater {
@@ -256,7 +313,7 @@ Popup {
                 }
 
                 Rectangle {
-                    Layout.fillWidth: true; Layout.preferredHeight: 80
+                    Layout.fillWidth: true; Layout.preferredHeight: 70
                     radius: Theme.radiusMd; color: Theme.primarySoft; border.color: Theme.primary
                     Text {
                         anchors.centerIn: parent; width: parent.width - Theme.spacingLg
@@ -264,6 +321,32 @@ Popup {
                               "1) stedgeai C kodu üretir  2) arm-gcc derler  3) STM32_Programmer flash atar"
                         color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                    }
+                }
+                Terminal {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    lines: (typeof backend !== "undefined" && backend) ? backend.pipelineLines : []
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 18
+                    radius: Theme.radiusSm
+                    color: Theme.surfaceRaised
+                    border.color: Theme.border
+                    Rectangle {
+                        height: parent.height
+                        width: parent.width * Math.max(0, Math.min(((typeof backend !== "undefined" && backend) ? backend.pipelineProgress : 0) / 100, 1))
+                        radius: parent.radius
+                        color: Theme.success
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        text: ((typeof backend !== "undefined" && backend) ? backend.pipelineProgress : 0) + "%"
+                        color: Theme.text
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontXs
+                        font.weight: Font.DemiBold
                     }
                 }
                 Item { Layout.fillHeight: true }
@@ -288,12 +371,18 @@ Popup {
                 text: root.step < 3 ? "İleri →" : "✦ Pipeline Başlat"
                 enabled: root.step < 3
                     ? (root.step === 0 ? root.modelPath.length > 0 : true)
-                    : true
+                    : (!(typeof backend !== "undefined" && backend && backend.pipelineBusy)
+                       && root.outputDir.length > 0)
                 onClicked: {
                     if (root.step < 3) { root.step++; return }
-                    // Start pipeline — for now show a message (PipelineRunner integration in next pass)
-                    startedNote.open()
+                    if (typeof backend !== "undefined" && backend)
+                        backend.runPipeline(root.pipelineConfig())
                 }
+            }
+            AppButton {
+                visible: typeof backend !== "undefined" && backend && backend.pipelineBusy
+                text: "İptal"; variant: "danger"
+                onClicked: backend.cancelPipeline()
             }
         }
     }
@@ -314,21 +403,6 @@ Popup {
         id: outDirDlg
         title: "Çıktı dizini seçin"
         onAccepted: root.outputDir = selectedFolder.toString().replace("file:///","")
-    }
-
-    Popup {
-        id: startedNote
-        modal: true; anchors.centerIn: Overlay.overlay; width: 380; padding: Theme.spacingLg
-        background: Rectangle { color: Theme.surface; radius: Theme.radiusLg; border.color: Theme.border }
-        contentItem: ColumnLayout {
-            spacing: Theme.spacingMd
-            Text { text: "Pipeline başlatıldı!"; color: Theme.success; font.family: Theme.fontFamily; font.pixelSize: Theme.fontMd; font.weight: Font.DemiBold }
-            Text { Layout.fillWidth: true
-                text: "stedgeai → arm-gcc → STM32_Programmer zinciri arka planda çalışıyor.\nFlash ekranındaki terminali takip edin."
-                color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm; wrapMode: Text.WordWrap }
-            AppButton { Layout.alignment: Qt.AlignRight; text: "Tamam"
-                onClicked: { startedNote.close(); root.close() } }
-        }
     }
 
     onOpened: step = 0
