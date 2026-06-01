@@ -45,10 +45,24 @@ Backend::Backend(AppState        *state,
     m_simParser = new PacketParser(this);
     m_hwSimTimer = new QTimer(this);
     m_benchmarkTimeout = new QTimer(this);
+    m_pipelinePulseTimer = new QTimer(this);
     m_benchmarkTimeout->setSingleShot(true);
 
     connect(m_simTimer, &QTimer::timeout, this, &Backend::tickSimulation);
     connect(m_hwSimTimer, &QTimer::timeout, this, &Backend::tickHardwareSimulation);
+    connect(m_pipelinePulseTimer, &QTimer::timeout, this, [this]() {
+        if (!m_pipelineBusy) return;
+        const int cap = m_pipelineStage.contains("5/", Qt::CaseInsensitive) ? 95
+                      : m_pipelineStage.contains("4/", Qt::CaseInsensitive) ? 82
+                      : m_pipelineStage.contains("3/", Qt::CaseInsensitive) ? 55
+                      : m_pipelineStage.contains("2/", Qt::CaseInsensitive) ? 35
+                      : 15;
+        if (m_pipelineProgress < cap) {
+            m_pipelineProgress = qMin(cap, m_pipelineProgress + 1);
+            emit pipelineChanged();
+        }
+    });
+    m_pipelinePulseTimer->setInterval(1200);
     connect(m_benchmarkTimeout, &QTimer::timeout, this, [this]() {
         if (!m_benchmarkBusy) return;
         appendBenchmarkLine("Benchmark yanıtı alınamadı. Firmware BENCH komutunu destekliyor mu?", "warn");
@@ -719,6 +733,7 @@ void Backend::runPipeline(const QVariantMap &config)
     m_pipelineBusy = true;
     m_pipelineStage = "Pipeline başlatılıyor...";
     emit pipelineChanged();
+    if (m_pipelinePulseTimer) m_pipelinePulseTimer->start();
 
     connect(m_pipelineRunner, &PipelineRunner::stageChanged, this, [this](const QString &stage) {
         m_pipelineStage = stage;
@@ -734,7 +749,8 @@ void Backend::runPipeline(const QVariantMap &config)
             [this](const QString &line) { appendPipelineLine(line, "err"); });
     connect(m_pipelineRunner, &PipelineRunner::finished, this, [this](bool success) {
         m_pipelineBusy = false;
-        m_pipelineProgress = success ? 100 : m_pipelineProgress;
+        if (m_pipelinePulseTimer) m_pipelinePulseTimer->stop();
+        m_pipelineProgress = success ? 100 : 0;
         m_pipelineStage = success ? "Pipeline tamamlandı" : "Pipeline başarısız";
         if (success) {
             addCompiledRecord(m_lastPipelineConfig);
@@ -756,11 +772,21 @@ void Backend::cancelPipeline()
 {
     if (m_pipelineRunner && m_pipelineBusy)
         m_pipelineRunner->cancel();
+    if (m_pipelinePulseTimer) m_pipelinePulseTimer->stop();
+    m_pipelineBusy = false;
+    m_pipelineProgress = 0;
+    m_pipelineStage = "Pipeline iptal edildi";
+    appendPipelineLine("Pipeline iptal edildi.", "warn");
+    emit pipelineChanged();
 }
 
 void Backend::clearPipelineLog()
 {
     m_pipelineLines.clear();
+    if (!m_pipelineBusy) {
+        m_pipelineProgress = 0;
+        m_pipelineStage = "Hazır";
+    }
     emit pipelineChanged();
 }
 

@@ -34,6 +34,10 @@ Popup {
     property string clkPin: "GPIO_PIN_5"
     property string dataPort: "GPIOB"
     property string dataPin: "GPIO_PIN_3"
+    readonly property string activeBoardName: (typeof appState !== "undefined" && appState && appState.boardName.length > 0)
+                                             ? appState.boardName : ""
+    readonly property string activePortName: (typeof appState !== "undefined" && appState && appState.activePort.length > 0)
+                                            ? appState.activePort : ""
 
     readonly property var steps: ["Model Seç", "Sensör Ayarla", "Araç Doğrulama", "Derleme & Flash"]
     readonly property var quantOptions: ["INT8", "Dynamic Q", "Float32"]
@@ -42,6 +46,12 @@ Popup {
         if (typeof appState !== "undefined" && appState && appState.boardName.length > 0)
             return [appState.boardName, "STM32F4", "STM32H7", "STM32N6"]
         return ["STM32F4", "STM32H7", "STM32N6"]
+    }
+    function refreshFromAppState() {
+        if (root.activeBoardName.length > 0)
+            root.targetBoard = root.activeBoardName
+        else if (root.targetBoard.length === 0)
+            root.targetBoard = "STM32F4"
     }
 
     function pipelineConfig() {
@@ -53,7 +63,7 @@ Popup {
             quantization: root.quantization,
             sensorType: isPdm ? "PDM_MIC" : root.sensorType,
             protocol: isPdm ? "SAI" : "I2C",
-            targetBoard: root.targetBoard || "STM32F4",
+            targetBoard: root.targetBoard || root.activeBoardName || "STM32F4",
             outputDir: root.outputDir,
             i2cInstance: root.i2cInstance,
             sdaPort: root.sdaPort,
@@ -173,7 +183,6 @@ Popup {
                         leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm }
                 }
 
-                Item { Layout.fillHeight: true }
             }
 
             // ── Step 1: Sensor ────────────────────────────────────────────
@@ -185,9 +194,7 @@ Popup {
 
                 ComboField { label: "Hedef Kart"; options: root.currentBoardOptions()
                     Component.onCompleted: {
-                        if (typeof appState !== "undefined" && appState && appState.boardName.length > 0)
-                            root.targetBoard = appState.boardName
-                        else root.targetBoard = "STM32F4"
+                        root.refreshFromAppState()
                     }
                     onActivated: (i) => root.targetBoard = root.currentBoardOptions()[i]
                 }
@@ -206,38 +213,37 @@ Popup {
                         anchors.fill: parent; spacing: Theme.spacingSm
                         visible: root.sensorType !== "PDM"
                         RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
-                            TextField { Layout.fillWidth: true; text: root.i2cInstance; placeholderText: "I2C1"; onTextChanged: root.i2cInstance = text }
-                            TextField { Layout.fillWidth: true; text: root.i2cAddress; placeholderText: "0x76"; onTextChanged: root.i2cAddress = text }
+                            PinField { Layout.fillWidth: true; text: root.i2cInstance; placeholderText: "I2C1"; onTextChanged: root.i2cInstance = text }
+                            PinField { Layout.fillWidth: true; text: root.i2cAddress; placeholderText: "0x76"; onTextChanged: root.i2cAddress = text }
                         }
                         RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
-                            TextField { Layout.fillWidth: true; text: root.sdaPort; placeholderText: "SDA Port"; onTextChanged: root.sdaPort = text }
-                            TextField { Layout.fillWidth: true; text: root.sdaPin; placeholderText: "SDA Pin"; onTextChanged: root.sdaPin = text }
+                            PinField { Layout.fillWidth: true; text: root.sdaPort; placeholderText: "SDA Port"; onTextChanged: root.sdaPort = text }
+                            PinField { Layout.fillWidth: true; text: root.sdaPin; placeholderText: "SDA Pin"; onTextChanged: root.sdaPin = text }
                         }
                         RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
-                            TextField { Layout.fillWidth: true; text: root.sclPort; placeholderText: "SCL Port"; onTextChanged: root.sclPort = text }
-                            TextField { Layout.fillWidth: true; text: root.sclPin; placeholderText: "SCL Pin"; onTextChanged: root.sclPin = text }
+                            PinField { Layout.fillWidth: true; text: root.sclPort; placeholderText: "SCL Port"; onTextChanged: root.sclPort = text }
+                            PinField { Layout.fillWidth: true; text: root.sclPin; placeholderText: "SCL Pin"; onTextChanged: root.sclPin = text }
                         }
                     }
                     ColumnLayout {
                         anchors.fill: parent; spacing: Theme.spacingSm
                         visible: root.sensorType === "PDM"
                         RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
-                            TextField { Layout.fillWidth: true; text: root.saiInstance; placeholderText: "SAI1"; onTextChanged: root.saiInstance = text }
-                            TextField { Layout.fillWidth: true; text: root.clkPort; placeholderText: "CLK Port"; onTextChanged: root.clkPort = text }
-                            TextField { Layout.fillWidth: true; text: root.clkPin; placeholderText: "CLK Pin"; onTextChanged: root.clkPin = text }
+                            PinField { Layout.fillWidth: true; text: root.saiInstance; placeholderText: "SAI1"; onTextChanged: root.saiInstance = text }
+                            PinField { Layout.fillWidth: true; text: root.clkPort; placeholderText: "CLK Port"; onTextChanged: root.clkPort = text }
+                            PinField { Layout.fillWidth: true; text: root.clkPin; placeholderText: "CLK Pin"; onTextChanged: root.clkPin = text }
                         }
                         RowLayout { Layout.fillWidth: true; spacing: Theme.spacingSm
-                            TextField { Layout.fillWidth: true; text: root.dataPort; placeholderText: "DATA Port"; onTextChanged: root.dataPort = text }
-                            TextField { Layout.fillWidth: true; text: root.dataPin; placeholderText: "DATA Pin"; onTextChanged: root.dataPin = text }
+                            PinField { Layout.fillWidth: true; text: root.dataPort; placeholderText: "DATA Port"; onTextChanged: root.dataPort = text }
+                            PinField { Layout.fillWidth: true; text: root.dataPin; placeholderText: "DATA Pin"; onTextChanged: root.dataPin = text }
                         }
                     }
                 }
-                Item { Layout.fillHeight: true }
             }
 
             // ── Step 2: Tool validation ───────────────────────────────────
             ColumnLayout {
-                spacing: Theme.spacingMd
+                spacing: Theme.spacingSm
 
                 Item { Layout.fillHeight: true }
 
@@ -249,10 +255,13 @@ Popup {
                 Repeater {
                     model: typeof backend !== "undefined" && backend ? backend.toolPaths : []
                     delegate: Rectangle {
-                        Layout.fillWidth: true; Layout.preferredHeight: 48
+                        Layout.fillWidth: true; Layout.preferredHeight: 54
                         radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: Theme.border
                         RowLayout {
-                            anchors.fill: parent; anchors.margins: Theme.spacingMd; spacing: Theme.spacingMd
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.spacingMd; anchors.rightMargin: Theme.spacingMd
+                            anchors.topMargin: Theme.spacingXs; anchors.bottomMargin: Theme.spacingXs
+                            spacing: Theme.spacingMd
                             Rectangle {
                                 Layout.preferredWidth: 10; Layout.preferredHeight: 10; radius: 5
                                 Layout.alignment: Qt.AlignVCenter
@@ -302,7 +311,8 @@ Popup {
                         ["Model",          root.modelPath.length > 0 ? root.modelPath.split(/[\\/]/).pop() : "—"],
                         ["Kuantizasyon",   root.quantization],
                         ["Sensör",         root.sensorType],
-                        ["Hedef Kart",     root.targetBoard || "STM32F4"],
+                        ["Hedef Kart",     root.targetBoard || root.activeBoardName || "STM32F4"],
+                        ["Aktif COM",      root.activePortName.length > 0 ? root.activePortName : "Bagli degil"],
                         ["Çıktı Dizini",   root.outputDir.length > 0 ? root.outputDir : "—"]
                     ]
                     delegate: RowLayout {
@@ -322,6 +332,29 @@ Popup {
                         color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                     }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacingSm
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 38
+                        radius: Theme.radiusMd
+                        color: Theme.surfaceRaised
+                        border.color: root.outputDir.length > 0 ? Theme.border : Theme.warning
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.leftMargin: Theme.spacingSm
+                            width: parent.width - Theme.spacingMd
+                            text: root.outputDir.length > 0 ? root.outputDir : "Cikti dizini secin"
+                            color: root.outputDir.length > 0 ? Theme.text : Theme.warning
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSm
+                            elide: Text.ElideLeft
+                        }
+                    }
+                    AppButton { text: "Dizin Sec"; variant: "secondary"; onClicked: outDirDlg.open() }
                 }
                 Terminal {
                     Layout.fillWidth: true
@@ -371,10 +404,11 @@ Popup {
                 text: root.step < 3 ? "İleri →" : "✦ Pipeline Başlat"
                 enabled: root.step < 3
                     ? (root.step === 0 ? root.modelPath.length > 0 : true)
-                    : (!(typeof backend !== "undefined" && backend && backend.pipelineBusy)
-                       && root.outputDir.length > 0)
+                    : !(typeof backend !== "undefined" && backend && backend.pipelineBusy)
                 onClicked: {
                     if (root.step < 3) { root.step++; return }
+                    if (root.outputDir.length === 0) { outDirDlg.open(); return }
+                    root.refreshFromAppState()
                     if (typeof backend !== "undefined" && backend)
                         backend.runPipeline(root.pipelineConfig())
                 }
@@ -405,5 +439,26 @@ Popup {
         onAccepted: root.outputDir = selectedFolder.toString().replace("file:///","")
     }
 
-    onOpened: step = 0
+    onOpened: {
+        step = 0
+        refreshFromAppState()
+    }
+
+    component PinField: TextField {
+        implicitHeight: 38
+        color: Theme.text
+        placeholderTextColor: Theme.textFaint
+        font.family: Theme.monoFamily
+        font.pixelSize: Theme.fontSm
+        selectByMouse: true
+        verticalAlignment: Text.AlignVCenter
+        leftPadding: Theme.spacingSm
+        rightPadding: Theme.spacingSm
+        background: Rectangle {
+            radius: Theme.radiusMd
+            color: Theme.surfaceRaised
+            border.color: parent.activeFocus ? Theme.primary : Theme.border
+            Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+        }
+    }
 }

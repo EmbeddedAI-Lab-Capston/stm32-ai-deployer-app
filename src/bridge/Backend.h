@@ -210,6 +210,7 @@ private:
 
     // pipeline
     PipelineRunner *m_pipelineRunner = nullptr;
+    QTimer         *m_pipelinePulseTimer = nullptr;
     QVariantList    m_pipelineLines;
     int             m_pipelineProgress = 0;
     bool            m_pipelineBusy = false;
