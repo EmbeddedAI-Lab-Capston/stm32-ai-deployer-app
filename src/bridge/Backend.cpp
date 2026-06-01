@@ -146,10 +146,9 @@ QStringList Backend::availablePorts() const
 QVariantList Backend::availablePortEntries() const
 {
     QVariantList out;
-    const QSerialPortInfo stlink = SerialManager::findStLink();
     for (const QSerialPortInfo &p : SerialManager::availablePorts()) {
         QVariantMap m;
-        const bool isStlink = !stlink.isNull() && p.portName() == stlink.portName();
+        const bool isStlink = p.hasVendorIdentifier() && p.vendorIdentifier() == 0x0483;
         QString label = p.portName();
         if (isStlink)
             label += " (ST-Link)";
@@ -159,6 +158,7 @@ QVariantList Backend::availablePortEntries() const
         m["portName"] = p.portName();
         m["isStlink"] = isStlink;
         m["description"] = p.description();
+        m["serialNumber"] = p.serialNumber();
         out.append(m);
     }
     return out;
@@ -189,9 +189,23 @@ void Backend::disconnectSerial()
 
 void Backend::probeStLinkBoard()
 {
+    probeStLinkBoardForPort(m_state ? m_state->activePort() : QString());
+}
+
+void Backend::probeStLinkBoardForPort(const QString &portName)
+{
     if (m_probeBusy) return;
 
-    const QSerialPortInfo stlink = SerialManager::findStLink();
+    QSerialPortInfo stlink;
+    const QString cleanPort = portName.section(' ', 0, 0).trimmed();
+    for (const QSerialPortInfo &info : SerialManager::availablePorts()) {
+        if (!cleanPort.isEmpty() && info.portName().compare(cleanPort, Qt::CaseInsensitive) == 0) {
+            stlink = info;
+            break;
+        }
+    }
+    if (stlink.isNull())
+        stlink = SerialManager::findStLink();
     if (stlink.isNull()) {
         m_probeStatus = "ST-Link portu bulunamadı.";
         emit probeChanged();
@@ -222,6 +236,9 @@ void Backend::probeStLinkBoard()
     m_probeStatus = "ST-Link taranıyor...";
     emit probeChanged();
 
+    const QString selectedPort = stlink.portName();
+    const QString selectedSn = stlink.serialNumber();
+
     m_stlinkProbe = new QProcess(this);
     connect(m_stlinkProbe, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, [this](int exitCode, QProcess::ExitStatus) {
@@ -241,7 +258,14 @@ void Backend::probeStLinkBoard()
                     emit probeFinished(false, m_probeStatus);
                 }
             });
-    m_stlinkProbe->start(cliPath, {QStringLiteral("-c"), QStringLiteral("port=SWD")});
+    QStringList args{QStringLiteral("-c"), QStringLiteral("port=SWD")};
+    if (!selectedSn.isEmpty())
+        args << QString("sn=%1").arg(selectedSn);
+    appendMonitorLine(QString("[probe] ST-Link %1%2")
+                          .arg(selectedPort.isEmpty() ? QString("SWD") : selectedPort,
+                               selectedSn.isEmpty() ? QString() : QString(" · SN %1").arg(selectedSn)),
+                      "cmd");
+    m_stlinkProbe->start(cliPath, args);
 }
 
 void Backend::applyDetectedStLinkBoard(const QString &probeOutput)

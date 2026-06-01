@@ -302,7 +302,7 @@ Item {
                                         iconText: "?"
                                         variant: "secondary"
                                         enabled: !(typeof backend !== "undefined" && backend && backend.probeBusy)
-                                        onClicked: if (typeof backend !== "undefined" && backend) backend.probeStLinkBoard()
+                                        onClicked: if (typeof backend !== "undefined" && backend) backend.probeStLinkBoardForPort(root.selectedPortName())
                                     }
 
                                     Item { Layout.fillWidth: true }

@@ -131,6 +131,7 @@ public:
     QString probeStatus() const { return m_probeStatus; }
     Q_INVOKABLE QVariantList availablePortEntries() const;
     Q_INVOKABLE void probeStLinkBoard();
+    Q_INVOKABLE void probeStLinkBoardForPort(const QString &portName);
 
     // ── Analysis (read) ───────────────────────────────────────────────────
     QVariantList benchmarkRecords()  const;
