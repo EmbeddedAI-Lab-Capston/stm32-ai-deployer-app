@@ -193,6 +193,10 @@ private:
     // monitor
     QVariantList m_monitorLines;
     bool         m_scanning    = false;
+    qint64       m_lastInferenceLogMs = 0;
+    qint64       m_lastSensorLogMs = 0;
+    qint64       m_lastSysLogMs = 0;
+    qint64       m_lastSensorAnalysisMs = 0;
 
     // simulation
     QTimer       *m_simTimer   = nullptr;

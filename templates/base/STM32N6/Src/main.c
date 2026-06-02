@@ -19,6 +19,9 @@ static void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C1_Init(void);
+static void Ensure_AI_Ready(void);
+static void Poll_Uart_Command(void);
+static void Feed_Uart_Byte(uint8_t byte);
 static void Process_Uart_Command(void);
 static void Run_Benchmark(uint32_t samples, float min_v, float max_v, uint32_t seed);
 static void Run_Manual_Inference(const char *payload);
@@ -27,9 +30,18 @@ static char     s_cmd_buf[96];
 static uint8_t  s_cmd_len    = 0;
 static volatile uint8_t s_cmd_ready = 0;
 static uint8_t  s_rx_byte    = 0;
+static uint8_t  s_ai_ready   = 0;
 
 int main(void)
 {
+    SCB->CPACR |= ((3UL << 20U) | (3UL << 22U));
+    __DSB();
+    __ISB();
+    __set_PRIMASK(0);
+    __set_FAULTMASK(0);
+    __set_BASEPRI(0);
+    __enable_irq();
+
     /* Enable I-Cache and D-Cache (required for N6 performance) */
     SCB_EnableICache();
     SCB_EnableDCache();
@@ -38,18 +50,13 @@ int main(void)
     SystemClock_Config();
     MX_GPIO_Init();
     MX_USART1_UART_Init();
-    MX_I2C1_Init();
-
-    Sensor_Init(&hi2c1);
-    AI_Runner_Init();
     UART_Report_SetHandle(&huart1);
-    HAL_UART_Receive_IT(&huart1, &s_rx_byte, 1);
-
     UART_Report_Boot(AI_MODEL_NAME, AI_TARGET_BOARD, "EdgeAI_v1.0", 115200);
 
     uint32_t cycle = 0;
 
     while (1) {
+        Poll_Uart_Command();
         Process_Uart_Command();
 
         float input[AI_INPUT_SIZE];
@@ -58,6 +65,7 @@ int main(void)
             continue;
         }
 
+        Ensure_AI_Ready();
         AI_InferenceResult result;
         uint32_t inf_us = AI_Runner_Infer(input, &result);
 
@@ -91,6 +99,14 @@ int main(void)
     }
 }
 
+static void Ensure_AI_Ready(void)
+{
+    if (!s_ai_ready) {
+        AI_Runner_Init();
+        s_ai_ready = 1;
+    }
+}
+
 /* ── Benchmark (BENCH command) ─────────────────────────────────────────────── */
 static uint32_t bench_rand(uint32_t *state)
 {
@@ -100,6 +116,8 @@ static uint32_t bench_rand(uint32_t *state)
 
 static void Run_Benchmark(uint32_t samples, float min_v, float max_v, uint32_t seed)
 {
+    Ensure_AI_Ready();
+
     if (samples == 0) samples = 1;
     if (samples > 10000) samples = 10000;
     if (max_v < min_v) { float t = min_v; min_v = max_v; max_v = t; }
@@ -129,6 +147,8 @@ static void Run_Benchmark(uint32_t samples, float min_v, float max_v, uint32_t s
 /* ── INFER command ─────────────────────────────────────────────────────────── */
 static void Run_Manual_Inference(const char *payload)
 {
+    Ensure_AI_Ready();
+
     float input[AI_INPUT_SIZE] = {0};
     const char *p = payload;
 
@@ -179,24 +199,36 @@ static void Process_Uart_Command(void)
     }
 }
 
+static void Poll_Uart_Command(void)
+{
+    while ((USART1->ISR & USART_ISR_RXNE_RXFNE) != 0U) {
+        Feed_Uart_Byte((uint8_t)(USART1->RDR & 0xFFU));
+    }
+}
+
+static void Feed_Uart_Byte(uint8_t byte)
+{
+    char ch = (char)byte;
+    if (!s_cmd_ready) {
+        if (ch == '\r' || ch == '\n') {
+            if (s_cmd_len > 0) {
+                s_cmd_buf[s_cmd_len] = '\0';
+                s_cmd_len   = 0;
+                s_cmd_ready = 1;
+            }
+        } else if (s_cmd_len < sizeof(s_cmd_buf) - 1) {
+            s_cmd_buf[s_cmd_len++] = ch;
+        } else {
+            s_cmd_len = 0;
+        }
+    }
+}
+
 /* ── UART RX ISR callbacks ─────────────────────────────────────────────────── */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART1) {
-        char ch = (char)s_rx_byte;
-        if (!s_cmd_ready) {
-            if (ch == '\r' || ch == '\n') {
-                if (s_cmd_len > 0) {
-                    s_cmd_buf[s_cmd_len] = '\0';
-                    s_cmd_len   = 0;
-                    s_cmd_ready = 1;
-                }
-            } else if (s_cmd_len < sizeof(s_cmd_buf) - 1) {
-                s_cmd_buf[s_cmd_len++] = ch;
-            } else {
-                s_cmd_len = 0;
-            }
-        }
+        Feed_Uart_Byte(s_rx_byte);
         HAL_UART_Receive_IT(&huart1, &s_rx_byte, 1);
     }
 }
@@ -283,9 +315,10 @@ static void SystemClock_Config(void)
     if (HAL_RCC_ClockConfig(&clk) != HAL_OK) Error_Handler();
 }
 
-/* ── GPIO: LED on PE6 ──────────────────────────────────────────────────────── */
+/* ── GPIO: LED1 on PG8 ─────────────────────────────────────────────────────── */
 static void MX_GPIO_Init(void)
 {
+    __HAL_RCC_GPIOG_CLK_ENABLE();
     __HAL_RCC_GPIOE_CLK_ENABLE();
 
     GPIO_InitTypeDef gpio = {0};
@@ -295,9 +328,10 @@ static void MX_GPIO_Init(void)
     gpio.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(LED_PORT, &gpio);
     HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
+
 }
 
-/* ── USART1: ST-Link VCP — TX=PA9, RX=PA10 ────────────────────────────────── */
+/* ── USART1: ST-Link VCP — TX=PE5, RX=PE6 ─────────────────────────────────── */
 static void MX_USART1_UART_Init(void)
 {
     huart1.Instance          = USART1;
@@ -308,8 +342,13 @@ static void MX_USART1_UART_Init(void)
     huart1.Init.Mode         = UART_MODE_TX_RX;
     huart1.Init.HwFlowCtl    = UART_HWCONTROL_NONE;
     huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+    huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+    huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
     huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
     if (HAL_UART_Init(&huart1) != HAL_OK) Error_Handler();
+    if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK) Error_Handler();
+    if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK) Error_Handler();
+    if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK) Error_Handler();
 }
 
 /* ── I2C1: sensor bus ──────────────────────────────────────────────────────── */
@@ -332,5 +371,10 @@ static void MX_I2C1_Init(void)
 void Error_Handler(void)
 {
     __disable_irq();
-    while (1) {}
+    while (1) {
+        HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+        for (volatile uint32_t i = 0; i < 2000000UL; ++i) {
+            __NOP();
+        }
+    }
 }

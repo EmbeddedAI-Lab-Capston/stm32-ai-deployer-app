@@ -117,6 +117,23 @@ static QStringList programmerConnectArgsForBoard(const QString &programmerCliPat
     return args;
 }
 
+static QStringList n6ExternalFlashConnectArgs(const QStringList &baseArgs)
+{
+    QStringList args;
+    bool hasFreq = false;
+    for (const QString &arg : baseArgs) {
+        if (arg.startsWith(QStringLiteral("mode="), Qt::CaseInsensitive))
+            continue;
+        if (arg.startsWith(QStringLiteral("freq="), Qt::CaseInsensitive))
+            hasFreq = true;
+        args << arg;
+    }
+    args << QStringLiteral("mode=HOTPLUG");
+    if (!hasFreq)
+        args << QStringLiteral("freq=8000");
+    return args;
+}
+
 static QStringList requiredTemplateFiles(const QString &board)
 {
     const QString family = boardFamily(board);
@@ -292,6 +309,48 @@ static bool readVectorInfo(const QString &binPath,
         loadAddress = 0x34180400U;
     else
         loadAddress = 0x34000400U;
+    return true;
+}
+
+static bool ensureN6FsblLrunLayout(const QString &fsblProject, QString &errorMessage)
+{
+    const QString confPath = QDir(fsblProject).filePath(
+        QStringLiteral("../../FSBL/Inc/stm32_extmem_conf.h"));
+    QFile file(confPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        errorMessage = QStringLiteral("FSBL extmem konfig okunamadi: ") + confPath;
+        return false;
+    }
+
+    QString text = QString::fromUtf8(file.readAll());
+    file.close();
+
+    static const QRegularExpression destinationRe(
+        QStringLiteral("#define\\s+EXTMEM_LRUN_DESTINATION_ADDRESS\\s+0x[0-9A-Fa-f]+"));
+    static const QRegularExpression sourceSizeRe(
+        QStringLiteral("#define\\s+EXTMEM_LRUN_SOURCE_SIZE\\s+0x[0-9A-Fa-f]+"));
+    static const QRegularExpression headerOffsetRe(
+        QStringLiteral("#define\\s+EXTMEM_HEADER_OFFSET\\s+0x[0-9A-Fa-f]+"));
+    if (!text.contains(destinationRe) || !text.contains(sourceSizeRe) || !text.contains(headerOffsetRe)) {
+        errorMessage = QStringLiteral("FSBL LRUN adres konfig bulunamadi: ") + confPath;
+        return false;
+    }
+
+    QString patched = text;
+    patched.replace(destinationRe,
+                    QStringLiteral("#define EXTMEM_LRUN_DESTINATION_ADDRESS  0x34000000"));
+    patched.replace(sourceSizeRe,
+                    QStringLiteral("#define EXTMEM_LRUN_SOURCE_SIZE 0x00100000"));
+    patched.replace(headerOffsetRe,
+                    QStringLiteral("#define EXTMEM_HEADER_OFFSET 0x400"));
+    if (patched == text)
+        return true;
+
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        errorMessage = QStringLiteral("FSBL extmem konfig yazilamadi: ") + confPath;
+        return false;
+    }
+    file.write(patched.toUtf8());
     return true;
 }
 
@@ -767,6 +826,7 @@ void PipelineRunner::stepFlash()
             QStringLiteral("-t"), QStringLiteral("fsbl"),
             QStringLiteral("-o"), trustedApp,
             QStringLiteral("-hv"), QStringLiteral("2.3"),
+            QStringLiteral("-align"),
             QStringLiteral("-s"),
         };
         if (!runBlockingTool(signer, signAppArgs, 30000, output)) {
@@ -781,6 +841,11 @@ void PipelineRunner::stepFlash()
             QStringLiteral("Projects/NUCLEO-N657X0-Q/Templates/Template_FSBL_LRUN/STM32CubeIDE/Boot"));
         const QString fsblBin = QDir(fsblProject).filePath(
             QStringLiteral("Debug/Template_LRUN_FSBL.bin"));
+        if (!ensureN6FsblLrunLayout(fsblProject, err)) {
+            fail(tr("✗ ") + err);
+            return;
+        }
+        emit outputLine(tr("  N6 FSBL LRUN yerlesimi ayarlandi: dest=0x34000000 header=0x400 size=1MB."));
         const QString cubeIdeCli = cubeIdeCliPath(m_config.gccPath);
         if (!QFileInfo::exists(cubeIdeCli)) {
             fail(tr("✗ stm32cubeidec.exe bulunamadi. FSBL derlenemiyor."));
@@ -831,6 +896,7 @@ void PipelineRunner::stepFlash()
             QStringLiteral("-t"), QStringLiteral("fsbl"),
             QStringLiteral("-o"), trustedFsbl,
             QStringLiteral("-hv"), QStringLiteral("2.3"),
+            QStringLiteral("-align"),
             QStringLiteral("-s"),
         };
         if (!runBlockingTool(signer, signFsblArgs, 30000, output)) {
@@ -842,16 +908,18 @@ void PipelineRunner::stepFlash()
 
         auto flashTrusted = [&](const QString &file, const QString &address) -> bool {
             QStringList args{QStringLiteral("-c")};
-            args += m_programmerConnectArgs;
+            args += n6ExternalFlashConnectArgs(m_programmerConnectArgs);
             args += {
                 QStringLiteral("-el"), loader,
-                QStringLiteral("-d"), file, address,
+                QStringLiteral("-hardRst"),
+                QStringLiteral("-w"), file, address,
                 QStringLiteral("-v"),
             };
             emit outputLine(QStringLiteral("> STM32_Programmer_CLI ")
                             + args.join(QLatin1Char(' ')));
             if (!runBlockingTool(m_config.programmerCliPath, args, 120000, output)) {
                 emit errorLine(output);
+                emit errorLine(tr("  N6 external flash yazimi icin kart development mode'da olmali: BOOT1=2-3, BOOT0 fark etmez. Yazimdan sonra external flash boot icin BOOT0=1-2 ve BOOT1=1-2 yapin."));
                 return false;
             }
             emit outputLine(output.trimmed());

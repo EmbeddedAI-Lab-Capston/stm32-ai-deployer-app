@@ -1,5 +1,24 @@
 #include "AppState.h"
 
+namespace
+{
+bool appStateBoardLooksLikeN6(const BoardInfo &board)
+{
+    const QString text = QStringList{board.name,
+                                     board.probeBoardName,
+                                     board.deviceName,
+                                     board.deviceCpu}
+        .join(' ')
+        .toUpper();
+    return text.contains("N657")
+        || text.contains("N655")
+        || text.contains("STM32N6")
+        || text.contains("NUCLEO-N6")
+        || text.contains("CORTEX-M55")
+        || text.contains("NPU");
+}
+}
+
 AppState::AppState(QObject *parent)
     : QObject(parent)
 {
@@ -52,6 +71,10 @@ void AppState::setActiveBoard(const BoardInfo &board)
         return;
     m_activeBoard = board;
     emit activeBoardChanged(m_activeBoard);
+    if (appStateBoardLooksLikeN6(m_activeBoard) && m_activeBaud != 115200) {
+        m_activeBaud = 115200;
+        emit activeBaudChanged(m_activeBaud);
+    }
 }
 
 void AppState::setActivePort(const QString &port)
@@ -63,6 +86,8 @@ void AppState::setActivePort(const QString &port)
 
 void AppState::setActiveBaud(qint32 baud)
 {
+    if (appStateBoardLooksLikeN6(m_activeBoard))
+        baud = 115200;
     if (m_activeBaud == baud) return;
     m_activeBaud = baud;
     emit activeBaudChanged(m_activeBaud);

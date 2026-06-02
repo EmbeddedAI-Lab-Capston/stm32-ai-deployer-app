@@ -18,6 +18,16 @@
 #define PROTO_MARKER_B1  0xA7u
 #define UART_TX_TIMEOUT  50   /* ms */
 
+#ifndef AI_BOARD_FLASH_KB
+#define AI_BOARD_FLASH_KB  0U
+#endif
+#ifndef AI_BOARD_RAM_KB
+#define AI_BOARD_RAM_KB    0U
+#endif
+#ifndef AI_BOARD_CLOCK_MHZ
+#define AI_BOARD_CLOCK_MHZ 0U
+#endif
+
 static UART_HandleTypeDef *s_huart = NULL;
 
 /* ── Internal send ────────────────────────────────────────────────────── */
@@ -55,11 +65,15 @@ void UART_Report_Boot(const char *model,
                       const char *sdk,
                       uint32_t    baud)
 {
-    char json[200];
+    char json[240];
     snprintf(json, sizeof(json),
              "{\"t\":\"boot\",\"card\":\"%s\",\"sdk\":\"%s\","
-             "\"model\":\"%s\",\"sensor\":\"%s\",\"baud\":%lu}",
-             card, sdk, model, AI_SENSOR_TYPE, (unsigned long)baud);
+             "\"model\":\"%s\",\"sensor\":\"%s\",\"baud\":%lu,"
+             "\"flash_kb\":%lu,\"ram_kb\":%lu,\"clock_mhz\":%lu}",
+             card, sdk, model, AI_SENSOR_TYPE, (unsigned long)baud,
+             (unsigned long)AI_BOARD_FLASH_KB,
+             (unsigned long)AI_BOARD_RAM_KB,
+             (unsigned long)AI_BOARD_CLOCK_MHZ);
     send_packet(json);
 }
 

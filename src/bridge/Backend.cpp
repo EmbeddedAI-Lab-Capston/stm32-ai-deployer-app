@@ -30,6 +30,156 @@
 #include "modules/analysis/AnalysisManager.h"
 #include "modules/board/BoardPresets.h"
 
+namespace
+{
+constexpr quint16 kStVendorId = 0x0483;
+constexpr quint16 kN657VcpProductId = 0x3754;
+constexpr quint16 kH7VcpProductId = 0x374E;
+
+QString boardSearchText(const BoardInfo &board)
+{
+    return QStringList{board.name,
+                       board.probeBoardName,
+                       board.deviceName,
+                       board.deviceCpu}
+        .join(' ')
+        .toUpper();
+}
+
+bool boardLooksLikeN6(const BoardInfo &board)
+{
+    const QString text = boardSearchText(board);
+    return text.contains("N657")
+        || text.contains("N655")
+        || text.contains("STM32N6")
+        || text.contains("NUCLEO-N6")
+        || text.contains("CORTEX-M55")
+        || text.contains("NPU");
+}
+
+bool boardLooksLikeH7(const BoardInfo &board)
+{
+    const QString text = boardSearchText(board);
+    return text.contains("H723")
+        || text.contains("STM32H7")
+        || text.contains("NUCLEO-H7")
+        || text.contains("CORTEX-M7");
+}
+
+bool isStVcp(const QSerialPortInfo &info)
+{
+    return info.hasVendorIdentifier() && info.vendorIdentifier() == kStVendorId;
+}
+
+bool hasProductId(const QSerialPortInfo &info, quint16 productId)
+{
+    return isStVcp(info) && info.hasProductIdentifier() && info.productIdentifier() == productId;
+}
+
+QString cleanPortName(const QString &portName)
+{
+    return portName.section(' ', 0, 0).trimmed();
+}
+
+QSerialPortInfo preferredSerialPortForBoard(const BoardInfo &board, const QString &requestedPort = {})
+{
+    const auto ports = SerialManager::availablePorts();
+    const QString requested = cleanPortName(requestedPort);
+
+    for (const QSerialPortInfo &info : ports) {
+        if (!requested.isEmpty() && info.portName().compare(requested, Qt::CaseInsensitive) == 0)
+            return info;
+    }
+
+    if (!board.portName.isEmpty()) {
+        const QString boardPort = cleanPortName(board.portName);
+        for (const QSerialPortInfo &info : ports) {
+            if (info.portName().compare(boardPort, Qt::CaseInsensitive) == 0)
+                return info;
+        }
+    }
+
+    if (!board.stlinkSn.isEmpty()) {
+        for (const QSerialPortInfo &info : ports) {
+            if (info.serialNumber().compare(board.stlinkSn, Qt::CaseInsensitive) == 0)
+                return info;
+        }
+    }
+
+    if (boardLooksLikeN6(board)) {
+        for (const QSerialPortInfo &info : ports) {
+            if (hasProductId(info, kN657VcpProductId))
+                return info;
+        }
+    }
+
+    if (boardLooksLikeH7(board)) {
+        for (const QSerialPortInfo &info : ports) {
+            if (hasProductId(info, kH7VcpProductId))
+                return info;
+        }
+    }
+
+    for (const QSerialPortInfo &info : ports) {
+        if (isStVcp(info))
+            return info;
+    }
+
+    return {};
+}
+
+int preferredBaudForBoard(const BoardInfo &board, int requestedBaud)
+{
+    if (boardLooksLikeN6(board))
+        return 115200;
+    return requestedBaud > 0 ? requestedBaud : 115200;
+}
+
+QString programmerSnForBoard(const QString &cliPath, const BoardInfo &board)
+{
+    if (cliPath.isEmpty() || (!boardLooksLikeN6(board) && !boardLooksLikeH7(board)))
+        return {};
+
+    QProcess process;
+    process.start(cliPath, {QStringLiteral("-l")});
+    if (!process.waitForFinished(4000))
+        return {};
+
+    const QString output = QString::fromLocal8Bit(process.readAllStandardOutput()
+                                                  + process.readAllStandardError());
+    QString currentSn;
+    bool currentMatches = false;
+    auto flushBlock = [&]() -> QString {
+        if (currentMatches && !currentSn.isEmpty())
+            return currentSn;
+        return {};
+    };
+
+    for (const QString &line : output.split(QRegularExpression("[\\r\\n]+"), Qt::SkipEmptyParts)) {
+        const QString trimmed = line.trimmed();
+        if (trimmed.startsWith("ST-LINK SN", Qt::CaseInsensitive)) {
+            const QString matched = flushBlock();
+            if (!matched.isEmpty())
+                return matched;
+            currentSn = trimmed.section(':', 1).trimmed();
+            currentMatches = false;
+            continue;
+        }
+
+        const QString upper = trimmed.toUpper();
+        if (boardLooksLikeN6(board)
+            && (upper.contains("N657") || upper.contains("NUCLEO-N657") || upper.contains("STM32N6"))) {
+            currentMatches = true;
+        } else if (boardLooksLikeH7(board)
+                   && (upper.contains("H723") || upper.contains("NUCLEO-H7") || upper.contains("STM32H7"))) {
+            currentMatches = true;
+        }
+    }
+
+    return flushBlock();
+}
+}
+
 Backend::Backend(AppState        *state,
                  SerialManager   *serial,
                  FlashManager    *flash,
@@ -162,17 +312,30 @@ QVariantList Backend::availablePortEntries() const
     QVariantList out;
     for (const QSerialPortInfo &p : SerialManager::availablePorts()) {
         QVariantMap m;
-        const bool isStlink = p.hasVendorIdentifier() && p.vendorIdentifier() == 0x0483;
+        const bool isStlink = isStVcp(p);
         QString label = p.portName();
         if (isStlink)
             label += " (ST-Link)";
         else if (!p.description().isEmpty())
             label += " · " + p.description();
+        QString role;
+        if (hasProductId(p, kN657VcpProductId)) {
+            role = "NUCLEO-N657 VCP";
+            label = p.portName() + " (NUCLEO-N657 VCP)";
+        } else if (hasProductId(p, kH7VcpProductId)) {
+            role = "ST-Link VCP";
+            label = p.portName() + " (ST-Link VCP)";
+        } else if (isStlink) {
+            role = "ST-Link";
+        }
         m["label"] = label;
         m["portName"] = p.portName();
         m["isStlink"] = isStlink;
         m["description"] = p.description();
         m["serialNumber"] = p.serialNumber();
+        m["vendorId"] = p.hasVendorIdentifier() ? p.vendorIdentifier() : 0;
+        m["productId"] = p.hasProductIdentifier() ? p.productIdentifier() : 0;
+        m["role"] = role;
         out.append(m);
     }
     return out;
@@ -180,21 +343,27 @@ QVariantList Backend::availablePortEntries() const
 
 QString Backend::detectedStLinkPort() const
 {
-    const QSerialPortInfo info = SerialManager::findStLink();
+    const QSerialPortInfo info = preferredSerialPortForBoard(m_state ? m_state->activeBoard() : BoardInfo{});
     return info.isNull() ? QString() : info.portName();
 }
 
 void Backend::connectSerial(const QString &portName, int baud)
 {
     if (!m_serial) return;
-    const QString cleanPort = portName.section(' ', 0, 0).trimmed();
+    QString cleanPort = cleanPortName(portName);
+    if (cleanPort.isEmpty()) {
+        const QSerialPortInfo preferred = preferredSerialPortForBoard(m_state ? m_state->activeBoard() : BoardInfo{});
+        cleanPort = preferred.portName();
+    }
     if (cleanPort.isEmpty()) return;
+    const BoardInfo activeBoard = m_state ? m_state->activeBoard() : BoardInfo{};
+    const int actualBaud = preferredBaudForBoard(activeBoard, baud);
     if (m_state) {
         m_state->setActivePort(cleanPort);
-        m_state->setActiveBaud(baud);
+        m_state->setActiveBaud(actualBaud);
     }
-    AppSettings().setLastBaud(baud);
-    m_serial->connectToPort(cleanPort, baud);
+    AppSettings().setLastBaud(actualBaud);
+    m_serial->connectToPort(cleanPort, actualBaud);
 }
 
 void Backend::disconnectSerial()
@@ -211,16 +380,8 @@ void Backend::probeStLinkBoardForPort(const QString &portName)
 {
     if (m_probeBusy) return;
 
-    QSerialPortInfo stlink;
-    const QString cleanPort = portName.section(' ', 0, 0).trimmed();
-    for (const QSerialPortInfo &info : SerialManager::availablePorts()) {
-        if (!cleanPort.isEmpty() && info.portName().compare(cleanPort, Qt::CaseInsensitive) == 0) {
-            stlink = info;
-            break;
-        }
-    }
-    if (stlink.isNull())
-        stlink = SerialManager::findStLink();
+    const BoardInfo activeBoard = m_state ? m_state->activeBoard() : BoardInfo{};
+    QSerialPortInfo stlink = preferredSerialPortForBoard(activeBoard, portName);
     if (stlink.isNull()) {
         m_probeStatus = "ST-Link portu bulunamadı.";
         emit probeChanged();
@@ -252,7 +413,9 @@ void Backend::probeStLinkBoardForPort(const QString &portName)
     emit probeChanged();
 
     const QString selectedPort = stlink.portName();
-    const QString selectedSn = stlink.serialNumber();
+    QString selectedSn = stlink.serialNumber();
+    if (selectedSn.isEmpty())
+        selectedSn = programmerSnForBoard(cliPath, activeBoard);
 
     m_stlinkProbe = new QProcess(this);
     connect(m_stlinkProbe, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
@@ -322,7 +485,6 @@ void Backend::applyDetectedStLinkBoard(const QString &probeOutput)
         board.isPreset = false;
     }
 
-    board.portName = detectedStLinkPort();
     board.probeBoardName = boardName;
     board.deviceId = deviceId;
     board.revisionId = revisionId;
@@ -332,9 +494,15 @@ void Backend::applyDetectedStLinkBoard(const QString &probeOutput)
     board.stlinkSn = stlinkSn;
     board.stlinkFw = stlinkFw;
     board.voltage = voltage;
+    const QSerialPortInfo preferredPort = preferredSerialPortForBoard(board);
+    board.portName = preferredPort.isNull() ? detectedStLinkPort() : preferredPort.portName();
 
-    if (m_state && !board.name.isEmpty())
+    if (m_state && !board.name.isEmpty()) {
         m_state->setActiveBoard(board);
+        if (!board.portName.isEmpty())
+            m_state->setActivePort(board.portName);
+        m_state->setActiveBaud(preferredBaudForBoard(board, m_state->activeBaud()));
+    }
 }
 
 void Backend::selectBoard(const QString &boardName)
@@ -354,6 +522,8 @@ void Backend::selectBoard(const QString &boardName)
         board.isPreset = false;
     }
     m_state->setActiveBoard(board);
+    if (boardLooksLikeN6(board))
+        m_state->setActiveBaud(115200);
 }
 
 void Backend::addCustomBoard(const QString &name, int flashKb, int ramKb, int clockMhz)
@@ -471,7 +641,18 @@ void Backend::startHardwareSimulation(int intervalMs, double minVal, double maxV
 {
     if (!m_serial) return;
     if (m_hwSimRunning) return;
-    if (!m_state || m_state->activePort().isEmpty()) {
+    if (!m_state) return;
+    QString port = m_state->activePort();
+    if (port.isEmpty()) {
+        const QSerialPortInfo preferred = preferredSerialPortForBoard(m_state->activeBoard());
+        port = preferred.portName();
+        if (!port.isEmpty()) {
+            m_state->setActivePort(port);
+            m_state->setActiveBaud(preferredBaudForBoard(m_state->activeBoard(), m_state->activeBaud()));
+            appendMonitorLine("[hw-sim] Otomatik VCP secildi: " + port, "cmd");
+        }
+    }
+    if (port.isEmpty()) {
         appendMonitorLine("[hw-sim] Aktif COM port yok.", "err");
         return;
     }
@@ -483,8 +664,10 @@ void Backend::startHardwareSimulation(int intervalMs, double minVal, double maxV
     m_hwSimRunning = true;
     appendMonitorLine(QString("[hw-sim] Donanim simulasyonu basladi · aralik %1 ms").arg(intervalMs), "warn");
     appendMonitorLine("[hw-sim] Sentetik sensor verisi karta gonderilecek. Yanit bekleniyor...", "info");
+    const int baud = preferredBaudForBoard(m_state->activeBoard(), m_state->activeBaud());
+    m_state->setActiveBaud(baud);
     if (!m_state->isConnected())
-        m_serial->connectToPort(m_state->activePort(), m_state->activeBaud());
+        m_serial->connectToPort(port, baud);
     m_hwSimTimer->start(qMax(50, intervalMs));
     emit simRunningChanged();
 }
@@ -925,7 +1108,15 @@ void Backend::appendBenchmarkLine(const QString &text, const QString &type)
 void Backend::startBenchmark(int samples, double minValue, double maxValue, int seed)
 {
     if (!m_serial || !m_state || m_benchmarkBusy) return;
-    const QString port = m_state->activePort();
+    QString port = m_state->activePort();
+    if (port.isEmpty()) {
+        const QSerialPortInfo preferred = preferredSerialPortForBoard(m_state->activeBoard());
+        port = preferred.portName();
+        if (!port.isEmpty()) {
+            m_state->setActivePort(port);
+            m_state->setActiveBaud(preferredBaudForBoard(m_state->activeBoard(), m_state->activeBaud()));
+        }
+    }
     if (port.isEmpty()) {
         appendBenchmarkLine("Aktif COM port yok. Kartlar ekranından port seçin.", "err");
         return;
@@ -956,12 +1147,15 @@ void Backend::startBenchmark(int samples, double minValue, double maxValue, int 
         m_benchmarkTimeout->start(10000);
     };
 
+    const int baud = preferredBaudForBoard(m_state->activeBoard(), m_state->activeBaud());
+    m_state->setActiveBaud(baud);
+
     if (m_state->isConnected()) {
         sendCommand();
     } else {
         appendBenchmarkLine(QString("UART bağlantısı açılıyor: %1 @ %2")
                                 .arg(port).arg(m_state->activeBaud()), "cmd");
-        m_serial->connectToPort(port, m_state->activeBaud());
+        m_serial->connectToPort(port, m_state->activeBaud() > 0 ? m_state->activeBaud() : 115200);
         QTimer::singleShot(1200, this, sendCommand);
     }
 }
@@ -1228,6 +1422,10 @@ void Backend::wireAnalysis()
     connect(m_serial, &SerialManager::sensorReceived, this,
             [this](const SensorData &d) {
                 if (!m_analysis) return;
+                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+                if (nowMs - m_lastSensorAnalysisMs < 1000)
+                    return;
+                m_lastSensorAnalysisMs = nowMs;
                 const BoardInfo board = m_state ? m_state->activeBoard() : BoardInfo{};
                 QStringList cells;
                 cells << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
@@ -1299,6 +1497,7 @@ void Backend::wireSerial()
                         if (boot.flash_kb > 0) board.flashKb = static_cast<int>(boot.flash_kb);
                         if (boot.ram_kb > 0) board.ramKb = static_cast<int>(boot.ram_kb);
                         if (boot.clock_mhz > 0) board.clockMhz = static_cast<int>(boot.clock_mhz);
+                        board.portName = m_state->activePort();
                         m_state->setActiveBoard(board);
                     }
                 }
@@ -1307,6 +1506,11 @@ void Backend::wireSerial()
     connect(m_serial, &SerialManager::inferenceReceived, this,
             [this](const InferenceData &d) {
                 if (m_hwSimRunning) ++m_hwSimResponseCount;
+                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+                const bool logLine = nowMs - m_lastInferenceLogMs >= 250;
+                if (logLine)
+                    m_lastInferenceLogMs = nowMs;
+                if (logLine)
                 appendMonitorLine(QString("§ inf  %1  %2 ms  %3 KB  acc=%4%  label=%5")
                                       .arg(d.model.isEmpty() ? "--" : d.model)
                                       .arg(d.inf_us / 1000.0, 0, 'f', 1)
@@ -1323,6 +1527,11 @@ void Backend::wireSerial()
     connect(m_serial, &SerialManager::sensorReceived, this,
             [this](const SensorData &d) {
                 const QString valStr = d.values.isEmpty() ? "--" : d.values.join(", ");
+                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+                const bool logLine = nowMs - m_lastSensorLogMs >= 250;
+                if (logLine)
+                    m_lastSensorLogMs = nowMs;
+                if (logLine)
                 appendMonitorLine(QString("§ sensor  %1  model=%2  values=[%3]  %4%  label=%5")
                                       .arg(d.sensor.isEmpty() ? "--" : d.sensor)
                                       .arg(d.model.isEmpty()  ? "--" : d.model)
@@ -1339,6 +1548,11 @@ void Backend::wireSerial()
 
     connect(m_serial, &SerialManager::sysReceived, this,
             [this](const SysData &s) {
+                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+                const bool logLine = nowMs - m_lastSysLogMs >= 1000;
+                if (logLine)
+                    m_lastSysLogMs = nowMs;
+                if (logLine)
                 appendMonitorLine(QString("§ sys  uptime=%1s  temp=%2C  free=%3 KB  state=%4")
                                       .arg(s.uptime_s)
                                       .arg(s.temp_c)

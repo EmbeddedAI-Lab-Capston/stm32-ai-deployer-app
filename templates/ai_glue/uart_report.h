@@ -11,7 +11,7 @@ struct UART_HandleTypeDef;  /* forward-declare to avoid full include */
 
 void UART_Report_SetHandle(void *huart);
 
-/* {"t":"boot","card":"...","sdk":"...","model":"...","baud":115200} */
+/* {"t":"boot","card":"...","sdk":"...","model":"...","baud":115200,"flash_kb":N,"ram_kb":N,"clock_mhz":N} */
 void UART_Report_Boot(const char *model,
                       const char *card,
                       const char *sdk,

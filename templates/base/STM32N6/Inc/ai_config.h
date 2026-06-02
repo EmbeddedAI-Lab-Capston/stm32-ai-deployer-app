@@ -5,6 +5,9 @@
 #define AI_MODEL_NAME      "{{MODEL_NAME}}"
 #define AI_SENSOR_TYPE     "{{SENSOR_TYPE}}"
 #define AI_TARGET_BOARD    "{{BOARD_NAME}}"
+#define AI_BOARD_FLASH_KB  (65536U)
+#define AI_BOARD_RAM_KB    (4096U)
+#define AI_BOARD_CLOCK_MHZ (600U)
 
 #if __has_include("network.h")
 #include "network.h"
