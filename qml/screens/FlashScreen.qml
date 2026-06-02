@@ -119,11 +119,12 @@ Item {
                                 anchors.centerIn: parent
                                 text: "Hazır Firmware\n.hex / .bin / .elf"
                                 horizontalAlignment: Text.AlignHCenter
-                                color: Theme.text
+                                color: root._sourceMode === 0 ? Theme.text : Theme.textMuted
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontSm
-                                font.weight: Font.DemiBold
+                                font.weight: root._sourceMode === 0 ? Font.DemiBold : Font.Normal
                             }
+                            MouseArea { anchors.fill: parent; onClicked: root._sourceMode = 0 }
                         }
                         Rectangle {
                             Layout.fillWidth: true
@@ -136,9 +137,10 @@ Item {
                                 anchors.centerIn: parent
                                 text: "AI Modelinden Üret\n.tflite / .h5"
                                 horizontalAlignment: Text.AlignHCenter
-                                color: Theme.textMuted
+                                color: root._sourceMode === 1 ? Theme.text : Theme.textMuted
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontSm
+                                font.weight: root._sourceMode === 1 ? Font.DemiBold : Font.Normal
                             }
                             MouseArea { anchors.fill: parent; onClicked: root._sourceMode = 1 }
                         }

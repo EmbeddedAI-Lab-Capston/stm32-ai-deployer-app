@@ -179,14 +179,14 @@ Item {
                     // ── Selection + connection ────────────────────────────
                     ColumnLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 460
+                        Layout.alignment: Qt.AlignTop
                         spacing: Theme.spacingMd
 
                         // Preset cards
                         Card {
                             title: "Kart Seçimi"
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
+                            Layout.preferredHeight: 320
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -253,7 +253,7 @@ Item {
                         Card {
                             title: "Bağlantı"
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 200
+                            Layout.preferredHeight: 260
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -276,6 +276,8 @@ Item {
                                         onActivated: (idx) => root._baudIdx = idx
                                     }
                                 }
+
+                                Item { Layout.fillHeight: true }
 
                                 RowLayout {
                                     Layout.fillWidth: true; spacing: Theme.spacingSm
@@ -319,8 +321,6 @@ Item {
                                         status: root._connected ? "connected" : "offline"
                                     }
                                 }
-
-                                Item { Layout.fillHeight: true }
                             }
                         }
                     }

@@ -27,6 +27,8 @@ ColumnLayout {
     ComboBox {
         id: combo
         Layout.fillWidth: true
+        Layout.preferredHeight: 38
+        implicitHeight: 38
         model: root.options
         currentIndex: root.currentIndex
         onActivated: (idx) => {
@@ -81,6 +83,7 @@ ColumnLayout {
 
         delegate: ItemDelegate {
             width: combo.width
+            implicitHeight: 34
             highlighted: combo.highlightedIndex === index
             contentItem: Text {
                 text: modelData !== undefined ? modelData : ""

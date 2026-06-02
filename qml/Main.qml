@@ -6,11 +6,11 @@ import STM32AiDeployer
 
 ApplicationWindow {
     id: win
-    width: 1320
-    height: 840
-    minimumWidth: 960
-    minimumHeight: 640
-    visible: true
+    width: 1500
+    height: 940
+    minimumWidth: 1040
+    minimumHeight: 700
+    visible: false
     title: "STM32 AI Deployer"
     color: Theme.bg
     flags: Qt.Window | Qt.FramelessWindowHint
