@@ -962,9 +962,9 @@ PipelineConfig Backend::pipelineConfigFromMap(const QVariantMap &config) const
     cfg.protocol = cfg.sensorType == "PDM_MIC" || cfg.sensorType == "PDM" ? "SAI" : "I2C";
     cfg.i2cInstance = value("i2cInstance", "I2C1");
     cfg.sdaPort = value("sdaPort", "GPIOB");
-    cfg.sdaPin = value("sdaPin", "GPIO_PIN_7");
+    cfg.sdaPin = value("sdaPin", "GPIO_PIN_9");
     cfg.sclPort = value("sclPort", "GPIOB");
-    cfg.sclPin = value("sclPin", "GPIO_PIN_6");
+    cfg.sclPin = value("sclPin", "GPIO_PIN_8");
     cfg.i2cAddress = value("i2cAddress", cfg.sensorType == "MPU6050" ? "0xD0" : "0x76");
     cfg.saiInstance = value("saiInstance", "SAI1");
     cfg.clkPort = value("clkPort", "GPIOB");

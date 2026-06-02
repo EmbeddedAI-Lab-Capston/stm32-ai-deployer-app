@@ -191,9 +191,9 @@ public:
         m_i2cInst->addItems({"I2C1", "I2C2", "I2C3"});
 
         m_sdaPort = new QLineEdit("GPIOB", m_i2cBox);
-        m_sdaPin  = new QLineEdit("GPIO_PIN_7", m_i2cBox);
+        m_sdaPin  = new QLineEdit("GPIO_PIN_9", m_i2cBox);
         m_sclPort = new QLineEdit("GPIOB", m_i2cBox);
-        m_sclPin  = new QLineEdit("GPIO_PIN_6", m_i2cBox);
+        m_sclPin  = new QLineEdit("GPIO_PIN_8", m_i2cBox);
         m_i2cAddr = new QLineEdit("0x76", m_i2cBox);
 
         i2cForm->addRow(tr("I2C Instance:"), m_i2cInst);

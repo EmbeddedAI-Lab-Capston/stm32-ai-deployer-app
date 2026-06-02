@@ -142,11 +142,11 @@ void BoardTab::setupUi()
 
     m_pin1Label = new QLabel("SDA Pin :", this);
     m_pin1Edit  = new QLineEdit(this);
-    m_pin1Edit->setPlaceholderText("PB6");
+    m_pin1Edit->setPlaceholderText("PB9");
 
     m_pin2Label = new QLabel("SCL Pin :", this);
     m_pin2Edit  = new QLineEdit(this);
-    m_pin2Edit->setPlaceholderText("PB7");
+    m_pin2Edit->setPlaceholderText("PB8");
 
     pinForm->addRow(m_pin1Label, m_pin1Edit);
     pinForm->addRow(m_pin2Label, m_pin2Edit);
@@ -359,12 +359,12 @@ void BoardTab::onSensorChanged(int index)
     m_pinWidget->setVisible(index > 0);
     switch (index) {
     case 1: // MPU-6050
-        m_pin1Label->setText("SDA Pin :"); m_pin1Edit->setPlaceholderText("PB6");
-        m_pin2Label->setText("SCL Pin :"); m_pin2Edit->setPlaceholderText("PB7");
+        m_pin1Label->setText("SDA Pin :"); m_pin1Edit->setPlaceholderText("PB9");
+        m_pin2Label->setText("SCL Pin :"); m_pin2Edit->setPlaceholderText("PB8");
         break;
     case 2: // BME280
-        m_pin1Label->setText("SDA Pin :"); m_pin1Edit->setPlaceholderText("PB6");
-        m_pin2Label->setText("SCL Pin :"); m_pin2Edit->setPlaceholderText("PB7");
+        m_pin1Label->setText("SDA Pin :"); m_pin1Edit->setPlaceholderText("PB9");
+        m_pin2Label->setText("SCL Pin :"); m_pin2Edit->setPlaceholderText("PB8");
         break;
     case 3: // PDM Mic
         m_pin1Label->setText("DATA Pin :"); m_pin1Edit->setPlaceholderText("PA7");

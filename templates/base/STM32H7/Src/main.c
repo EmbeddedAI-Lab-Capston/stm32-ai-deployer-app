@@ -22,6 +22,8 @@ static void MX_I2C1_Init(void);
 static void Process_Uart_Command(void);
 static void Run_Benchmark(uint32_t samples, float min_v, float max_v, uint32_t seed);
 static void Run_Manual_Inference(const char *payload);
+static void Report_I2C_Probe(void);
+static void Report_Sensor_Check(void);
 
 static char s_cmd_buf[96];
 static uint8_t s_cmd_len = 0;
@@ -34,25 +36,38 @@ int main(void)
     SystemClock_Config();
     MX_GPIO_Init();
     MX_USART3_UART_Init();
-    MX_I2C1_Init();
-
-    Sensor_Init(&hi2c1);
-    AI_Runner_Init();
     UART_Report_SetHandle(&huart3);
     HAL_UART_Receive_IT(&huart3, &s_rx_byte, 1);
 
     UART_Report_Boot(AI_MODEL_NAME, AI_TARGET_BOARD, "EdgeAI_v1.0", 115200);
+    UART_Report_Error(100, "uart_ready");
+
+    MX_I2C1_Init();
+    UART_Report_Error(101, "i2c1_ready");
+    Report_I2C_Probe();
+
+    Sensor_Init(&hi2c1);
+    Report_Sensor_Check();
+
+    AI_Runner_Init();
+    UART_Report_Error(102, "ai_ready");
 
     uint32_t cycle = 0;
+    uint32_t read_failures = 0;
 
     while (1) {
         Process_Uart_Command();
 
         float input[AI_INPUT_SIZE];
         if (Sensor_Read(input, AI_INPUT_SIZE) != HAL_OK) {
+            if (read_failures == 0 || (read_failures % 50U) == 0U) {
+                UART_Report_Error(300, "sensor_read_fail");
+            }
+            read_failures++;
             HAL_Delay(200);
             continue;
         }
+        read_failures = 0;
 
         AI_InferenceResult result;
         uint32_t inf_us = AI_Runner_Infer(input, &result);
@@ -162,6 +177,43 @@ static void Run_Manual_Inference(const char *payload)
                           AI_TARGET_BOARD);
 }
 
+static void Report_I2C_Probe(void)
+{
+    HAL_StatusTypeDef at76 = HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(0x76U << 1), 2, 100);
+    HAL_StatusTypeDef at77 = HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(0x77U << 1), 2, 100);
+
+    if (at76 == HAL_OK) {
+        UART_Report_Error(200, "i2c_found_0x76");
+    } else if (at77 == HAL_OK) {
+        UART_Report_Error(201, "i2c_found_0x77");
+    } else {
+        UART_Report_Error(202, "i2c_no_bme280_at_0x76_0x77");
+    }
+}
+
+static void Report_Sensor_Check(void)
+{
+    float input[AI_INPUT_SIZE] = {0};
+    HAL_StatusTypeDef ret = Sensor_Read(input, AI_INPUT_SIZE);
+    if (ret != HAL_OK) {
+        UART_Report_Error(301, "sensor_init_or_first_read_fail");
+        return;
+    }
+
+    UART_Report_Sensor(AI_SENSOR_TYPE,
+                       0,
+                       (int32_t)(input[0] * 1000.0f),
+                       (int32_t)(AI_INPUT_SIZE > 1 ? input[1] * 1000.0f : 0),
+                       (int32_t)(AI_INPUT_SIZE > 2 ? input[2] * 1000.0f : 0),
+                       "milli",
+                       AI_MODEL_NAME,
+                       0,
+                       AI_Runner_GetRamUsage(),
+                       0,
+                       "sensor_check",
+                       AI_TARGET_BOARD);
+}
+
 static void Process_Uart_Command(void)
 {
     if (!s_cmd_ready)
@@ -179,6 +231,10 @@ static void Process_Uart_Command(void)
     unsigned long seed = 1234;
     if (strncmp(cmd, "INFER ", 6) == 0) {
         Run_Manual_Inference(cmd + 6);
+    } else if (strcmp(cmd, "I2CSCAN?") == 0) {
+        Report_I2C_Probe();
+    } else if (strcmp(cmd, "SENSOR?") == 0) {
+        Report_Sensor_Check();
     } else if (sscanf(cmd, "BENCH %lu %ld %ld %lu",
                &samples, &min_milli, &max_milli, &seed) >= 1) {
         Run_Benchmark((uint32_t)samples,
@@ -297,13 +353,23 @@ static void MX_I2C1_Init(void)
     hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
     hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
     hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-    if (HAL_I2C_Init(&hi2c1) != HAL_OK) Error_Handler();
-    if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK) Error_Handler();
-    if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK) Error_Handler();
+    if (HAL_I2C_Init(&hi2c1) != HAL_OK) {
+        UART_Report_Error(210, "i2c_hal_init_fail");
+        Error_Handler();
+    }
+    if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK) {
+        UART_Report_Error(211, "i2c_analog_filter_fail");
+        Error_Handler();
+    }
+    if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK) {
+        UART_Report_Error(212, "i2c_digital_filter_fail");
+        Error_Handler();
+    }
 }
 
 void Error_Handler(void)
 {
+    UART_Report_Error(900, "error_handler");
     __disable_irq();
     while (1) {}
 }
