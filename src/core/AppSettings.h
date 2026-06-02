@@ -20,6 +20,10 @@ public:
     QString lastComPort() const;
     void    setLastComPort(const QString &port);
 
+    // Last used baud rate (default 115200)
+    int  lastBaud() const;
+    void setLastBaud(int baud);
+
     // Last selected board preset name
     QString lastBoard() const;
     void    setLastBoard(const QString &board);
@@ -67,6 +71,7 @@ public:
 private:
     static constexpr auto kKeyCliPath          = "programmer/cli_path";
     static constexpr auto kKeyComPort          = "serial/last_com_port";
+    static constexpr auto kKeyBaud            = "serial/last_baud";
     static constexpr auto kKeyBoard            = "board/last_board";
     static constexpr auto kKeyTheme            = "ui/theme";
     static constexpr auto kKeyXCubeAIPath      = "tools/xcubeai_cli_path";

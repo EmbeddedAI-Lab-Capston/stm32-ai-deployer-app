@@ -29,6 +29,18 @@ void AppSettings::setLastComPort(const QString &port)
     s.setValue(kKeyComPort, port);
 }
 
+int AppSettings::lastBaud() const
+{
+    QSettings s;
+    return s.value(kKeyBaud, 115200).toInt();
+}
+
+void AppSettings::setLastBaud(int baud)
+{
+    QSettings s;
+    s.setValue(kKeyBaud, baud);
+}
+
 QString AppSettings::lastBoard() const
 {
     QSettings s;

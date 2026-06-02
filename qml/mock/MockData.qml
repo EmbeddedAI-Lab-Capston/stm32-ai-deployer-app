@@ -62,7 +62,8 @@ QtObject {
     readonly property var boardPresets: [
         { name: "STM32F4", spec: "1024 KB · 192 KB · 168 MHz", target: "MLP INT8" },
         { name: "STM32H7", spec: "2048 KB · 1024 KB · 480 MHz", target: "1D CNN INT8" },
-        { name: "STM32N6", spec: "4096 KB · 4096 KB · 800 MHz", target: "LSTM / KWS" }
+        { name: "STM32N6", spec: "4096 KB · 4096 KB · 800 MHz", target: "LSTM / KWS" },
+        { name: "NUCLEO-N657X0-Q", spec: "4096 KB · 4096 KB · 800 MHz", target: "Cortex-M55 / NPU" }
     ]
 
     // ── Flash screen ──────────────────────────────────────────────────────

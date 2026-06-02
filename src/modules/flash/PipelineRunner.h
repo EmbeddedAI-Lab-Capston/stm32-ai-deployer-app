@@ -51,6 +51,8 @@ private:
     bool            m_running       = false;
     bool            m_cancelled     = false;
     QString         m_builtElfPath;
+    QString         m_cubeSdkPath;
+    QStringList     m_programmerConnectArgs;
 
     XCubeAIRunner  *m_xcubeRunner   = nullptr;
     CliRunner      *m_buildRunner   = nullptr;

@@ -44,8 +44,8 @@ Popup {
     readonly property var sensorOptions: ["BME280 (I2C)", "MPU6050 (I2C)", "PDM Mikrofon (SAI)"]
     function currentBoardOptions() {
         if (typeof appState !== "undefined" && appState && appState.boardName.length > 0)
-            return [appState.boardName, "STM32F4", "STM32H7", "STM32N6"]
-        return ["STM32F4", "STM32H7", "STM32N6"]
+            return [appState.boardName, "STM32F4", "STM32H7", "STM32N6", "NUCLEO-N657X0-Q"]
+        return ["STM32F4", "STM32H7", "STM32N6", "NUCLEO-N657X0-Q"]
     }
     function refreshFromAppState() {
         if (root.activeBoardName.length > 0)

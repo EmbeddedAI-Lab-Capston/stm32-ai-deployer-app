@@ -193,6 +193,7 @@ void Backend::connectSerial(const QString &portName, int baud)
         m_state->setActivePort(cleanPort);
         m_state->setActiveBaud(baud);
     }
+    AppSettings().setLastBaud(baud);
     m_serial->connectToPort(cleanPort, baud);
 }
 
@@ -397,7 +398,7 @@ void Backend::seedAnalysisIfEmpty()
         {"2026-05-24 12:41","BENCH-001","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","BME280","0.934 ms","6.44 KiB","6.70 KiB","Tamamlandı"},
         {"2026-05-24 11:58","BENCH-002","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","Float32","BME280","2.84 ms","18.2 KiB","25.2 KiB","Tamamlandı"},
         {"2026-05-22 18:12","BENCH-003","STM32F407 Discovery","STM32F407VG","Cortex-M4","har_mlp","INT8","MPU6050","8.20 ms","3.00 KiB","12.4 KiB","Tamamlandı"},
-        {"2026-05-20 16:40","BENCH-004","STM32N6570-DK","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","PDM_MIC","0.61 ms","22.1 KiB","96.8 KiB","Tamamlandı"},
+        {"2026-05-20 16:40","BENCH-004","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","PDM_MIC","0.61 ms","22.1 KiB","96.8 KiB","Tamamlandı"},
     };
     if (m_analysis->records("benchmark").isEmpty()) {
         for (const auto &r : benchRows)
@@ -477,8 +478,11 @@ void Backend::startHardwareSimulation(int intervalMs, double minVal, double maxV
     m_hwSimMin = minVal;
     m_hwSimMax = maxVal;
     m_hwSimSeed = 1234;
+    m_hwSimSentCount = 0;
+    m_hwSimResponseCount = 0;
     m_hwSimRunning = true;
-    appendMonitorLine(QString("[hw-sim] INFER simülasyonu başladı · aralık %1 ms").arg(intervalMs), "cmd");
+    appendMonitorLine(QString("[hw-sim] Donanim simulasyonu basladi · aralik %1 ms").arg(intervalMs), "warn");
+    appendMonitorLine("[hw-sim] Sentetik sensor verisi karta gonderilecek. Yanit bekleniyor...", "info");
     if (!m_state->isConnected())
         m_serial->connectToPort(m_state->activePort(), m_state->activeBaud());
     m_hwSimTimer->start(qMax(50, intervalMs));
@@ -490,32 +494,84 @@ void Backend::stopHardwareSimulation()
     if (!m_hwSimRunning) return;
     m_hwSimTimer->stop();
     m_hwSimRunning = false;
-    appendMonitorLine("[hw-sim] INFER simülasyonu durduruldu.", "warn");
+    appendMonitorLine(QString("[hw-sim] Simulasyon durduruldu · gonderilen=%1  yanit=%2")
+                          .arg(m_hwSimSentCount).arg(m_hwSimResponseCount), "warn");
     emit simRunningChanged();
 }
 
 void Backend::tickHardwareSimulation()
 {
     if (!m_serial || !m_state || !m_state->isConnected()) {
-        appendMonitorLine("[hw-sim] UART bağlantısı yok; durduruldu.", "err");
+        appendMonitorLine("[hw-sim] UART baglantisi yok; durduruldu.", "err");
         stopHardwareSimulation();
         return;
     }
 
-    const double lo = qMin(m_hwSimMin, m_hwSimMax);
-    const double hi = qMax(m_hwSimMin, m_hwSimMax);
-    QStringList values;
-    QStringList displayValues;
-    for (int i = 0; i < 3; ++i) {
-        m_hwSimSeed = (m_hwSimSeed * 1664525u) + 1013904223u;
-        const double unit = static_cast<double>(m_hwSimSeed & 0x00FFFFFFu) / 16777215.0;
-        const double value = lo + unit * (hi - lo);
-        values << QString::number(qRound(value * 1000.0));
-        displayValues << QString::number(value, 'f', 3);
+    // Sensor profile: label list + default value ranges
+    struct SensorProfile {
+        QStringList labels;
+        double defaultLo;
+        double defaultHi;
+    };
+
+    const QString sensor = m_state ? m_state->lastSensor() : QString();
+    SensorProfile profile;
+    if (sensor == "BME280") {
+        // temperature (°C), pressure (hPa normalized 0-1), humidity (%)
+        profile.labels    = {"temp", "press", "hum"};
+        profile.defaultLo = 0.0;
+        profile.defaultHi = 1.0;
+    } else if (sensor == "PDM_MIC") {
+        // 16 raw audio samples
+        profile.labels.clear();
+        for (int i = 0; i < 16; ++i)
+            profile.labels << QString("s%1").arg(i);
+        profile.defaultLo = -1.0;
+        profile.defaultHi =  1.0;
+    } else {
+        // MPU6050 default: 3-axis accel + 3-axis gyro
+        profile.labels    = {"ax", "ay", "az", "gx", "gy", "gz"};
+        profile.defaultLo = -2.0;
+        profile.defaultHi =  2.0;
     }
+
+    const double lo = (m_hwSimMin != 0.0 || m_hwSimMax != 1.0)
+                      ? qMin(m_hwSimMin, m_hwSimMax)
+                      : profile.defaultLo;
+    const double hi = (m_hwSimMin != 0.0 || m_hwSimMax != 1.0)
+                      ? qMax(m_hwSimMin, m_hwSimMax)
+                      : profile.defaultHi;
+
+    QStringList values;
+    QStringList displayParts;
+    for (int i = 0; i < profile.labels.size(); ++i) {
+        m_hwSimSeed = (m_hwSimSeed * 1664525u) + 1013904223u;
+        const double unit  = static_cast<double>(m_hwSimSeed & 0x00FFFFFFu) / 16777215.0;
+        const double value = lo + unit * (hi - lo);
+        values      << QString::number(qRound(value * 1000.0));
+        displayParts << QString("%1=%2").arg(profile.labels[i],
+                                             QString::number(value, 'f', 3));
+    }
+
     const QByteArray command = QString("INFER %1").arg(values.join(' ')).toUtf8();
-    appendMonitorLine(QString("[hw-sim] INFER %1").arg(displayValues.join(", ")), "cmd");
+    ++m_hwSimSentCount;
+
+    // For PDM_MIC condense the display (16 values is too long)
+    const QString displayLine = (profile.labels.size() > 6)
+        ? QString("sim sensor  [%1 deger]  %2=%3 ... %4=%5")
+              .arg(profile.labels.size())
+              .arg(profile.labels.first(), displayParts.first().section('=', 1))
+              .arg(profile.labels.last(),  displayParts.last().section('=', 1))
+        : QString("sim sensor  %1").arg(displayParts.join("  "));
+
+    appendMonitorLine(displayLine, "warn");
     m_serial->writeLine(command);
+
+    // Warn after 6 frames with no board response
+    if (m_hwSimSentCount >= 6 && m_hwSimResponseCount == 0) {
+        appendMonitorLine("Karttan INFER yaniti gelmedi. Pipeline Wizard ile firmware'i yeniden uretip flash ettiginizden emin olun.", "err");
+        m_hwSimSentCount = 0;
+    }
 }
 
 bool Backend::saveMonitorLog(const QString &path) const
@@ -534,13 +590,25 @@ bool Backend::saveMonitorLog(const QString &path) const
     return true;
 }
 
+QStringList Backend::simLabelsForSensor() const
+{
+    const QString sensor = m_state ? m_state->lastSensor() : QString();
+    if (sensor == "BME280")
+        return {"normal", "anomaly"};
+    if (sensor == "PDM_MIC")
+        return {"yes", "no", "up", "down", "left", "right", "on", "off", "stop", "go"};
+    // MPU6050 (default / HAR)
+    return {"walking", "running", "idle", "standing", "stairs"};
+}
+
 void Backend::tickSimulation()
 {
     ++m_simUptime;
     auto *rng = QRandomGenerator::global();
 
     // Build a fake §{JSON}\r\n inference packet and feed it to PacketParser.
-    const QString label = m_simLabels.at(rng->bounded(m_simLabels.size()));
+    const QStringList labels = simLabelsForSensor();
+    const QString label = labels.at(rng->bounded(labels.size()));
     const int infUs     = 800 + rng->bounded(500);
     const int accPct    = 88 + rng->bounded(12);
     const int ramB      = 6000 + rng->bounded(1000);
@@ -561,9 +629,27 @@ void Backend::tickSimulation()
         "\xC2\xA7" + QJsonDocument(obj).toJson(QJsonDocument::Compact) + "\r\n";
     m_simParser->feed(packet);
 
-    // Log to monitor
+    // Every 5 ticks also generate a sys packet so the Sistem card updates.
+    if (m_simUptime % 5 == 0) {
+        QJsonObject sysObj;
+        sysObj["t"]          = "sys";
+        sysObj["uptime_s"]   = static_cast<int>(m_simUptime);
+        sysObj["temp_c"]     = 35 + static_cast<int>(rng->bounded(10u));
+        sysObj["free_ram_b"] = 180000 + static_cast<int>(rng->bounded(10000u));
+        sysObj["state"]      = "running";
+        const QByteArray sysPacket =
+            "\xC2\xA7" + QJsonDocument(sysObj).toJson(QJsonDocument::Compact) + "\r\n";
+        m_simParser->feed(sysPacket);
+    }
+
+    // Log to monitor (same format as real board inference)
     appendMonitorLine(
-        QString("[inf] %1 us · acc %2%% · %3").arg(infUs).arg(accPct).arg(label),
+        QString("§ inf  %1  %2 ms  %3 KB  acc=%4%  label=%5")
+            .arg(model)
+            .arg(infUs / 1000.0, 0, 'f', 1)
+            .arg(ramB  / 1024.0, 0, 'f', 1)
+            .arg(accPct)
+            .arg(label),
         "ok");
 
     // Persist to analysis (simulation kind)
@@ -754,8 +840,12 @@ void Backend::runPipeline(const QVariantMap &config)
         m_pipelineStage = success ? "Pipeline tamamlandı" : "Pipeline başarısız";
         if (success) {
             addCompiledRecord(m_lastPipelineConfig);
-            if (m_state)
-                m_state->setLastModel(m_lastPipelineConfig.modelName, m_state->lastInferenceMs(), m_state->lastAccuracy());
+            if (m_state) {
+                m_state->setLastModel(m_lastPipelineConfig.modelName,
+                                      m_state->lastInferenceMs(), m_state->lastAccuracy());
+                if (!m_lastPipelineConfig.sensorType.isEmpty())
+                    m_state->setLastSensor(m_lastPipelineConfig.sensorType);
+            }
         }
         QVariantMap artifact;
         artifact["modelName"] = m_lastPipelineConfig.modelName;
@@ -1163,6 +1253,14 @@ void Backend::wireAnalysis()
                         d.inf_us / 1000.0, static_cast<quint8>(d.acc_pct),
                         d.ram_b / 1024.0, d.label);
             });
+
+    connect(m_simParser, &PacketParser::sysReceived, this,
+            [this](const SysData &s) {
+                if (m_state)
+                    m_state->setSystemMetrics(static_cast<int>(s.uptime_s),
+                                              s.temp_c,
+                                              s.free_ram_b / 1024.0);
+            });
 }
 
 // ── Serial → AppState + monitor wiring ──────────────────────────────────────
@@ -1183,10 +1281,14 @@ void Backend::wireSerial()
 
     connect(m_serial, &SerialManager::bootReceived, this,
             [this](const BootData &boot) {
-                appendMonitorLine(QString("[boot] %1 · %2 · %3")
-                                      .arg(boot.card, boot.sdk).arg(boot.baud), "cmd");
+                appendMonitorLine(QString("§ boot  card=%1  sdk=%2  model=%3  baud=%4")
+                                      .arg(boot.card.isEmpty()  ? "--" : boot.card)
+                                      .arg(boot.sdk.isEmpty()   ? "--" : boot.sdk)
+                                      .arg(boot.model.isEmpty() ? "--" : boot.model)
+                                      .arg(boot.baud), "ok");
                 if (m_state) {
-                    if (!boot.model.isEmpty()) m_state->setLastModel(boot.model, 0.0, 0);
+                    if (!boot.model.isEmpty())  m_state->setLastModel(boot.model, 0.0, 0);
+                    if (!boot.sensor.isEmpty()) m_state->setLastSensor(boot.sensor);
                     if (boot.baud > 0) m_state->setActiveBaud(static_cast<qint32>(boot.baud));
                     if (!boot.card.isEmpty()) {
                         BoardInfo board = BoardPresets::find(boot.card);
@@ -1204,8 +1306,13 @@ void Backend::wireSerial()
 
     connect(m_serial, &SerialManager::inferenceReceived, this,
             [this](const InferenceData &d) {
-                appendMonitorLine(QString("[inf] %1 us · acc %2%% · %3")
-                                      .arg(d.inf_us).arg(d.acc_pct).arg(d.label), "ok");
+                if (m_hwSimRunning) ++m_hwSimResponseCount;
+                appendMonitorLine(QString("§ inf  %1  %2 ms  %3 KB  acc=%4%  label=%5")
+                                      .arg(d.model.isEmpty() ? "--" : d.model)
+                                      .arg(d.inf_us / 1000.0, 0, 'f', 1)
+                                      .arg(d.ram_b  / 1024.0, 0, 'f', 1)
+                                      .arg(d.acc_pct)
+                                      .arg(d.label.isEmpty() ? "--" : d.label), "cmd");
                 if (m_state)
                     m_state->setLiveMetrics(
                         d.model.isEmpty() ? m_state->lastModelName() : d.model,
@@ -1215,8 +1322,13 @@ void Backend::wireSerial()
 
     connect(m_serial, &SerialManager::sensorReceived, this,
             [this](const SensorData &d) {
-                appendMonitorLine(QString("[sensor] %1 · %2 · acc %3%% · %4")
-                                      .arg(d.sensor, d.model).arg(d.acc_pct).arg(d.label), "ok");
+                const QString valStr = d.values.isEmpty() ? "--" : d.values.join(", ");
+                appendMonitorLine(QString("§ sensor  %1  model=%2  values=[%3]  %4%  label=%5")
+                                      .arg(d.sensor.isEmpty() ? "--" : d.sensor)
+                                      .arg(d.model.isEmpty()  ? "--" : d.model)
+                                      .arg(valStr)
+                                      .arg(d.acc_pct)
+                                      .arg(d.label.isEmpty()  ? "--" : d.label), "info");
                 if (m_state && (d.inf_us > 0 || d.ram_b > 0 || !d.label.isEmpty())) {
                     m_state->setLiveMetrics(
                         d.model.isEmpty() ? m_state->lastModelName() : d.model,
@@ -1227,8 +1339,11 @@ void Backend::wireSerial()
 
     connect(m_serial, &SerialManager::sysReceived, this,
             [this](const SysData &s) {
-                appendMonitorLine(QString("[sys] uptime %1s · %2°C · %3")
-                                      .arg(s.uptime_s).arg(s.temp_c).arg(s.state), "info");
+                appendMonitorLine(QString("§ sys  uptime=%1s  temp=%2C  free=%3 KB  state=%4")
+                                      .arg(s.uptime_s)
+                                      .arg(s.temp_c)
+                                      .arg(s.free_ram_b / 1024)
+                                      .arg(s.state.isEmpty() ? "--" : s.state), "info");
                 if (m_state)
                     m_state->setSystemMetrics(static_cast<int>(s.uptime_s), s.temp_c, s.free_ram_b / 1024.0);
             });

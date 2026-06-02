@@ -132,15 +132,31 @@ Item {
                         anchors.fill: parent
                         spacing: Theme.spacingXs
                         Repeater {
-                            model: [
-                                ["Uptime", (typeof appState !== "undefined" && appState && appState.lastUptime > 0) ? (appState.lastUptime + " s") : "-"],
-                                ["Sicaklik", (typeof appState !== "undefined" && appState && appState.lastTempC > 0) ? (appState.lastTempC.toFixed(1) + " C") : "-"],
-                                ["Free RAM", (typeof appState !== "undefined" && appState && appState.lastFreeRamKb > 0) ? (appState.lastFreeRamKb.toFixed(1) + " KB") : "-"]
-                            ]
+                            model: ["Uptime", "Sicaklik", "Free RAM"]
                             delegate: RowLayout {
                                 Layout.fillWidth: true
-                                Text { text: modelData[0]; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; Layout.preferredWidth: 82 }
-                                Text { text: modelData[1]; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold; Layout.fillWidth: true }
+                                Text {
+                                    text: modelData
+                                    color: Theme.textMuted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontXs
+                                    Layout.preferredWidth: 82
+                                }
+                                Text {
+                                    text: {
+                                        if (typeof appState === "undefined" || !appState) return "-"
+                                        if (modelData === "Uptime")
+                                            return appState.lastUptime > 0 ? (appState.lastUptime + " s") : "-"
+                                        if (modelData === "Sicaklik")
+                                            return appState.lastTempC > 0 ? (appState.lastTempC.toFixed(1) + " C") : "-"
+                                        return appState.lastFreeRamKb > 0 ? (appState.lastFreeRamKb.toFixed(1) + " KB") : "-"
+                                    }
+                                    color: Theme.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontXs
+                                    font.weight: Font.DemiBold
+                                    Layout.fillWidth: true
+                                }
                             }
                         }
                     }
@@ -154,6 +170,37 @@ Item {
                     ColumnLayout {
                         anchors.fill: parent
                         spacing: Theme.spacingMd
+
+                        // Active model + sensor info row
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingXs
+                            Text {
+                                text: "Model:"
+                                color: Theme.textMuted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontXs
+                                font.weight: Font.DemiBold
+                            }
+                            Text {
+                                text: (typeof appState !== "undefined" && appState && appState.lastModel.length > 0)
+                                      ? appState.lastModel : "-"
+                                color: Theme.primary
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontXs
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                            Text {
+                                text: (typeof appState !== "undefined" && appState && appState.lastSensor.length > 0)
+                                      ? appState.lastSensor : "MPU6050"
+                                color: Theme.success
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontXs
+                                font.weight: Font.DemiBold
+                            }
+                        }
 
                         Text { text: "Aralik (ms)"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
                         TextField {

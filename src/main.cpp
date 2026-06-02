@@ -33,6 +33,13 @@ int main(int argc, char *argv[])
     auto *flash     = new FlashManager(&app);
     auto *analysis  = new AnalysisManager(&app);
 
+    // Restore persisted baud rate so AppState starts with the last-used value.
+    {
+        AppSettings settings;
+        const int lastBaud = settings.lastBaud(); // defaults to 115200
+        appState->setActiveBaud(static_cast<qint32>(lastBaud));
+    }
+
     // Resolve programmer CLI path (same bootstrap as the old MainWindow).
     {
         AppSettings settings;

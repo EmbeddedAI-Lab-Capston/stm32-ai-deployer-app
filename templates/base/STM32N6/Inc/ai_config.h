@@ -6,7 +6,29 @@
 #define AI_SENSOR_TYPE     "{{SENSOR_TYPE}}"
 #define AI_TARGET_BOARD    "{{BOARD_NAME}}"
 
-/* STM32N6 has 4 MB RAM and integrated NPU */
+#if __has_include("network.h")
+#include "network.h"
+#endif
+
+#if __has_include("network_data_params.h")
+#include "network_data_params.h"
+#endif
+
+/* Defaults are replaced by generated network macros when available. */
+#ifdef AI_NETWORK_DATA_ACTIVATIONS_SIZE
+#define AI_ACTIVATIONS_SIZE   AI_NETWORK_DATA_ACTIVATIONS_SIZE
+#else
 #define AI_ACTIVATIONS_SIZE   (512 * 1024)
+#endif
+
+#ifdef AI_NETWORK_IN_1_SIZE
+#define AI_INPUT_SIZE         AI_NETWORK_IN_1_SIZE
+#else
 #define AI_INPUT_SIZE         (256)
-#define AI_OUTPUT_CLASSES     (35)   /* KWS: 35 keyword classes */
+#endif
+
+#ifdef AI_NETWORK_OUT_1_SIZE
+#define AI_OUTPUT_CLASSES     AI_NETWORK_OUT_1_SIZE
+#else
+#define AI_OUTPUT_CLASSES     (4)
+#endif

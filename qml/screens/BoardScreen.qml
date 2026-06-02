@@ -15,7 +15,11 @@ Item {
     property var _portEntries: [{ label: "COM5", portName: "COM5", isStlink: false }]
     property var _customBoards: []
     property int _portIdx: 0
-    property int _baudIdx: 0
+    property int _baudIdx: {
+        var baud = (typeof appState !== "undefined" && appState) ? appState.activeBaud : 115200
+        var idx = _baudList.indexOf(String(baud))
+        return idx >= 0 ? idx : 1
+    }
 
     readonly property var _baudList: ["9600", "115200", "230400", "460800", "921600"]
 
@@ -23,7 +27,8 @@ Item {
     readonly property var _basePresets: [
         { name: "STM32F4", spec: "1024 KB · 192 KB · 168 MHz", target: "MLP INT8" },
         { name: "STM32H7", spec: "2048 KB · 1024 KB · 480 MHz", target: "1D CNN INT8" },
-        { name: "STM32N6", spec: "4096 KB · 4096 KB · 800 MHz", target: "LSTM / KWS" }
+        { name: "STM32N6", spec: "4096 KB · 4096 KB · 800 MHz", target: "LSTM / KWS" },
+        { name: "NUCLEO-N657X0-Q", spec: "4096 KB · 4096 KB · 800 MHz", target: "Cortex-M55 / NPU" }
     ]
 
     function boardPresets() {

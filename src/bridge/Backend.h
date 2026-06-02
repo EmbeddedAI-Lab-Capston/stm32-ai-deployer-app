@@ -201,7 +201,8 @@ private:
     double        m_simMin     = 0.0;
     double        m_simMax     = 1.0;
     quint32       m_simUptime  = 0;
-    QStringList   m_simLabels  = {"normal", "anomaly", "walking", "running", "idle"};
+    // Returns label list appropriate for the currently active sensor type.
+    QStringList simLabelsForSensor() const;
 
     // flash
     QVariantList m_flashLines;
@@ -224,11 +225,13 @@ private:
     QTimer      *m_benchmarkTimeout = nullptr;
 
     // hardware simulation
-    QTimer *m_hwSimTimer = nullptr;
-    bool    m_hwSimRunning = false;
-    double  m_hwSimMin = 0.0;
-    double  m_hwSimMax = 1.0;
-    quint32 m_hwSimSeed = 1234;
+    QTimer  *m_hwSimTimer = nullptr;
+    bool     m_hwSimRunning = false;
+    double   m_hwSimMin = 0.0;
+    double   m_hwSimMax = 1.0;
+    quint32  m_hwSimSeed = 1234;
+    quint32  m_hwSimSentCount = 0;
+    quint32  m_hwSimResponseCount = 0;
 
     // ST-Link probe
     QProcess *m_stlinkProbe = nullptr;

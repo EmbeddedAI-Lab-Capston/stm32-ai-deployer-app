@@ -31,6 +31,7 @@ class AppState : public QObject
     Q_PROPERTY(double lastTempC     READ lastTempC      NOTIFY systemMetricsChanged)
     Q_PROPERTY(int lastUptime       READ lastUptime     NOTIFY systemMetricsChanged)
     Q_PROPERTY(double lastFreeRamKb READ lastFreeRamKb  NOTIFY systemMetricsChanged)
+    Q_PROPERTY(QString lastSensor   READ lastSensor     NOTIFY lastSensorChanged)
     Q_PROPERTY(QVariantList boardInfoRows READ boardInfoRows NOTIFY activeBoardChanged)
 
 public:
@@ -50,6 +51,7 @@ public:
     double     lastTempC()         const { return m_lastTempC; }
     int        lastUptime()        const { return m_lastUptime; }
     double     lastFreeRamKb()     const { return m_lastFreeRamKb; }
+    QString    lastSensor()        const { return m_lastSensor; }
 
     // QML helper getters (flat types)
     QString boardName()    const { return m_activeBoard.name; }
@@ -75,6 +77,7 @@ public slots:
     void setLiveMetrics(const QString &model, double infMs, quint8 acc,
                         double ramKb, const QString &label);
     void setSystemMetrics(int uptime, double tempC, double freeRamKb);
+    void setLastSensor(const QString &sensor);
 
 signals:
     void activeBoardChanged(const BoardInfo &board);
@@ -84,6 +87,7 @@ signals:
     void lastModelChanged(const QString &name, double infMs, quint8 acc);
     void liveMetricsChanged();
     void systemMetricsChanged();
+    void lastSensorChanged();
 
 private:
     BoardInfo  m_activeBoard      { BoardPresets::defaultBoard() };
@@ -99,4 +103,5 @@ private:
     double     m_lastTempC        = 0.0;
     int        m_lastUptime       = 0;
     double     m_lastFreeRamKb    = 0.0;
+    QString    m_lastSensor;
 };

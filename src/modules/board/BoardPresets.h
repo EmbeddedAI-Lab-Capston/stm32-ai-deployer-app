@@ -37,6 +37,7 @@ namespace BoardPresets
             { "STM32F4", 1024,  192,  168, true },
             { "STM32H7", 2048, 1024,  480, true },
             { "STM32N6", 4096, 4096,  800, true },
+            { "NUCLEO-N657X0-Q", 4096, 4096, 800, true },
         };
     }
 
@@ -44,6 +45,8 @@ namespace BoardPresets
     {
         const QString needle = name.trimmed();
         const QString upper = needle.toUpper();
+        if (upper.contains("NUCLEO-N657X0-Q"))
+            return { "NUCLEO-N657X0-Q", 4096, 4096, 800, true };
         if (upper.contains("N657") || upper.contains("N655") ||
             upper.contains("STM32N6") || upper.contains("STM32N") ||
             upper.contains("NUCLEO-N6") || upper.contains("CORTEX-M55") ||

@@ -17,6 +17,7 @@
 #include "network_data_params.h"
 
 #include <string.h>
+#include <stdio.h>
 
 /* Static activation buffer — size comes from AI_ACTIVATIONS_SIZE in ai_config.h */
 static uint8_t ai_activations[AI_ACTIVATIONS_SIZE] __attribute__((aligned(4)));
@@ -99,10 +100,12 @@ uint32_t AI_Runner_Infer(const float *input, AI_InferenceResult *result)
 
     result->class_id       = best;
     result->confidence_pct = (uint8_t)confidence;
-    if (best < AI_OUTPUT_CLASSES)
+    if (best < (sizeof(CLASS_LABELS) / sizeof(CLASS_LABELS[0]))) {
         strncpy(result->label, CLASS_LABELS[best], sizeof(result->label) - 1);
-    else
-        strncpy(result->label, "unknown", sizeof(result->label) - 1);
+        result->label[sizeof(result->label) - 1] = '\0';
+    } else {
+        snprintf(result->label, sizeof(result->label), "class_%u", (unsigned)best);
+    }
 
     return elapsed_us;
 }

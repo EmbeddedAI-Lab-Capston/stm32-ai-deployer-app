@@ -70,3 +70,5 @@ TODO.md
 
 # Local QML preview junction (STM32AiDeployer -> qml)
 STM32AiDeployer/
+*.tflite
+Models/

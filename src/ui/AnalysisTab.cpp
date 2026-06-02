@@ -246,7 +246,7 @@ void AnalysisTab::setupUi()
 
     auto *toolbar = new QHBoxLayout;
     m_boardFilter = new QComboBox(this);
-    m_boardFilter->addItems({tr("Tüm Kartlar"), "NUCLEO-H723ZG", "STM32F407 Discovery", "STM32N6570-DK"});
+    m_boardFilter->addItems({tr("Tüm Kartlar"), "NUCLEO-H723ZG", "STM32F407 Discovery", "NUCLEO-N657X0-Q"});
     m_modelFilter = new QComboBox(this);
     m_modelFilter->addItems({tr("Tüm Model Türleri"), "INT8", "Float32", "Dynamic Q"});
     auto *refreshBtn = new QPushButton(tr("Yenile"), this);
@@ -526,7 +526,7 @@ void AnalysisTab::populateBenchmarkData(QTableWidget *table)
         {"2026-05-24 12:41", "BENCH-001", "NUCLEO-H723ZG", "STM32H723ZG", "Cortex-M7", "anomaly_cnn", "INT8", "BME280", "0.934 ms", "6.44 KiB", "6.70 KiB", "Tamamlandı"},
         {"2026-05-24 11:58", "BENCH-002", "NUCLEO-H723ZG", "STM32H723ZG", "Cortex-M7", "anomaly_cnn", "Float32", "BME280", "2.84 ms", "18.2 KiB", "25.2 KiB", "Tamamlandı"},
         {"2026-05-22 18:12", "BENCH-003", "STM32F407 Discovery", "STM32F407VG", "Cortex-M4", "har_mlp", "INT8", "MPU6050", "8.20 ms", "3.00 KiB", "12.4 KiB", "Tamamlandı"},
-        {"2026-05-20 16:40", "BENCH-004", "STM32N6570-DK", "STM32N657", "Cortex-M55/NPU", "kws_lstm", "INT8", "PDM_MIC", "0.61 ms", "22.1 KiB", "96.8 KiB", "Tamamlandı"},
+        {"2026-05-20 16:40", "BENCH-004", "NUCLEO-N657X0-Q", "STM32N657", "Cortex-M55/NPU", "kws_lstm", "INT8", "PDM_MIC", "0.61 ms", "22.1 KiB", "96.8 KiB", "Tamamlandı"},
     };
     table->setRowCount(rows.size());
     for (int row = 0; row < rows.size(); ++row)
@@ -540,7 +540,7 @@ void AnalysisTab::populateSimulationData(QTableWidget *table)
         {"2026-05-24 13:14", "SIM-001", "NUCLEO-H723ZG", "STM32H723ZG", "Cortex-M7", "anomaly_cnn", "INT8", "BME280", "0.941 ms", "6.44 KiB", "6.70 KiB", "normal 92%"},
         {"2026-05-24 13:02", "SIM-002", "NUCLEO-H723ZG", "STM32H723ZG", "Cortex-M7", "anomaly_cnn", "INT8", "BME280", "0.948 ms", "6.44 KiB", "6.70 KiB", "anomaly 88%"},
         {"2026-05-23 21:18", "SIM-003", "STM32F407 Discovery", "STM32F407VG", "Cortex-M4", "har_mlp", "INT8", "MPU6050", "8.35 ms", "3.00 KiB", "12.4 KiB", "walking 96%"},
-        {"2026-05-21 15:05", "SIM-004", "STM32N6570-DK", "STM32N657", "Cortex-M55/NPU", "kws_lstm", "INT8", "PDM_MIC", "0.72 ms", "22.1 KiB", "96.8 KiB", "keyword 91%"},
+        {"2026-05-21 15:05", "SIM-004", "NUCLEO-N657X0-Q", "STM32N657", "Cortex-M55/NPU", "kws_lstm", "INT8", "PDM_MIC", "0.72 ms", "22.1 KiB", "96.8 KiB", "keyword 91%"},
     };
     table->setRowCount(rows.size());
     for (int row = 0; row < rows.size(); ++row)
@@ -554,7 +554,7 @@ void AnalysisTab::populateSensorData(QTableWidget *table)
         {"2026-05-24 13:30", "REAL-001", "NUCLEO-H723ZG", "STM32H723ZG", "Cortex-M7", "anomaly_cnn", "INT8", "BME280", "0.956 ms", "6.44 KiB", "6.70 KiB", "normal 90%"},
         {"2026-05-24 13:35", "REAL-002", "NUCLEO-H723ZG", "STM32H723ZG", "Cortex-M7", "anomaly_cnn", "INT8", "BME280", "0.961 ms", "6.44 KiB", "6.70 KiB", "anomaly 84%"},
         {"2026-05-22 10:14", "REAL-003", "STM32F407 Discovery", "STM32F407VG", "Cortex-M4", "har_mlp", "INT8", "MPU6050", "8.62 ms", "3.00 KiB", "12.4 KiB", "standing 93%"},
-        {"2026-05-20 09:44", "REAL-004", "STM32N6570-DK", "STM32N657", "Cortex-M55/NPU", "kws_lstm", "INT8", "PDM_MIC", "0.79 ms", "22.1 KiB", "96.8 KiB", "noise 76%"},
+        {"2026-05-20 09:44", "REAL-004", "NUCLEO-N657X0-Q", "STM32N657", "Cortex-M55/NPU", "kws_lstm", "INT8", "PDM_MIC", "0.79 ms", "22.1 KiB", "96.8 KiB", "noise 76%"},
     };
     table->setRowCount(rows.size());
     for (int row = 0; row < rows.size(); ++row)

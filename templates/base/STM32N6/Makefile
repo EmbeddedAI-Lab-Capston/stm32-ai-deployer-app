@@ -24,6 +24,7 @@ AS  = $(PREFIX)gcc -x assembler-with-cpp
 CP  = $(PREFIX)objcopy
 SZ  = $(PREFIX)size
 HEX = $(CP) -O ihex
+BIN = $(CP) -O binary
 
 # Cortex-M55 with MVE (Helium)
 MCU = -mcpu=cortex-m55 -mthumb -mfpu=auto -mfloat-abi=hard
@@ -37,12 +38,23 @@ C_SOURCES = \
   Src/ai_runner.c \
   Src/uart_report.c \
   Src/network.c \
+  Src/network_data.c \
+  Src/network_data_params.c \
+  Src/system_clock_stub.c \
+  $(CUBE_SDK_PATH)/Drivers/CMSIS/Device/ST/STM32N6xx/Source/Templates/system_stm32n6xx_ns.c \
   $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal.c \
   $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_cortex.c \
   $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_gpio.c \
   $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_rcc.c \
+  $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_rcc_ex.c \
   $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_uart.c \
-  $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_i2c.c
+  $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_uart_ex.c \
+  $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_dma.c \
+  $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_i2c.c \
+  $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_i2c_ex.c \
+  $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_tim.c \
+  $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_pwr.c \
+  $(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_pwr_ex.c
 
 ASM_SOURCES = startup_stm32n6xx.s
 
@@ -51,15 +63,16 @@ C_INCLUDES = \
   -I$(X_CUBE_AI_PATH)/Inc \
   -I$(CUBE_SDK_PATH)/Drivers/STM32N6xx_HAL_Driver/Inc \
   -I$(CUBE_SDK_PATH)/Drivers/CMSIS/Device/ST/STM32N6xx/Include \
+  -I$(CUBE_SDK_PATH)/Drivers/CMSIS/Device/ST/STM32N6xx/Include/Templates \
   -I$(CUBE_SDK_PATH)/Drivers/CMSIS/Include
 
 C_DEFS  = -DUSE_HAL_DRIVER -DSTM32N657xx
 CFLAGS  = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -g
 ASFLAGS = $(MCU) $(OPT) -Wall -fdata-sections -ffunction-sections -g
-LDFLAGS = $(MCU) -specs=nano.specs -TSTM32N6xx_FLASH.ld \
+LDFLAGS = $(MCU) -specs=nano.specs -specs=nosys.specs -TSTM32N6xx_FLASH.ld \
           -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections
 
-all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex
+all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin
 	@echo "Build complete: $(TARGET)"
 
 OBJECTS  = $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o)))
@@ -79,6 +92,9 @@ $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
 
 $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
 	$(HEX) $< $@
+
+$(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
+	$(BIN) $< $@
 
 $(BUILD_DIR):
 	mkdir -p $@

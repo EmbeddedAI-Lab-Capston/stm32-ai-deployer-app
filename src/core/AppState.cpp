@@ -102,3 +102,10 @@ void AppState::setSystemMetrics(int uptime, double tempC, double freeRamKb)
     m_lastFreeRamKb = freeRamKb;
     emit systemMetricsChanged();
 }
+
+void AppState::setLastSensor(const QString &sensor)
+{
+    if (m_lastSensor == sensor) return;
+    m_lastSensor = sensor;
+    emit lastSensorChanged();
+}

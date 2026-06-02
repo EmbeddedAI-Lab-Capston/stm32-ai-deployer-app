@@ -1,9 +1,11 @@
 #include "PipelineRunner.h"
 
 #include <QCoreApplication>
+#include <QByteArray>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QIODevice>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
@@ -40,6 +42,79 @@ static QString boardFamily(const QString &board)
     if (board.contains("N6", Qt::CaseInsensitive))
         return QStringLiteral("N6");
     return QStringLiteral("F4");
+}
+
+static QString templateBoardDir(const QString &board)
+{
+    const QString family = boardFamily(board);
+    if (family == "N6")
+        return QStringLiteral("STM32N6");
+    if (family == "H7")
+        return QStringLiteral("STM32H7");
+    return QStringLiteral("STM32F4");
+}
+
+static bool outputLooksLikeFamily(const QString &output, const QString &family)
+{
+    const QString upper = output.toUpper();
+    if (family == "F4")
+        return upper.contains("STM32F4");
+    if (family == "H7")
+        return upper.contains("STM32H7");
+    if (family == "N6") {
+        return upper.contains("STM32N6")
+               || upper.contains("STM32N65")
+               || upper.contains("N657")
+               || upper.contains("N655")
+               || upper.contains("NUCLEO-N657")
+               || upper.contains("CORTEX-M55");
+    }
+    return false;
+}
+
+static QStringList programmerConnectArgsForBoard(const QString &programmerCliPath,
+                                                 const QString &targetBoard)
+{
+    QStringList args{QStringLiteral("port=SWD")};
+
+    QProcess list;
+    list.start(programmerCliPath, {QStringLiteral("-l")});
+    if (!list.waitForFinished(10000))
+        return args;
+
+    const QString output = QString::fromLocal8Bit(list.readAllStandardOutput()
+                                                  + list.readAllStandardError());
+    const QString family = boardFamily(targetBoard);
+    QString currentSn;
+    QString currentBlock;
+
+    auto flushBlock = [&]() -> QString {
+        if (!currentSn.isEmpty() && outputLooksLikeFamily(currentBlock, family))
+            return currentSn;
+        return {};
+    };
+
+    for (const QString &line : output.split(QRegularExpression("[\\r\\n]+"),
+                                            Qt::SkipEmptyParts)) {
+        const QString trimmed = line.trimmed();
+        if (trimmed.startsWith("ST-LINK SN", Qt::CaseInsensitive)
+            || trimmed.startsWith("STLink SN", Qt::CaseInsensitive)) {
+            const QString found = flushBlock();
+            if (!found.isEmpty()) {
+                args << QStringLiteral("sn=%1").arg(found);
+                return args;
+            }
+            currentSn = trimmed.section(':', 1).trimmed();
+            currentBlock = trimmed + QLatin1Char('\n');
+        } else {
+            currentBlock += trimmed + QLatin1Char('\n');
+        }
+    }
+
+    const QString found = flushBlock();
+    if (!found.isEmpty())
+        args << QStringLiteral("sn=%1").arg(found);
+    return args;
 }
 
 static QStringList requiredTemplateFiles(const QString &board)
@@ -105,6 +180,7 @@ static QString aiMiddlewarePathFromCli(const QString &cliPath)
 
 static bool connectedTargetMatchesBoard(const QString &programmerCliPath,
                                         const QString &targetBoard,
+                                        QStringList &connectArgs,
                                         QString &summary,
                                         QString &errorMessage)
 {
@@ -113,8 +189,13 @@ static bool connectedTargetMatchesBoard(const QString &programmerCliPath,
         return false;
     }
 
+    connectArgs = programmerConnectArgsForBoard(programmerCliPath, targetBoard);
+
+    QStringList args{QStringLiteral("-c")};
+    args += connectArgs;
+
     QProcess probe;
-    probe.start(programmerCliPath, {QStringLiteral("-c"), QStringLiteral("port=SWD")});
+    probe.start(programmerCliPath, args);
     if (!probe.waitForFinished(10000)) {
         probe.kill();
         errorMessage = QStringLiteral("Bagli kart bilgisi okunamadi (timeout).");
@@ -143,21 +224,112 @@ static bool connectedTargetMatchesBoard(const QString &programmerCliPath,
 
     const QString family = boardFamily(targetBoard);
     const QString upper = output.toUpper();
-    bool matched = false;
-    if (family == "F4") {
-        matched = upper.contains("STM32F4");
-    } else if (family == "H7") {
-        matched = upper.contains("STM32H7");
-    } else if (family == "N6") {
-        matched = upper.contains("STM32N6");
-    }
+    const bool matched = outputLooksLikeFamily(output, family);
 
     if (!matched) {
         errorMessage = QStringLiteral("Bagli kart hedef kart ailesiyle uyusmuyor.");
+        if (family == "N6" && (upper.contains("NUCLEO-H")
+                               || upper.contains("STM32H7")
+                               || upper.contains("STM32H72")
+                               || upper.contains("STM32H73"))) {
+            errorMessage += QStringLiteral(
+                "\n  STM32_Programmer_CLI N6 yerine H7 kartini goruyor. "
+                "NUCLEO-H723ZG bagliysa cikarin veya NUCLEO-N657X0-Q'nun ST-LINK USB'sini baglayin.");
+        }
         return false;
     }
 
     return true;
+}
+
+static bool runBlockingTool(const QString &program,
+                            const QStringList &args,
+                            int timeoutMs,
+                            QString &output)
+{
+    QProcess process;
+    process.start(program, args);
+    if (!process.waitForFinished(timeoutMs)) {
+        process.kill();
+        output = QStringLiteral("Timeout: ") + program + QLatin1Char(' ')
+                 + args.join(QLatin1Char(' '));
+        return false;
+    }
+    output = QString::fromLocal8Bit(process.readAllStandardOutput()
+                                    + process.readAllStandardError());
+    return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+}
+
+static quint32 readLe32(const QByteArray &bytes, int offset)
+{
+    if (bytes.size() < offset + 4)
+        return 0;
+    return static_cast<quint8>(bytes.at(offset))
+           | (static_cast<quint8>(bytes.at(offset + 1)) << 8)
+           | (static_cast<quint8>(bytes.at(offset + 2)) << 16)
+           | (static_cast<quint8>(bytes.at(offset + 3)) << 24);
+}
+
+static bool readVectorInfo(const QString &binPath,
+                           quint32 &loadAddress,
+                           quint32 &entryPoint,
+                           QString &errorMessage)
+{
+    QFile file(binPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        errorMessage = QStringLiteral("Binary okunamadi: ") + binPath;
+        return false;
+    }
+    const QByteArray header = file.read(8);
+    if (header.size() < 8) {
+        errorMessage = QStringLiteral("Binary vektor tablosu okunamadi: ") + binPath;
+        return false;
+    }
+    Q_UNUSED(readLe32(header, 0));
+    entryPoint = readLe32(header, 4);
+
+    if (binPath.contains(QStringLiteral("FSBL"), Qt::CaseInsensitive))
+        loadAddress = 0x34180400U;
+    else
+        loadAddress = 0x34000400U;
+    return true;
+}
+
+static QString cubeProgrammerBinDir(const QString &programmerCliPath)
+{
+    return QFileInfo(programmerCliPath).absoluteDir().absolutePath();
+}
+
+static QString signingToolPath(const QString &programmerCliPath)
+{
+    return QDir(cubeProgrammerBinDir(programmerCliPath))
+        .filePath(QStringLiteral("STM32_SigningTool_CLI.exe"));
+}
+
+static QString externalLoaderPath(const QString &programmerCliPath)
+{
+    return QDir(cubeProgrammerBinDir(programmerCliPath))
+        .filePath(QStringLiteral("ExternalLoader/MX25UM51245G_STM32N6570-NUCLEO.stldr"));
+}
+
+static QString cubeIdeCliPath(const QString &gccPath)
+{
+    QString normalized = QDir::fromNativeSeparators(gccPath);
+    const int marker = normalized.indexOf(QStringLiteral("/STM32CubeIDE/"),
+                                          0,
+                                          Qt::CaseInsensitive);
+    if (marker >= 0) {
+        const QString candidate = normalized.left(marker + QStringLiteral("/STM32CubeIDE").size())
+            + QStringLiteral("/stm32cubeidec.exe");
+        if (QFileInfo::exists(candidate))
+            return QDir::toNativeSeparators(candidate);
+    }
+
+    const QString fallback =
+        QStringLiteral("C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/stm32cubeidec.exe");
+    if (QFileInfo::exists(fallback))
+        return QDir::toNativeSeparators(fallback);
+    return {};
 }
 
 PipelineRunner::PipelineRunner(QObject *parent)
@@ -303,7 +475,7 @@ void PipelineRunner::stepPrepare()
     };
 
     const QString tmplBase    = findTemplatesRoot();
-    const QString boardTmpl   = tmplBase + "/base/" + m_config.targetBoard;
+    const QString boardTmpl   = tmplBase + "/base/" + templateBoardDir(m_config.targetBoard);
     const QString sensorTmpl  = tmplBase + "/sensors/" + m_config.sensorType;
     const QString aiGlueDir   = tmplBase + "/ai_glue";
 
@@ -458,6 +630,7 @@ void PipelineRunner::stepBuild()
                 "  Ya da PipelineConfig::cubeSdkPath alanını ayarlayın."));
         return;
     }
+    m_cubeSdkPath = cubeSdkPath;
     emit outputLine(tr("  SDK: ") + cubeSdkPath);
 
     // ── Set up process environment ─────────────────────────────────────────
@@ -536,6 +709,7 @@ void PipelineRunner::stepFlash()
     QString probeError;
     if (!connectedTargetMatchesBoard(m_config.programmerCliPath,
                                      m_config.targetBoard,
+                                     m_programmerConnectArgs,
                                      probeSummary,
                                      probeError)) {
         if (!probeSummary.isEmpty())
@@ -547,6 +721,160 @@ void PipelineRunner::stepFlash()
     }
     if (!probeSummary.isEmpty())
         emit outputLine(tr("  Bagli kart dogrulandi:\n") + probeSummary);
+
+    if (boardFamily(m_config.targetBoard) == QStringLiteral("N6")) {
+        const QString appBinPath = QFileInfo(m_builtElfPath).absoluteDir().filePath(
+            QFileInfo(m_builtElfPath).completeBaseName() + QStringLiteral(".bin"));
+        if (!QFileInfo::exists(appBinPath)) {
+            fail(tr("✗ N6 icin .bin dosyasi uretilemedi: ") + appBinPath);
+            return;
+        }
+
+        const QString signer = signingToolPath(m_config.programmerCliPath);
+        const QString loader = externalLoaderPath(m_config.programmerCliPath);
+        if (!QFileInfo::exists(signer)) {
+            fail(tr("✗ STM32_SigningTool_CLI bulunamadi: ") + signer);
+            return;
+        }
+        if (!QFileInfo::exists(loader)) {
+            fail(tr("✗ NUCLEO-N657 external loader bulunamadi: ") + loader);
+            return;
+        }
+
+        QString output;
+        quint32 loadAddress = 0;
+        quint32 entryPoint = 0;
+        QString err;
+        if (!readVectorInfo(appBinPath, loadAddress, entryPoint, err)) {
+            fail(tr("✗ ") + err);
+            return;
+        }
+
+        const QDir buildDir(QFileInfo(m_builtElfPath).absolutePath());
+        const QString trustedApp = buildDir.filePath(
+            QFileInfo(appBinPath).completeBaseName() + QStringLiteral("-trusted.bin"));
+        QFile::remove(trustedApp);
+
+        emit outputLine(tr("  N6 uygulama imzalaniyor: load=0x%1 entry=0x%2")
+                            .arg(loadAddress, 8, 16, QLatin1Char('0'))
+                            .arg(entryPoint, 8, 16, QLatin1Char('0')));
+        QStringList signAppArgs = {
+            QStringLiteral("-bin"), appBinPath,
+            QStringLiteral("-nk"),
+            QStringLiteral("-la"), QStringLiteral("0x%1").arg(loadAddress, 8, 16, QLatin1Char('0')),
+            QStringLiteral("-ep"), QStringLiteral("0x%1").arg(entryPoint, 8, 16, QLatin1Char('0')),
+            QStringLiteral("-of"), QStringLiteral("0x80000000"),
+            QStringLiteral("-t"), QStringLiteral("fsbl"),
+            QStringLiteral("-o"), trustedApp,
+            QStringLiteral("-hv"), QStringLiteral("2.3"),
+            QStringLiteral("-s"),
+        };
+        if (!runBlockingTool(signer, signAppArgs, 30000, output)) {
+            emit errorLine(output);
+            fail(tr("✗ N6 uygulama imzalama basarisiz."));
+            return;
+        }
+        emit outputLine(output.trimmed());
+        emit progressChanged(86);
+
+        const QString fsblProject = QDir(m_cubeSdkPath).filePath(
+            QStringLiteral("Projects/NUCLEO-N657X0-Q/Templates/Template_FSBL_LRUN/STM32CubeIDE/Boot"));
+        const QString fsblBin = QDir(fsblProject).filePath(
+            QStringLiteral("Debug/Template_LRUN_FSBL.bin"));
+        const QString cubeIdeCli = cubeIdeCliPath(m_config.gccPath);
+        if (!QFileInfo::exists(cubeIdeCli)) {
+            fail(tr("✗ stm32cubeidec.exe bulunamadi. FSBL derlenemiyor."));
+            return;
+        }
+
+        emit outputLine(tr("  N6 FSBL derleniyor..."));
+        const QString fsblWorkspace = QDir(m_config.outputDir).filePath(QStringLiteral("fsbl_workspace"));
+        QDir(fsblWorkspace).removeRecursively();
+        QDir().mkpath(fsblWorkspace);
+        QStringList buildFsblArgs = {
+            QStringLiteral("-nosplash"),
+            QStringLiteral("-application"), QStringLiteral("org.eclipse.cdt.managedbuilder.core.headlessbuild"),
+            QStringLiteral("-data"), QDir::toNativeSeparators(fsblWorkspace),
+            QStringLiteral("-import"), QDir::toNativeSeparators(fsblProject),
+            QStringLiteral("-cleanBuild"), QStringLiteral("Template_LRUN_FSBL/Debug"),
+        };
+        if (!runBlockingTool(cubeIdeCli, buildFsblArgs, 180000, output)) {
+            emit errorLine(output);
+            fail(tr("✗ N6 FSBL derleme basarisiz."));
+            return;
+        }
+        emit outputLine(output.trimmed());
+        if (!QFileInfo::exists(fsblBin)) {
+            fail(tr("✗ FSBL binary bulunamadi: ") + fsblBin);
+            return;
+        }
+        emit progressChanged(90);
+
+        quint32 fsblLoad = 0;
+        quint32 fsblEntry = 0;
+        if (!readVectorInfo(fsblBin, fsblLoad, fsblEntry, err)) {
+            fail(tr("✗ ") + err);
+            return;
+        }
+        const QString trustedFsbl = buildDir.filePath(QStringLiteral("Template_LRUN_FSBL-trusted.bin"));
+        QFile::remove(trustedFsbl);
+
+        emit outputLine(tr("  N6 FSBL imzalaniyor: load=0x%1 entry=0x%2")
+                            .arg(fsblLoad, 8, 16, QLatin1Char('0'))
+                            .arg(fsblEntry, 8, 16, QLatin1Char('0')));
+        QStringList signFsblArgs = {
+            QStringLiteral("-bin"), fsblBin,
+            QStringLiteral("-nk"),
+            QStringLiteral("-la"), QStringLiteral("0x%1").arg(fsblLoad, 8, 16, QLatin1Char('0')),
+            QStringLiteral("-ep"), QStringLiteral("0x%1").arg(fsblEntry, 8, 16, QLatin1Char('0')),
+            QStringLiteral("-of"), QStringLiteral("0x80000000"),
+            QStringLiteral("-t"), QStringLiteral("fsbl"),
+            QStringLiteral("-o"), trustedFsbl,
+            QStringLiteral("-hv"), QStringLiteral("2.3"),
+            QStringLiteral("-s"),
+        };
+        if (!runBlockingTool(signer, signFsblArgs, 30000, output)) {
+            emit errorLine(output);
+            fail(tr("✗ N6 FSBL imzalama basarisiz."));
+            return;
+        }
+        emit outputLine(output.trimmed());
+
+        auto flashTrusted = [&](const QString &file, const QString &address) -> bool {
+            QStringList args{QStringLiteral("-c")};
+            args += m_programmerConnectArgs;
+            args += {
+                QStringLiteral("-el"), loader,
+                QStringLiteral("-d"), file, address,
+                QStringLiteral("-v"),
+            };
+            emit outputLine(QStringLiteral("> STM32_Programmer_CLI ")
+                            + args.join(QLatin1Char(' ')));
+            if (!runBlockingTool(m_config.programmerCliPath, args, 120000, output)) {
+                emit errorLine(output);
+                return false;
+            }
+            emit outputLine(output.trimmed());
+            return true;
+        };
+
+        if (!flashTrusted(trustedApp, QStringLiteral("0x70100000"))) {
+            fail(tr("✗ N6 uygulama external flash yazimi basarisiz."));
+            return;
+        }
+        emit progressChanged(95);
+
+        if (!flashTrusted(trustedFsbl, QStringLiteral("0x70000000"))) {
+            fail(tr("✗ N6 FSBL external flash yazimi basarisiz."));
+            return;
+        }
+
+        m_running = false;
+        emit progressChanged(100);
+        emit outputLine(tr("✓ N6 LRUN flash tamamlandi. BOOT0/BOOT1 external flash konumundaysa reset sonrasi calisir."));
+        emit finished(true);
+        return;
+    }
 
     m_flashRunner = new CliRunner(this);
     m_flashRunner->setCliPath(m_config.programmerCliPath);
@@ -560,11 +888,13 @@ void PipelineRunner::stepFlash()
     connect(m_flashRunner, &CliRunner::finished,
             this, &PipelineRunner::onFlashFinished);
 
-    m_flashRunner->run({
-        QStringLiteral("-c"), QStringLiteral("port=SWD"),
+    QStringList args{QStringLiteral("-c")};
+    args += m_programmerConnectArgs;
+    args += {
         QStringLiteral("-d"), m_builtElfPath,
         QStringLiteral("-rst"),
-    });
+    };
+    m_flashRunner->run(args);
 }
 
 void PipelineRunner::onFlashFinished(bool success, int /*exitCode*/)
