@@ -63,9 +63,11 @@ Item {
 
             ScrollView {
                 id: sideScroll
-                Layout.preferredWidth: 300
+                // Side info panel scales with the window (~36% of width) but
+                // stays within readable bounds; terminal flexes into the rest.
+                Layout.preferredWidth: Math.round(root.width * 0.36)
                 Layout.minimumWidth: 300
-                Layout.maximumWidth: 300
+                Layout.maximumWidth: 460
                 Layout.fillHeight: true
                 contentWidth: availableWidth
                 clip: true
@@ -277,6 +279,8 @@ Item {
                                 text: root._simRunning ? "Calisiyor..." : "Host"
                                 iconText: ">"
                                 enabled: !root._simRunning
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 onClicked: {
                                     if (typeof backend === "undefined" || !backend) return
                                     backend.startSimulation(parseInt(intervalField.text) || 500,
@@ -289,6 +293,8 @@ Item {
                                 iconText: ">"
                                 variant: "secondary"
                                 enabled: !root._simRunning
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 onClicked: {
                                     if (typeof backend === "undefined" || !backend) return
                                     backend.startHardwareSimulation(parseInt(intervalField.text) || 500,
@@ -297,6 +303,8 @@ Item {
                                 }
                             }
                             AppButton {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 text: "Durdur"
                                 iconText: "x"
                                 variant: "danger"
