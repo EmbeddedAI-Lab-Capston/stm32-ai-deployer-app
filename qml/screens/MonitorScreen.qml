@@ -47,11 +47,13 @@ Item {
             Layout.fillHeight: true
             spacing: Theme.spacingMd
 
+            // Terminal expands/shrinks with the window; the info sidebar keeps
+            // a fixed width right beside it.
             Card {
                 title: "Terminal"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.minimumWidth: 360
+                Layout.minimumWidth: 260
 
                 Terminal {
                     anchors.fill: parent
@@ -62,6 +64,8 @@ Item {
             ScrollView {
                 id: sideScroll
                 Layout.preferredWidth: 300
+                Layout.minimumWidth: 300
+                Layout.maximumWidth: 300
                 Layout.fillHeight: true
                 contentWidth: availableWidth
                 clip: true

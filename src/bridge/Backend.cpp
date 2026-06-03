@@ -562,13 +562,19 @@ void Backend::seedAnalysisIfEmpty()
 {
     if (!m_analysis || !m_analysis->isOpen()) return;
 
-    // Benchmark seed rows (matches AnalysisTab's populateBenchmarkData)
+    // Standard rows (benchmark / simulation / sensor share the same 12 columns):
+    // date, session, board, chip, cpu, model, type, sensor, avg, ram, weights, result
     struct SeedRow { const char *date; const char *session; const char *board; const char *chip; const char *cpu; const char *model; const char *type; const char *sensor; const char *avg; const char *ram; const char *weights; const char *result; };
+
     static const SeedRow benchRows[] = {
-        {"2026-05-24 12:41","BENCH-001","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","BME280","0.934 ms","6.44 KiB","6.70 KiB","Tamamlandı"},
-        {"2026-05-24 11:58","BENCH-002","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","Float32","BME280","2.84 ms","18.2 KiB","25.2 KiB","Tamamlandı"},
-        {"2026-05-22 18:12","BENCH-003","STM32F407 Discovery","STM32F407VG","Cortex-M4","har_mlp","INT8","MPU6050","8.20 ms","3.00 KiB","12.4 KiB","Tamamlandı"},
-        {"2026-05-20 16:40","BENCH-004","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","PDM_MIC","0.61 ms","22.1 KiB","96.8 KiB","Tamamlandı"},
+        {"2026-05-28 14:12","BENCH-001","STM32F407 Discovery","STM32F407VG","Cortex-M4","har_mlp","INT8","MPU6050","8.20 ms","3.00 KiB","12.4 KiB","Tamamlandı"},
+        {"2026-05-28 13:40","BENCH-002","STM32F407 Discovery","STM32F407VG","Cortex-M4","vibration_mlp","INT8","MPU6050","6.75 ms","2.60 KiB","9.80 KiB","Tamamlandı"},
+        {"2026-05-27 17:05","BENCH-003","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","BME280","0.934 ms","6.44 KiB","6.70 KiB","Tamamlandı"},
+        {"2026-05-27 16:22","BENCH-004","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","Float32","BME280","2.84 ms","18.2 KiB","25.2 KiB","Tamamlandı"},
+        {"2026-05-26 11:48","BENCH-005","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","motor_fault_cnn","INT8","MPU6050","1.42 ms","9.10 KiB","18.2 KiB","Tamamlandı"},
+        {"2026-05-25 18:31","BENCH-006","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","PDM_MIC","0.61 ms","22.1 KiB","96.8 KiB","Tamamlandı"},
+        {"2026-05-25 18:02","BENCH-007","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","voice_kws","INT8","PDM_MIC","0.48 ms","19.4 KiB","78.2 KiB","Tamamlandı"},
+        {"2026-05-24 09:54","BENCH-008","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","gesture_tcn","Dynamic Q","MPU6050","0.88 ms","14.7 KiB","32.4 KiB","Tamamlandı"},
     };
     if (m_analysis->records("benchmark").isEmpty()) {
         for (const auto &r : benchRows)
@@ -576,9 +582,12 @@ void Backend::seedAnalysisIfEmpty()
     }
 
     static const SeedRow simRows[] = {
-        {"2026-05-23 10:00","SIM-001","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","Simülasyon","0.940 ms","6.44 KiB","--","normal  96%"},
-        {"2026-05-23 10:01","SIM-002","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","Simülasyon","0.951 ms","6.44 KiB","--","anomaly  94%"},
-        {"2026-05-23 10:02","SIM-003","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","Simülasyon","0.921 ms","6.44 KiB","--","normal  98%"},
+        {"2026-05-28 10:15","SIM-101","STM32F407 Discovery","STM32F407VG","Cortex-M4","har_mlp","INT8","Simülasyon","8.18 ms","3.00 KiB","--","avg 94% | label=walking | n=48"},
+        {"2026-05-28 10:31","SIM-102","STM32F407 Discovery","STM32F407VG","Cortex-M4","vibration_mlp","INT8","Simülasyon","6.71 ms","2.60 KiB","--","avg 93% | label=idle | n=36"},
+        {"2026-05-27 15:02","SIM-103","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","Simülasyon","0.94 ms","6.44 KiB","--","avg 97% | label=normal | n=62"},
+        {"2026-05-27 15:20","SIM-104","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","motor_fault_cnn","INT8","Simülasyon","1.40 ms","9.10 KiB","--","avg 91% | label=fault | n=54"},
+        {"2026-05-26 19:44","SIM-105","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","Simülasyon","0.62 ms","22.1 KiB","--","avg 95% | label=yes | n=80"},
+        {"2026-05-26 20:01","SIM-106","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","voice_kws","INT8","Simülasyon","0.49 ms","19.4 KiB","--","avg 89% | label=stop | n=72"},
     };
     if (m_analysis->records("simulation").isEmpty()) {
         for (const auto &r : simRows)
@@ -586,12 +595,30 @@ void Backend::seedAnalysisIfEmpty()
     }
 
     static const SeedRow sensorRows[] = {
-        {"2026-05-22 09:15","REAL-LIVE-1","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","BME280","0.934 ms","6.44 KiB","--","normal  90%"},
-        {"2026-05-22 09:32","REAL-LIVE-2","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","BME280","0.941 ms","6.44 KiB","--","anomaly  88%"},
+        {"2026-05-28 09:15","REAL-201","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","BME280","0.934 ms","6.44 KiB","--","normal  90%"},
+        {"2026-05-28 09:32","REAL-202","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","BME280","0.941 ms","6.44 KiB","--","anomaly  88%"},
+        {"2026-05-27 14:08","REAL-203","STM32F407 Discovery","STM32F407VG","Cortex-M4","har_mlp","INT8","MPU6050","8.22 ms","3.00 KiB","--","walking  92%"},
+        {"2026-05-26 16:50","REAL-204","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","PDM_MIC","0.63 ms","22.1 KiB","--","yes  96%"},
+        {"2026-05-25 12:37","REAL-205","STM32F407 Discovery","STM32F407VG","Cortex-M4","vibration_mlp","INT8","MPU6050","6.80 ms","2.60 KiB","--","running  87%"},
     };
     if (m_analysis->records("sensor").isEmpty()) {
         for (const auto &r : sensorRows)
             m_analysis->addRecord("sensor", {r.date,r.session,r.board,r.chip,r.cpu,r.model,r.type,r.sensor,r.avg,r.ram,r.weights,r.result});
+    }
+
+    // Compiled models use a different 12-column layout:
+    // date, model, type, board, chip, sensor, input, params, macc, weights, firmware, status
+    struct CompiledSeed { const char *date; const char *model; const char *type; const char *board; const char *chip; const char *sensor; const char *input; const char *params; const char *macc; const char *weights; const char *firmware; const char *status; };
+    static const CompiledSeed compiledRows[] = {
+        {"2026-05-27 17:10","anomaly_cnn","INT8","NUCLEO-H723ZG","STM32H723ZG","BME280","1x128x3","12.4 K","0.9 M","6.70 KiB","182.4 KiB","Arşivlendi"},
+        {"2026-05-28 14:18","har_mlp","INT8","STM32F407 Discovery","STM32F407VG","MPU6050","1x100x6","8.2 K","0.4 M","12.4 KiB","96.2 KiB","Arşivlendi"},
+        {"2026-05-25 18:36","kws_lstm","INT8","NUCLEO-N657X0-Q","STM32N657","PDM_MIC","1x16000","84 K","12.6 M","96.8 KiB","412.6 KiB","Arşivlendi"},
+        {"2026-05-26 11:55","motor_fault_cnn","INT8","NUCLEO-H723ZG","STM32H723ZG","MPU6050","1x256x6","18.7 K","1.8 M","18.2 KiB","201.0 KiB","Derlendi"},
+        {"2026-05-24 10:02","gesture_tcn","Dynamic Q","NUCLEO-N657X0-Q","STM32N657","MPU6050","1x128x6","26.3 K","3.1 M","32.4 KiB","236.8 KiB","Arşivlendi"},
+    };
+    if (m_analysis->records("compiled").isEmpty()) {
+        for (const auto &r : compiledRows)
+            m_analysis->addRecord("compiled", {r.date,r.model,r.type,r.board,r.chip,r.sensor,r.input,r.params,r.macc,r.weights,r.firmware,r.status});
     }
 
     emit analysisChanged();
