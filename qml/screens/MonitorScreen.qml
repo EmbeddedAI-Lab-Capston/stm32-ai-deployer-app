@@ -59,9 +59,17 @@ Item {
                 }
             }
 
-            ColumnLayout {
+            ScrollView {
+                id: sideScroll
                 Layout.preferredWidth: 300
                 Layout.fillHeight: true
+                contentWidth: availableWidth
+                clip: true
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                ColumnLayout {
+                width: sideScroll.availableWidth
                 spacing: Theme.spacingMd
 
                 Repeater {
@@ -165,7 +173,7 @@ Item {
                 Card {
                     title: "Simulasyon"
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.preferredHeight: 290
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -299,6 +307,7 @@ Item {
 
                         Item { Layout.fillHeight: true }
                     }
+                }
                 }
             }
         }

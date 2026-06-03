@@ -622,6 +622,13 @@ void Backend::startSimulation(int intervalMs, double minVal, double maxVal)
     m_simMin     = minVal;
     m_simMax     = maxVal;
     m_simUptime  = 0;
+    m_simSampleCount = 0;
+    m_simTotalInfUs  = 0;
+    m_simTotalRamB   = 0;
+    m_simTotalAcc    = 0;
+    m_simLastLabel.clear();
+    m_simLastModel.clear();
+    m_simLastCard.clear();
     m_simRunning = true;
     emit simRunningChanged();
     appendMonitorLine(QString("[sim] Simülasyon başladı · aralık %1 ms").arg(intervalMs), "cmd");
@@ -635,6 +642,38 @@ void Backend::stopSimulation()
     m_simRunning = false;
     emit simRunningChanged();
     appendMonitorLine("[sim] Simülasyon durduruldu.", "warn");
+
+    // Persist one averaged record for the whole session (not per-tick).
+    if (m_analysis && m_simSampleCount > 0) {
+        const double avgInfUs = static_cast<double>(m_simTotalInfUs) / m_simSampleCount;
+        const double avgRamB  = static_cast<double>(m_simTotalRamB)  / m_simSampleCount;
+        const int    avgAcc   = static_cast<int>(m_simTotalAcc / m_simSampleCount);
+
+        const QString chipName = m_state ? m_state->activeBoard().deviceName : QString("--");
+        const QString cpuName  = m_state ? m_state->activeBoard().deviceCpu  : QString("--");
+        QStringList cells;
+        cells << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+              << QString("SIM-%1").arg(QDateTime::currentDateTime().toString("hhmmss"))
+              << (m_simLastCard.isEmpty() ? QString("--") : m_simLastCard)
+              << (chipName.isEmpty() ? "--" : chipName)
+              << (cpuName.isEmpty()  ? "--" : cpuName)
+              << (m_simLastModel.isEmpty() ? QString("--") : m_simLastModel)
+              << "INT8"
+              << "Simülasyon"
+              << (QString::number(avgInfUs / 1000.0, 'f', 2) + " ms")
+              << (QString::number(avgRamB  / 1024.0, 'f', 2) + " KiB")
+              << "--"
+              << QString("avg %1% | label=%2 | n=%3")
+                     .arg(avgAcc)
+                     .arg(m_simLastLabel.isEmpty() ? QString("--") : m_simLastLabel)
+                     .arg(m_simSampleCount);
+        m_analysis->addRecord("simulation", cells);
+        emit analysisChanged();
+        appendMonitorLine(QString("[sim] Ortalama kayıt edildi · n=%1  ort=%2 ms  acc=%3%")
+                              .arg(m_simSampleCount)
+                              .arg(avgInfUs / 1000.0, 0, 'f', 2)
+                              .arg(avgAcc), "ok");
+    }
 }
 
 void Backend::startHardwareSimulation(int intervalMs, double minVal, double maxVal)
@@ -835,26 +874,14 @@ void Backend::tickSimulation()
             .arg(label),
         "ok");
 
-    // Persist to analysis (simulation kind)
-    if (m_analysis) {
-        const QString chipName = m_state ? m_state->activeBoard().deviceName : QString("--");
-        const QString cpuName  = m_state ? m_state->activeBoard().deviceCpu  : QString("--");
-        QStringList cells;
-        cells << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-              << QString("SIM-LIVE-%1").arg(m_simUptime)
-              << card
-              << (chipName.isEmpty() ? "--" : chipName)
-              << (cpuName.isEmpty()  ? "--" : cpuName)
-              << model
-              << "INT8"
-              << "Simülasyon"
-              << (QString::number(infUs / 1000.0, 'f', 2) + " ms")
-              << (QString::number(ramB  / 1024.0, 'f', 2) + " KiB")
-              << "--"
-              << (label + "  " + QString::number(accPct) + "%");
-        m_analysis->addRecord("simulation", cells);
-        emit analysisChanged();
-    }
+    // Accumulate the sample; a single averaged record is persisted on stop.
+    ++m_simSampleCount;
+    m_simTotalInfUs += static_cast<quint64>(infUs);
+    m_simTotalRamB  += static_cast<quint64>(ramB);
+    m_simTotalAcc   += static_cast<quint64>(accPct);
+    m_simLastLabel   = label;
+    m_simLastModel   = model;
+    m_simLastCard    = card;
 }
 
 // ── Flash ───────────────────────────────────────────────────────────────────

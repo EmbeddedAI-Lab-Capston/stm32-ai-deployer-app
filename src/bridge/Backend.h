@@ -205,6 +205,14 @@ private:
     double        m_simMin     = 0.0;
     double        m_simMax     = 1.0;
     quint32       m_simUptime  = 0;
+    // Session accumulators: collect every tick, persist the average on stop.
+    quint32       m_simSampleCount = 0;
+    quint64       m_simTotalInfUs  = 0;
+    quint64       m_simTotalRamB   = 0;
+    quint64       m_simTotalAcc    = 0;
+    QString       m_simLastLabel;
+    QString       m_simLastModel;
+    QString       m_simLastCard;
     // Returns label list appropriate for the currently active sensor type.
     QStringList simLabelsForSensor() const;
 
