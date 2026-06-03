@@ -1,6 +1,9 @@
 #include "Backend.h"
 
 #include <algorithm>
+#include <limits>
+
+#include <QSet>
 
 #include <QSerialPortInfo>
 #include <QFileInfo>
@@ -1318,6 +1321,56 @@ static QString columnTitle(const QVariant &column)
     return m.value("title").toString();
 }
 
+// Parse the first numeric token in a string ("0.934 ms" -> 0.934, "12,6 M" -> 12.6).
+static double parseLeadingNumber(const QString &text)
+{
+    static const QRegularExpression re(QStringLiteral("[-+]?[0-9]*[.,]?[0-9]+"));
+    const QRegularExpressionMatch m = re.match(text);
+    if (!m.hasMatch())
+        return std::numeric_limits<double>::quiet_NaN();
+    QString token = m.captured(0);
+    token.replace(',', '.');
+    bool ok = false;
+    const double v = token.toDouble(&ok);
+    return ok ? v : std::numeric_limits<double>::quiet_NaN();
+}
+
+// Parse a percentage anywhere in the string ("avg 94% | ...", "normal 90%").
+static double parsePercent(const QString &text)
+{
+    static const QRegularExpression re(QStringLiteral("([0-9]+(?:[.,][0-9]+)?)\\s*%"));
+    const QRegularExpressionMatch m = re.match(text);
+    if (!m.hasMatch())
+        return std::numeric_limits<double>::quiet_NaN();
+    return m.captured(1).replace(',', '.').toDouble();
+}
+
+static int columnIndexByTitle(const QVariantList &columns, const QStringList &candidates)
+{
+    for (const QString &cand : candidates)
+        for (int i = 0; i < columns.size(); ++i)
+            if (columnTitle(columns.at(i)).compare(cand, Qt::CaseInsensitive) == 0)
+                return i;
+    return -1;
+}
+
+static QString cellAt(const QVariantList &row, int col)
+{
+    return (col >= 0 && col < row.size()) ? row.at(col).toString() : QString();
+}
+
+static int distinctCount(const QVariantList &rows, int col)
+{
+    if (col < 0) return 0;
+    QSet<QString> seen;
+    for (const QVariant &rv : rows) {
+        const QString v = cellAt(rv.toList(), col).trimmed();
+        if (!v.isEmpty() && v != QStringLiteral("--") && v != QStringLiteral("—"))
+            seen.insert(v);
+    }
+    return seen.size();
+}
+
 bool Backend::exportAnalysisCsv(const QString &path,
                                 const QVariantList &columns,
                                 const QVariantList &rows)
@@ -1331,6 +1384,32 @@ bool Backend::exportAnalysisCsv(const QString &path,
 
     QTextStream stream(&file);
     stream.setEncoding(QStringConverter::Utf8);
+    stream.setGenerateByteOrderMark(true); // UTF-8 BOM so Excel renders Turkish chars
+
+    // Compute summary stats (same column-title resolution as the PDF report).
+    const int boardCol  = columnIndexByTitle(columns, {"Kart"});
+    const int modelCol  = columnIndexByTitle(columns, {"Model"});
+    const int metricCol = columnIndexByTitle(columns, {"Ort", "MACC", "Params"});
+    const int resultCol = columnIndexByTitle(columns, {"Sonuç"});
+    double accSum = 0; int accCount = 0;
+    for (const QVariant &rv : rows) {
+        const double p = parsePercent(cellAt(rv.toList(), resultCol));
+        if (!std::isnan(p)) { accSum += p; ++accCount; }
+    }
+
+    // ── Metadata header block (Excel-friendly: sep hint + two-column key/value) ──
+    stream << "sep=,\n"; // tells Excel (incl. tr-TR locale) to split on comma
+    stream << csvEscape("STM32 AI Deployer — Analiz Raporu") << '\n';
+    stream << csvEscape("Kurum") << ',' << csvEscape("Marmara Üniversitesi · Bilgisayar Mühendisliği") << '\n';
+    stream << csvEscape("Rapor Tarihi") << ',' << csvEscape(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm")) << '\n';
+    stream << csvEscape("Toplam Kayıt") << ',' << csvEscape(QString::number(rows.size())) << '\n';
+    if (boardCol >= 0)
+        stream << csvEscape("Kart Sayısı") << ',' << csvEscape(QString::number(distinctCount(rows, boardCol))) << '\n';
+    if (modelCol >= 0)
+        stream << csvEscape("Model Sayısı") << ',' << csvEscape(QString::number(distinctCount(rows, modelCol))) << '\n';
+    if (accCount > 0)
+        stream << csvEscape("Ort. Doğruluk") << ',' << csvEscape(QString("%%1").arg(qRound(accSum / accCount))) << '\n';
+    stream << '\n';
 
     QStringList headers;
     for (const QVariant &column : columns)
@@ -1358,79 +1437,311 @@ bool Backend::exportAnalysisPdf(const QString &path,
     QPdfWriter writer(outPath);
     writer.setPageSize(QPageSize(QPageSize::A4));
     writer.setResolution(144);
-    writer.setPageMargins(QMarginsF(12, 12, 12, 12), QPageLayout::Millimeter);
+    writer.setPageMargins(QMarginsF(14, 14, 14, 16), QPageLayout::Millimeter);
 
     QPainter painter(&writer);
     if (!painter.isActive()) {
         emit statusMessage("PDF oluşturulamadı.");
         return false;
     }
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
 
+    // NOTE: With QPdfWriter the painter origin is already at the top-left of the
+    // printable area (inside the margins), so we draw from (0,0). Using the page
+    // rect's left/top would double-apply the margin and shift content right.
     const QRect page = writer.pageLayout().paintRectPixels(writer.resolution());
-    const int left = page.left();
-    const int right = page.right();
-    const int width = page.width();
-    int y = page.top();
+    const int left   = 0;
+    const int width  = page.width();
+    const int right  = width;
+    const int height = page.height();
 
-    QFont titleFont("Arial", 17, QFont::Bold);
-    QFont metaFont("Arial", 8);
-    QFont headerFont("Arial", 7, QFont::Bold);
-    QFont bodyFont("Arial", 7);
+    // ── Palette ──────────────────────────────────────────────────────────────
+    const QColor cInk("#0f172a");      // near-black text
+    const QColor cMuted("#64748b");    // grey text
+    const QColor cFaint("#94a3b8");
+    const QColor cAccent("#4f46e5");   // indigo
+    const QColor cAccent2("#06b6d4");  // cyan
+    const QColor cBandTop("#1e293b");  // dark header band
+    const QColor cHeaderBg("#eef2ff");
+    const QColor cZebra("#f8fafc");
+    const QColor cGrid("#e2e8f0");
+    const QColor cCardBg("#f1f5f9");
 
-    painter.setPen(QColor("#111827"));
-    painter.setFont(titleFont);
-    painter.drawText(QRect(left, y, width, 42), Qt::AlignLeft | Qt::AlignVCenter,
-                     title.isEmpty() ? "STM32 AI Analiz Raporu" : title);
-    y += 42;
+    // ── Fonts ────────────────────────────────────────────────────────────────
+    const QFont titleFont("Arial", 18, QFont::Bold);
+    const QFont subFont("Arial", 9);
+    const QFont metaFont("Arial", 8);
+    const QFont sectionFont("Arial", 11, QFont::Bold);
+    const QFont cardValFont("Arial", 14, QFont::Bold);
+    const QFont cardLblFont("Arial", 7);
+    const QFont headerFont("Arial", 7, QFont::Bold);
+    const QFont bodyFont("Arial", 7);
+    const QFont footFont("Arial", 7);
 
-    painter.setFont(metaFont);
-    painter.setPen(QColor("#64748b"));
-    painter.drawText(QRect(left, y, width, 24), Qt::AlignLeft | Qt::AlignVCenter,
-                     QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm"));
-    y += 34;
+    int pageNo = 1;
+    const QString reportTitle = title.isEmpty() ? QStringLiteral("STM32 AI Analiz Raporu") : title;
+    const QString stamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm");
 
-    const int rowHeight = 34;
-    const int cols = qMax(1, columns.size());
-    const int colWidth = width / cols;
-
-    auto drawHeader = [&]() {
-        painter.fillRect(QRect(left, y, width, rowHeight), QColor("#eef2ff"));
-        painter.setPen(QColor("#4f46e5"));
-        painter.setFont(headerFont);
-        for (int c = 0; c < cols; ++c) {
-            const QRect cell(left + c * colWidth + 4, y, colWidth - 8, rowHeight);
-            painter.drawText(cell, Qt::AlignVCenter | Qt::AlignLeft,
-                             painter.fontMetrics().elidedText(columnTitle(columns.at(c)), Qt::ElideRight, cell.width()));
-        }
-        y += rowHeight;
+    auto drawFooter = [&](int n) {
+        painter.setFont(footFont);
+        painter.setPen(cFaint);
+        const int fy = height - 22;
+        painter.setPen(cGrid);
+        painter.drawLine(left, fy, right, fy);
+        painter.setPen(cFaint);
+        painter.drawText(QRect(left, fy + 2, width, 20), Qt::AlignLeft | Qt::AlignVCenter,
+                         "Marmara Üniversitesi · Bilgisayar Mühendisliği · STM32 AI Deployer");
+        painter.drawText(QRect(left, fy + 2, width, 20), Qt::AlignRight | Qt::AlignVCenter,
+                         QString("Sayfa %1").arg(n));
     };
 
-    drawHeader();
+    // ── Cover header band ──────────────────────────────────────────────────────
+    int y = 0;
+    const int bandH = 90;
+    QLinearGradient bandGrad(left, y, right, y + bandH);
+    bandGrad.setColorAt(0.0, cBandTop);
+    bandGrad.setColorAt(1.0, cAccent);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(bandGrad);
+    painter.drawRoundedRect(QRect(left, y, width, bandH), 10, 10);
+    // accent underline strip
+    painter.setBrush(cAccent2);
+    painter.drawRoundedRect(QRect(left + 18, y + bandH - 12, 120, 5), 2, 2);
+
+    painter.setPen(QColor("#ffffff"));
+    painter.setFont(titleFont);
+    painter.drawText(QRect(left + 18, y + 14, width - 36, 34), Qt::AlignLeft | Qt::AlignVCenter, reportTitle);
+    painter.setFont(subFont);
+    painter.setPen(QColor("#cbd5e1"));
+    painter.drawText(QRect(left + 18, y + 48, width - 36, 22), Qt::AlignLeft | Qt::AlignVCenter,
+                     "Karşılaştırmalı Performans ve Kaynak Analizi");
+    y += bandH + 16;
+
+    // ── Meta line ──────────────────────────────────────────────────────────────
+    painter.setFont(metaFont);
+    painter.setPen(cMuted);
+    painter.drawText(QRect(left, y, width, 18), Qt::AlignLeft | Qt::AlignVCenter,
+                     QString("Rapor Tarihi: %1").arg(stamp));
+    painter.drawText(QRect(left, y, width, 18), Qt::AlignRight | Qt::AlignVCenter,
+                     QString("Toplam Kayıt: %1").arg(rows.size()));
+    y += 26;
+
+    // ── Resolve key columns for stats / chart ──────────────────────────────────
+    const int boardCol  = columnIndexByTitle(columns, {"Kart"});
+    const int modelCol  = columnIndexByTitle(columns, {"Model"});
+    const int metricCol = columnIndexByTitle(columns, {"Ort", "MACC", "Params"});
+    const int resultCol = columnIndexByTitle(columns, {"Sonuç"});
+    const QString metricTitle = metricCol >= 0 ? columnTitle(columns.at(metricCol)) : QString();
+    // Unit suffix from the first parseable metric value (e.g. "ms", "M").
+    QString metricUnit;
+    for (const QVariant &rv : rows) {
+        const QString s = cellAt(rv.toList(), metricCol);
+        const QRegularExpression ru(QStringLiteral("[A-Za-zµ%]+\\s*$"));
+        const QRegularExpressionMatch mu = ru.match(s.trimmed());
+        if (!std::isnan(parseLeadingNumber(s)) && mu.hasMatch()) { metricUnit = mu.captured(0).trimmed(); break; }
+    }
+
+    // Accuracy average across rows (where a % is present).
+    double accSum = 0; int accCount = 0;
+    for (const QVariant &rv : rows) {
+        const double p = parsePercent(cellAt(rv.toList(), resultCol));
+        if (!std::isnan(p)) { accSum += p; ++accCount; }
+    }
+    // Metric average.
+    double metSum = 0; int metCount = 0;
+    for (const QVariant &rv : rows) {
+        const double v = parseLeadingNumber(cellAt(rv.toList(), metricCol));
+        if (!std::isnan(v)) { metSum += v; ++metCount; }
+    }
+
+    // ── Summary stat cards ─────────────────────────────────────────────────────
+    struct Stat { QString label; QString value; QColor accent; };
+    QVector<Stat> stats;
+    stats.append({"Toplam Kayıt", QString::number(rows.size()), cAccent});
+    stats.append({"Kart Sayısı",  QString::number(distinctCount(rows, boardCol)), cAccent2});
+    stats.append({"Model Sayısı", QString::number(distinctCount(rows, modelCol)), QColor("#16a34a")});
+    if (accCount > 0)
+        stats.append({"Ort. Doğruluk", QString("%%1").arg(qRound(accSum / accCount)), QColor("#f59e0b")});
+    else if (metCount > 0)
+        stats.append({QString("Ort. %1").arg(metricTitle),
+                      QString("%1 %2").arg(metSum / metCount, 0, 'f', 2).arg(metricUnit), QColor("#f59e0b")});
+    else
+        stats.append({"Kategori", reportTitle.section(' ', -2, -2), QColor("#f59e0b")});
+
+    const int cardGap = 12;
+    const int cardW = (width - cardGap * (stats.size() - 1)) / stats.size();
+    const int cardH = 56;
+    for (int i = 0; i < stats.size(); ++i) {
+        const int cx = left + i * (cardW + cardGap);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(cCardBg);
+        painter.drawRoundedRect(QRect(cx, y, cardW, cardH), 8, 8);
+        painter.setBrush(stats[i].accent);
+        painter.drawRoundedRect(QRect(cx, y + 10, 4, cardH - 20), 2, 2);
+        painter.setPen(cMuted);
+        painter.setFont(cardLblFont);
+        painter.drawText(QRect(cx + 14, y + 8, cardW - 20, 16), Qt::AlignLeft | Qt::AlignVCenter,
+                         stats[i].label.toUpper());
+        painter.setPen(cInk);
+        painter.setFont(cardValFont);
+        painter.drawText(QRect(cx + 14, y + 24, cardW - 20, 26), Qt::AlignLeft | Qt::AlignVCenter,
+                         stats[i].value);
+    }
+    y += cardH + 22;
+
+    // ── Bar chart (top records by metric) ──────────────────────────────────────
+    if (metricCol >= 0 && metCount > 0) {
+        painter.setPen(cInk);
+        painter.setFont(sectionFont);
+        const QString chartTitle = QString("Model Karşılaştırması — %1%2")
+                                       .arg(metricTitle)
+                                       .arg(metricUnit.isEmpty() ? QString() : QString(" (%1)").arg(metricUnit));
+        painter.drawText(QRect(left, y, width, 22), Qt::AlignLeft | Qt::AlignVCenter, chartTitle);
+        y += 26;
+
+        // Collect up to 8 (label, value) pairs.
+        struct Bar { QString label; double value; };
+        QVector<Bar> bars;
+        double maxV = 0;
+        for (const QVariant &rv : rows) {
+            if (bars.size() >= 8) break;
+            const QVariantList row = rv.toList();
+            const double v = parseLeadingNumber(cellAt(row, metricCol));
+            if (std::isnan(v)) continue;
+            QString lbl = cellAt(row, modelCol >= 0 ? modelCol : 0);
+            if (lbl.isEmpty()) lbl = QString("#%1").arg(bars.size() + 1);
+            bars.append({lbl, v});
+            maxV = qMax(maxV, v);
+        }
+
+        const int chartH = 150;
+        const int axisX = left + 4;
+        const int baseY = y + chartH;
+        // axis
+        painter.setPen(cGrid);
+        painter.drawLine(axisX, y, axisX, baseY);
+        painter.drawLine(axisX, baseY, right, baseY);
+
+        const int n = bars.size();
+        if (n > 0 && maxV > 0) {
+            const int slot = (right - axisX - 10) / n;
+            const int barW = qMin(60, slot * 6 / 10);
+            for (int i = 0; i < n; ++i) {
+                const int cx = axisX + 10 + i * slot + (slot - barW) / 2;
+                const int h = qMax(3, int((chartH - 8) * (bars[i].value / maxV)));
+                const int by = baseY - h;
+                QLinearGradient g(cx, by, cx, baseY);
+                g.setColorAt(0.0, cAccent);
+                g.setColorAt(1.0, cAccent2);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(g);
+                painter.drawRoundedRect(QRect(cx, by, barW, h), 3, 3);
+                // value on top
+                painter.setPen(cInk);
+                painter.setFont(cardLblFont);
+                painter.drawText(QRect(cx - slot / 2 + barW / 2, by - 16, slot, 14),
+                                 Qt::AlignHCenter | Qt::AlignBottom,
+                                 QString::number(bars[i].value, 'f', bars[i].value < 10 ? 2 : 1));
+                // label under axis
+                painter.setPen(cMuted);
+                painter.drawText(QRect(axisX + 10 + i * slot, baseY + 4, slot, 26),
+                                 Qt::AlignHCenter | Qt::AlignTop,
+                                 painter.fontMetrics().elidedText(bars[i].label, Qt::ElideRight, slot - 2));
+            }
+        }
+        y = baseY + 34;
+    }
+
+    // ── Data table ─────────────────────────────────────────────────────────────
+    painter.setPen(cInk);
+    painter.setFont(sectionFont);
+    painter.drawText(QRect(left, y, width, 22), Qt::AlignLeft | Qt::AlignVCenter, "Detaylı Kayıt Tablosu");
+    y += 28;
+
+    const int cols = qMax(1, columns.size());
+    // Proportional column widths from declared widths (0 -> stretch).
+    QVector<int> colW(cols, 0);
+    int fixedTotal = 0, stretchCount = 0;
+    for (int c = 0; c < cols; ++c) {
+        const QVariantMap m = columns.at(c).toMap();
+        int w = m.value("width", m.value("w", 0)).toInt();
+        colW[c] = w;
+        if (w > 0) fixedTotal += w; else ++stretchCount;
+    }
+    // Scale fixed widths into page; distribute remainder to stretch columns.
+    const int minStretch = 70;
+    int remaining = width - fixedTotal;
+    if (stretchCount > 0 && remaining < stretchCount * minStretch) {
+        // shrink fixed columns proportionally so stretch columns get a minimum
+        const double scale = double(width - stretchCount * minStretch) / qMax(1, fixedTotal);
+        fixedTotal = 0;
+        for (int c = 0; c < cols; ++c) if (colW[c] > 0) { colW[c] = qMax(36, int(colW[c] * scale)); fixedTotal += colW[c]; }
+        remaining = width - fixedTotal;
+    }
+    const int stretchW = stretchCount > 0 ? remaining / stretchCount : 0;
+    for (int c = 0; c < cols; ++c) if (colW[c] == 0) colW[c] = stretchW;
+    // final fit correction
+    int sumW = 0; for (int c = 0; c < cols; ++c) sumW += colW[c];
+    if (cols > 0) colW[cols - 1] += (width - sumW);
+
+    const int headH = 30;
+    const int rowH  = 26;
+
+    auto colX = [&](int c) { int x = left; for (int i = 0; i < c; ++i) x += colW[i]; return x; };
+
+    auto drawTableHeader = [&]() {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(cHeaderBg);
+        painter.drawRoundedRect(QRect(left, y, width, headH), 5, 5);
+        painter.setPen(cAccent);
+        painter.setFont(headerFont);
+        for (int c = 0; c < cols; ++c) {
+            const QRect cell(colX(c) + 5, y, colW[c] - 8, headH);
+            painter.drawText(cell, Qt::AlignVCenter | Qt::AlignLeft,
+                             painter.fontMetrics().elidedText(columnTitle(columns.at(c)).toUpper(),
+                                                              Qt::ElideRight, cell.width()));
+        }
+        y += headH;
+    };
+
+    drawTableHeader();
     painter.setFont(bodyFont);
 
     for (int r = 0; r < rows.size(); ++r) {
-        if (y + rowHeight > page.bottom()) {
+        if (y + rowH > height - 40) {
+            drawFooter(pageNo++);
             writer.newPage();
-            y = page.top();
-            drawHeader();
+            y = 0;
+            painter.setFont(sectionFont);
+            painter.setPen(cInk);
+            painter.drawText(QRect(left, y, width, 20), Qt::AlignLeft | Qt::AlignVCenter,
+                             "Detaylı Kayıt Tablosu (devam)");
+            y += 26;
+            drawTableHeader();
             painter.setFont(bodyFont);
         }
 
-        painter.fillRect(QRect(left, y, width, rowHeight),
-                         (r % 2 == 0) ? QColor("#ffffff") : QColor("#f8fafc"));
+        if (r % 2 == 1) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(cZebra);
+            painter.drawRect(QRect(left, y, width, rowH));
+        }
         painter.setPen(QColor("#334155"));
         const QVariantList row = rows.at(r).toList();
         for (int c = 0; c < cols; ++c) {
-            const QRect cell(left + c * colWidth + 4, y, colWidth - 8, rowHeight);
-            const QString value = c < row.size() ? row.at(c).toString() : QString();
+            const QRect cell(colX(c) + 5, y, colW[c] - 8, rowH);
+            painter.setFont(c == 0 ? headerFont : bodyFont);
+            painter.setPen(c == 0 ? cInk : QColor("#334155"));
             painter.drawText(cell, Qt::AlignVCenter | Qt::AlignLeft,
-                             painter.fontMetrics().elidedText(value, Qt::ElideRight, cell.width()));
+                             painter.fontMetrics().elidedText(cellAt(row, c), Qt::ElideRight, cell.width()));
         }
-        painter.setPen(QColor("#e2e8f0"));
-        painter.drawLine(left, y + rowHeight - 1, right, y + rowHeight - 1);
-        y += rowHeight;
+        painter.setPen(cGrid);
+        painter.drawLine(left, y + rowH, right, y + rowH);
+        y += rowH;
     }
 
+    drawFooter(pageNo);
     painter.end();
     emit statusMessage("PDF oluşturuldu: " + outPath);
     return true;

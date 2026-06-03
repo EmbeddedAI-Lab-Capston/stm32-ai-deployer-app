@@ -8,7 +8,8 @@
       "Bash(Select-Object FullName)",
       "Bash(Sort-Object FullName)",
       "PowerShell($env:PATH = \"C:\\\\Qt\\\\Tools\\\\CMake_64\\\\bin;C:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;$env:PATH\"; if \\(Test-Path build\\) { cmake --build build 2>&1 | Select-Object -Last 20 } else { \"no build dir\" })",
-      "PowerShell($env:PATH = \"C:\\\\Qt\\\\Tools\\\\CMake_64\\\\bin;C:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;$env:PATH\"; cmake --build build 2>&1 | Select-Object -Last 8)"
+      "PowerShell($env:PATH = \"C:\\\\Qt\\\\Tools\\\\CMake_64\\\\bin;C:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;$env:PATH\"; cmake --build build 2>&1 | Select-Object -Last 8)",
+      "PowerShell($env:PATH = \"C:\\\\Qt\\\\Tools\\\\CMake_64\\\\bin;C:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;$env:PATH\"; cmake --build build 2>&1 | Select-Object -Last 12)"
     ]
   }
 }
