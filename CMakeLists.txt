@@ -78,6 +78,9 @@ set(PROJECT_SOURCES
     src/modules/analysis/AnalysisManager.h
     src/modules/analysis/AnalysisManager.cpp
 
+    src/modules/simulation/FactorySimulator.h
+    src/modules/simulation/FactorySimulator.cpp
+
     src/ui/BoardTab.h
     src/ui/BoardTab.cpp
 
@@ -150,6 +153,15 @@ qt_add_qml_module(STM32AiDeployer
         qml/screens/MonitorScreen.qml
         qml/screens/BenchmarkScreen.qml
         qml/screens/AnalysisScreen.qml
+        qml/factory/FactorySimWindow.qml
+        qml/factory/FactoryDashboard.qml
+        qml/factory/FactoryMap.qml
+        qml/factory/ZoneDetail.qml
+        qml/factory/NodeDetail.qml
+        qml/factory/components/NodeMarker.qml
+        qml/factory/components/ZoneBlock.qml
+        qml/factory/components/SensorRow.qml
+        qml/factory/components/AlarmFeed.qml
 )
 
 target_link_libraries(STM32AiDeployer PRIVATE

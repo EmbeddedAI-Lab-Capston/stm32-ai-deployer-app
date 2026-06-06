@@ -32,3 +32,14 @@ FlashScreen 1.0 screens/FlashScreen.qml
 MonitorScreen 1.0 screens/MonitorScreen.qml
 BenchmarkScreen 1.0 screens/BenchmarkScreen.qml
 AnalysisScreen 1.0 screens/AnalysisScreen.qml
+
+# Factory Simulation
+FactorySimWindow 1.0 factory/FactorySimWindow.qml
+FactoryDashboard 1.0 factory/FactoryDashboard.qml
+FactoryMap 1.0 factory/FactoryMap.qml
+ZoneDetail 1.0 factory/ZoneDetail.qml
+NodeDetail 1.0 factory/NodeDetail.qml
+NodeMarker 1.0 factory/components/NodeMarker.qml
+ZoneBlock 1.0 factory/components/ZoneBlock.qml
+SensorRow 1.0 factory/components/SensorRow.qml
+AlarmFeed 1.0 factory/components/AlarmFeed.qml

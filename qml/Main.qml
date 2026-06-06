@@ -39,6 +39,11 @@ ApplicationWindow {
                 onRequestClose: win.close()
                 onOpenSettings: settingsDialog.open()
                 onOpenAbout: aboutDialog.open()
+                onOpenFactorySim: {
+                    factorySimWindow.show()
+                    factorySimWindow.raise()
+                    factorySimWindow.requestActivate()
+                }
             }
 
             TopTabBar {
@@ -86,6 +91,9 @@ ApplicationWindow {
     // ── Dialogs ────────────────────────────────────────────────────────────
     SettingsDialog { id: settingsDialog }
     AboutDialog { id: aboutDialog }
+
+    // ── Factory Simulation (separate standalone-feeling window) ─────────────
+    FactorySimWindow { id: factorySimWindow }
 
     // ── Resize handles (frameless) ─────────────────────────────────────────
     MouseArea {

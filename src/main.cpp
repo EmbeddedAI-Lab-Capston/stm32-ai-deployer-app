@@ -12,6 +12,7 @@
 #include "modules/serial/SerialManager.h"
 #include "modules/flash/FlashManager.h"
 #include "modules/analysis/AnalysisManager.h"
+#include "modules/simulation/FactorySimulator.h"
 #include "bridge/Backend.h"
 #include "ui/SplashScreen.h"
 
@@ -54,6 +55,9 @@ int main(int argc, char *argv[])
 
     auto *backend = new Backend(appState, serial, flash, analysis, &app);
 
+    // Factory Simulation engine (synthetic large-factory data for the demo mode).
+    auto *factorySim = new FactorySimulator(&app);
+
     // ── QML engine ─────────────────────────────────────────────────────────
     // The QML window is the primary window; closing the transient splash must
     // not quit the app.
@@ -62,6 +66,7 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("appState", appState);
     engine.rootContext()->setContextProperty("backend",  backend);
+    engine.rootContext()->setContextProperty("factorySim", factorySim);
     engine.loadFromModule("STM32AiDeployer", "Main");
 
     if (engine.rootObjects().isEmpty())

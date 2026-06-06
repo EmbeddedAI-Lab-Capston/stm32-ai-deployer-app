@@ -12,6 +12,7 @@ Rectangle {
     signal requestClose()
     signal openSettings()
     signal openAbout()
+    signal openFactorySim()
 
     implicitHeight: Theme.titleBarHeight
     color: Theme.bgElevated
@@ -153,6 +154,39 @@ Rectangle {
         }
 
         Item { Layout.fillWidth: true }
+
+        // ── Factory Simulation launcher ────────────────────────────────────
+        Rectangle {
+            Layout.preferredHeight: 30
+            Layout.preferredWidth: simRow.implicitWidth + Theme.spacingMd
+            radius: Theme.radiusSm
+            color: simMouse.containsMouse ? Theme.alpha(Theme.purple, 0.22) : Theme.alpha(Theme.purple, 0.12)
+            border.color: Theme.alpha(Theme.purple, 0.45)
+            Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+            RowLayout {
+                id: simRow
+                anchors.centerIn: parent
+                spacing: Theme.spacingXs
+                Text { text: "🏭"; font.pixelSize: Theme.fontSm }
+                Text {
+                    text: "Fabrika Simülasyonu"
+                    color: Theme.purple
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontXs
+                    font.weight: Font.DemiBold
+                }
+            }
+            MouseArea {
+                id: simMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.openFactorySim()
+            }
+        }
+
+        Item { Layout.preferredWidth: Theme.spacingSm }
 
         // ── Window controls ───────────────────────────────────────────────
         Repeater {
