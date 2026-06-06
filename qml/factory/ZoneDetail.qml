@@ -96,7 +96,7 @@ Item {
                         model: root.nodeList()
                         delegate: Card {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 60 + 52 * (modelData.sensors ? modelData.sensors.length : 0)
+                            Layout.preferredHeight: 152 + 56 * (modelData.sensors ? modelData.sensors.length : 0)
                             title: modelData.name
                             subtitle: modelData.board + " · " + modelData.model
                                       + " · " + modelData.infMs.toFixed(2) + " ms"

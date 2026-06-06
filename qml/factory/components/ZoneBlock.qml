@@ -9,6 +9,7 @@ Rectangle {
 
     property var zone: ({})       // { id, name, accent, hint, status, nodeCount, sensorCount }
     property var nodes: []        // list of node maps in this zone
+    property string glyph: ""     // faint background icon giving the room a "type" feel
     signal zoneActivated(int zoneId)
     signal nodeActivated(int nodeId)
 
@@ -34,6 +35,18 @@ Rectangle {
         anchors.right: parent.right
         height: 4
         radius: Theme.radiusLg
+        color: root.accentColor
+    }
+
+    // faint room-type watermark
+    Text {
+        visible: root.glyph.length > 0
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: Theme.spacingSm
+        text: root.glyph
+        font.pixelSize: 96
+        opacity: 0.06
         color: root.accentColor
     }
 

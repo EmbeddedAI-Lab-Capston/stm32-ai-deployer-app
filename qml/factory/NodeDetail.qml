@@ -33,10 +33,10 @@ Item {
 
         // ── Left: node picker ──────────────────────────────────────────────
         Card {
-            Layout.preferredWidth: 250
+            Layout.preferredWidth: 240
             Layout.fillHeight: true
-            title: "Node Listesi"
-            subtitle: "Detay için bir düğüm seçin"
+            title: "Düğümler"
+            subtitle: factorySim ? (factorySim.nodeCount + " STM32 node") : ""
 
             ListView {
                 anchors.fill: parent
@@ -48,7 +48,7 @@ Item {
 
                 delegate: Rectangle {
                     width: ListView.view.width
-                    height: 44
+                    height: 42
                     radius: Theme.radiusSm
                     property bool active: modelData.id === root.nodeId
                     color: active ? Theme.primarySoft : (nMouse.containsMouse ? Theme.surfaceHover : "transparent")
@@ -85,72 +85,112 @@ Item {
             Layout.fillHeight: true
             spacing: Theme.spacingMd
 
-            // header + metrics
+            // header + metric tiles
             Card {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 150
-                title: root.info.name !== undefined ? root.info.name : "—"
-                subtitle: root.info.zoneName !== undefined ? root.info.zoneName : ""
+                Layout.preferredHeight: 168
 
-                RowLayout {
+                ColumnLayout {
                     anchors.fill: parent
-                    spacing: Theme.spacingMd
+                    spacing: Theme.spacingSm
 
-                    Repeater {
-                        model: [
-                            { l: "Kart",      v: root.info.board !== undefined ? root.info.board : "—", a: Theme.primary },
-                            { l: "Model",     v: root.info.model !== undefined ? root.info.model : "—", a: Theme.cyan },
-                            { l: "Inference", v: root.info.infMs !== undefined ? root.info.infMs.toFixed(2) + " ms" : "—", a: Theme.success },
-                            { l: "Boş RAM",   v: root.info.freeRamKb !== undefined ? root.info.freeRamKb.toFixed(0) + " KB" : "—", a: Theme.warning },
-                            { l: "Durum",     v: root.info.status === "error" ? "Kritik" : (root.info.status === "warning" ? "Uyarı" : "Normal"),
-                              a: Theme.statusColor(root.info.status !== undefined ? root.info.status : "ok") }
-                        ]
-                        delegate: ColumnLayout {
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.spacingSm
+                        ColumnLayout {
+                            spacing: 2
                             Layout.fillWidth: true
-                            spacing: 4
-                            Text { text: modelData.l; color: Theme.textMuted
-                                   font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
-                            Text { text: modelData.v; color: modelData.a
-                                   font.family: Theme.fontFamily; font.pixelSize: Theme.fontLg
-                                   font.weight: Font.Bold; elide: Text.ElideRight; Layout.fillWidth: true }
+                            Text {
+                                text: root.info.name !== undefined ? root.info.name : "—"
+                                color: Theme.text
+                                font.family: Theme.fontFamily; font.pixelSize: Theme.fontLg
+                                font.weight: Font.Bold; elide: Text.ElideRight; Layout.fillWidth: true
+                            }
+                            Text {
+                                text: root.info.zoneName !== undefined ? root.info.zoneName : ""
+                                color: Theme.textMuted
+                                font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                                elide: Text.ElideRight; Layout.fillWidth: true
+                            }
+                        }
+                        StatusPill {
+                            status: root.info.status !== undefined ? root.info.status : "ok"
+                            text: root.info.status === "error" ? "Kritik"
+                                  : (root.info.status === "warning" ? "Uyarı" : "Normal")
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        spacing: Theme.spacingSm
+
+                        Repeater {
+                            model: [
+                                { l: "Kart",      v: root.info.board !== undefined ? root.info.board : "—", a: Theme.primary },
+                                { l: "Model",     v: root.info.model !== undefined ? root.info.model : "—", a: Theme.cyan },
+                                { l: "Inference", v: root.info.infMs !== undefined ? root.info.infMs.toFixed(2) + " ms" : "—", a: Theme.success },
+                                { l: "Boş RAM",   v: root.info.freeRamKb !== undefined ? root.info.freeRamKb.toFixed(0) + " KB" : "—", a: Theme.warning },
+                                { l: "Sensör",    v: root.info.sensorCount !== undefined ? (root.info.sensorCount + " adet") : "—", a: Theme.purple }
+                            ]
+                            delegate: Rectangle {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                radius: Theme.radiusMd
+                                color: Theme.surfaceRaised
+                                border.color: Theme.border
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: Theme.spacingSm
+                                    spacing: 4
+                                    Text { text: modelData.l; color: Theme.textMuted
+                                           font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
+                                    Item { Layout.fillHeight: true }
+                                    Text { text: modelData.v; color: modelData.a
+                                           font.family: Theme.fontFamily; font.pixelSize: Theme.fontMd
+                                           font.weight: Font.Bold; elide: Text.ElideRight; Layout.fillWidth: true }
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // sensors
+            // sensors (scrollable so it never overflows)
             Card {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 title: "Bağlı Sensörler"
                 subtitle: "Canlı değerler ve eşik durumu"
 
-                ColumnLayout {
+                ScrollView {
                     anchors.fill: parent
-                    spacing: 2
-                    Repeater {
-                        model: root.info.sensors ? root.info.sensors : []
-                        delegate: SensorRow { sensor: modelData }
+                    clip: true
+                    contentWidth: availableWidth
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: 2
+                        Repeater {
+                            model: root.info.sensors ? root.info.sensors : []
+                            delegate: SensorRow { sensor: modelData }
+                        }
                     }
-                    Item { Layout.fillHeight: true }
                 }
             }
         }
 
         // ── Right: global alarm feed ───────────────────────────────────────
-        ColumnLayout {
-            Layout.preferredWidth: 320
+        Card {
+            Layout.preferredWidth: 300
             Layout.fillHeight: true
-            spacing: Theme.spacingSm
+            title: "Olay Akışı"
+            subtitle: "Fabrika geneli alarmlar"
 
-            SectionHeader {
-                title: "Olay Akışı"
-                subtitle: "Fabrika geneli alarmlar"
-                Layout.fillWidth: true
-            }
             AlarmFeed {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                anchors.fill: parent
                 model: root.alarmModel()
             }
         }

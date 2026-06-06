@@ -93,7 +93,7 @@ Item {
                         title: "Bölge Sağlığı"
                         subtitle: "Her bölgedeki node durum dağılımı"
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 360
+                        Layout.preferredHeight: 440
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -162,7 +162,7 @@ Item {
                         title: "Canlı Olay Akışı"
                         subtitle: "Eşik aşımları ve anomali tespitleri"
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 360
+                        Layout.preferredHeight: 440
 
                         AlarmFeed {
                             anchors.fill: parent
