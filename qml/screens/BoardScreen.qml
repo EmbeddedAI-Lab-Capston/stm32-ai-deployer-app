@@ -21,7 +21,7 @@ Item {
         return idx >= 0 ? idx : 1
     }
 
-    readonly property var _baudList: ["9600", "115200", "230400", "460800", "921600"]
+    readonly property var _baudList: ["9600", "115200", "209700", "230400", "460800", "921600"]
 
     // Preset list (always includes the 3 fixed + any custom)
     readonly property var _basePresets: [
@@ -99,6 +99,21 @@ Item {
     Component.onCompleted: {
         refreshPorts()
         refreshCustomBoards()
+    }
+
+    Connections {
+        target: (typeof appState !== "undefined" && appState) ? appState : null
+        function onActiveBaudChanged(baud) {
+            var idx = root._baudList.indexOf(String(baud))
+            if (idx >= 0)
+                root._baudIdx = idx
+        }
+        function onActiveBoardChanged(board) {
+            var baud = (typeof appState !== "undefined" && appState) ? appState.activeBaud : 115200
+            var idx = root._baudList.indexOf(String(baud))
+            if (idx >= 0)
+                root._baudIdx = idx
+        }
     }
 
     ScrollView {

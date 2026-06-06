@@ -2,6 +2,11 @@
 
 #include <QTimer>
 
+namespace
+{
+constexpr qint32 kN6DefaultBaud = 209700;
+}
+
 SerialWorker::SerialWorker(QObject *parent)
     : QObject(parent)
     , m_parser(new PacketParser(this))
@@ -60,7 +65,8 @@ void SerialWorker::connectToPort(const QString &portName, qint32 baudRate)
     }
 
     emit connected(portName, baudRate);
-    QTimer::singleShot(250, this, &SerialWorker::requestBoardInfo);
+    if (baudRate != kN6DefaultBaud)
+        QTimer::singleShot(250, this, &SerialWorker::requestBoardInfo);
 }
 
 void SerialWorker::disconnectPort()

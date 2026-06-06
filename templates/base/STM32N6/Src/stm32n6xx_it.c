@@ -3,7 +3,7 @@
 #include "main.h"
 #include "stm32n6xx_it.h"
 
-extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef hlpuart1;
 
 void NMI_Handler(void)           { while (1) {} }
 void HardFault_Handler(void)     { while (1) {} }
@@ -15,4 +15,4 @@ void DebugMon_Handler(void)      {}
 void PendSV_Handler(void)        {}
 void SysTick_Handler(void)       { HAL_IncTick(); }
 
-void USART1_IRQHandler(void)     { HAL_UART_IRQHandler(&huart1); }
+void USART1_IRQHandler(void)     { HAL_UART_IRQHandler(&hlpuart1); }

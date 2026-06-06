@@ -2,6 +2,8 @@
 
 namespace
 {
+constexpr qint32 kN6DefaultBaud = 209700;
+
 bool appStateBoardLooksLikeN6(const BoardInfo &board)
 {
     const QString text = QStringList{board.name,
@@ -71,8 +73,8 @@ void AppState::setActiveBoard(const BoardInfo &board)
         return;
     m_activeBoard = board;
     emit activeBoardChanged(m_activeBoard);
-    if (appStateBoardLooksLikeN6(m_activeBoard) && m_activeBaud != 115200) {
-        m_activeBaud = 115200;
+    if (appStateBoardLooksLikeN6(m_activeBoard) && m_activeBaud != kN6DefaultBaud) {
+        m_activeBaud = kN6DefaultBaud;
         emit activeBaudChanged(m_activeBaud);
     }
 }
@@ -87,7 +89,7 @@ void AppState::setActivePort(const QString &port)
 void AppState::setActiveBaud(qint32 baud)
 {
     if (appStateBoardLooksLikeN6(m_activeBoard))
-        baud = 115200;
+        baud = kN6DefaultBaud;
     if (m_activeBaud == baud) return;
     m_activeBaud = baud;
     emit activeBaudChanged(m_activeBaud);

@@ -190,6 +190,8 @@ private:
     void addCompiledRecord(const PipelineConfig &config);
     void applyDetectedStLinkBoard(const QString &probeOutput);
     void requestBoardInfoBurst();
+    void handleN6TextLine(const QString &line);
+    void resetN6TargetForCapture(const QString &reason, bool benchmarkLog);
     void wireSerial();
     void wireFlash();
     void wireAnalysis();
@@ -261,10 +263,15 @@ private:
     QVariantMap  m_benchmarkMetrics;
     bool         m_benchmarkBusy = false;
     QTimer      *m_benchmarkTimeout = nullptr;
+    double       m_n6LastCpuMhz = 600.0;
+    QString      m_n6LastTextModel;
+    QString      m_n6LastTextLabel;
+    qint64       m_n6LastResetRequestMs = 0;
 
     // hardware simulation
     QTimer  *m_hwSimTimer = nullptr;
     bool     m_hwSimRunning = false;
+    bool     m_hwSimPassiveCapture = false;
     double   m_hwSimMin = 0.0;
     double   m_hwSimMax = 1.0;
     QVariantList m_hwSimInputRanges;

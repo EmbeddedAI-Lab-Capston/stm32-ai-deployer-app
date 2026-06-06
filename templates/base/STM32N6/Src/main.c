@@ -12,12 +12,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-UART_HandleTypeDef huart1;
+UART_HandleTypeDef hlpuart1;
 I2C_HandleTypeDef  hi2c1;
 
 static void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART1_UART_Init(void);
+static void MX_LPUART1_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void Ensure_AI_Ready(void);
 static void Poll_Uart_Command(void);
@@ -49,11 +49,16 @@ int main(void)
     HAL_Init();
     SystemClock_Config();
     MX_GPIO_Init();
-    MX_USART1_UART_Init();
-    UART_Report_SetHandle(&huart1);
-    UART_Report_Boot(AI_MODEL_NAME, AI_TARGET_BOARD, "EdgeAI_v1.0", 115200);
+    MX_LPUART1_UART_Init();
+    UART_Report_SetHandle(&hlpuart1);
+    UART_Report_Boot(AI_MODEL_NAME, AI_TARGET_BOARD, "EdgeAI_v1.0", 209700);
+
+    MX_I2C1_Init();
+    Sensor_Init(&hi2c1);
 
     uint32_t cycle = 0;
+    uint32_t synth_rng = 0x0A5F00D1u;
+    uint8_t  sensor_missing = 0;
 
     while (1) {
         Poll_Uart_Command();
@@ -61,8 +66,20 @@ int main(void)
 
         float input[AI_INPUT_SIZE];
         if (Sensor_Read(input, AI_INPUT_SIZE) != HAL_OK) {
-            HAL_Delay(50);
-            continue;
+            /* No sensor wired / read failed: fall back to synthetic input so
+             * inference + telemetry keep flowing (mirrors the reference IRL
+             * fallback). Keeps the live monitor/dashboard alive on a bench
+             * without the physical sensor connected. */
+            if (!sensor_missing) {
+                sensor_missing = 1;
+                UART_Report_SysStatus(0, 0, AI_Runner_GetFreeRam(), "synthetic");
+            }
+            for (uint32_t j = 0; j < AI_INPUT_SIZE; ++j) {
+                synth_rng = (synth_rng * 1664525u) + 1013904223u;
+                input[j] = (float)(synth_rng & 0x00FFFFFFu) / 16777215.0f;
+            }
+        } else {
+            sensor_missing = 0;
         }
 
         Ensure_AI_Ready();
@@ -195,14 +212,14 @@ static void Process_Uart_Command(void)
                       (float)max_milli / 1000.0f,
                       (uint32_t)seed);
     } else if (strcmp(cmd, "INFO?") == 0 || strcmp(cmd, "BOOT?") == 0) {
-        UART_Report_Boot(AI_MODEL_NAME, AI_TARGET_BOARD, "EdgeAI_v1.0", 115200);
+        UART_Report_Boot(AI_MODEL_NAME, AI_TARGET_BOARD, "EdgeAI_v1.0", 209700);
     }
 }
 
 static void Poll_Uart_Command(void)
 {
-    while ((USART1->ISR & USART_ISR_RXNE_RXFNE) != 0U) {
-        Feed_Uart_Byte((uint8_t)(USART1->RDR & 0xFFU));
+    while ((LPUART1->ISR & USART_ISR_RXNE_RXFNE) != 0U) {
+        Feed_Uart_Byte((uint8_t)(LPUART1->RDR & 0xFFU));
     }
 }
 
@@ -227,17 +244,17 @@ static void Feed_Uart_Byte(uint8_t byte)
 /* ── UART RX ISR callbacks ─────────────────────────────────────────────────── */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance == USART1) {
+    if (huart->Instance == LPUART1) {
         Feed_Uart_Byte(s_rx_byte);
-        HAL_UART_Receive_IT(&huart1, &s_rx_byte, 1);
+        HAL_UART_Receive_IT(&hlpuart1, &s_rx_byte, 1);
     }
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance == USART1) {
+    if (huart->Instance == LPUART1) {
         s_cmd_len = 0;
-        HAL_UART_Receive_IT(&huart1, &s_rx_byte, 1);
+        HAL_UART_Receive_IT(&hlpuart1, &s_rx_byte, 1);
     }
 }
 
@@ -332,23 +349,23 @@ static void MX_GPIO_Init(void)
 }
 
 /* ── USART1: ST-Link VCP — TX=PE5, RX=PE6 ─────────────────────────────────── */
-static void MX_USART1_UART_Init(void)
+static void MX_LPUART1_UART_Init(void)
 {
-    huart1.Instance          = USART1;
-    huart1.Init.BaudRate     = 115200;
-    huart1.Init.WordLength   = UART_WORDLENGTH_8B;
-    huart1.Init.StopBits     = UART_STOPBITS_1;
-    huart1.Init.Parity       = UART_PARITY_NONE;
-    huart1.Init.Mode         = UART_MODE_TX_RX;
-    huart1.Init.HwFlowCtl    = UART_HWCONTROL_NONE;
-    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-    huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-    huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-    huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-    if (HAL_UART_Init(&huart1) != HAL_OK) Error_Handler();
-    if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK) Error_Handler();
-    if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK) Error_Handler();
-    if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK) Error_Handler();
+    hlpuart1.Instance          = LPUART1;
+    hlpuart1.Init.BaudRate     = 209700;
+    hlpuart1.Init.WordLength   = UART_WORDLENGTH_8B;
+    hlpuart1.Init.StopBits     = UART_STOPBITS_1;
+    hlpuart1.Init.Parity       = UART_PARITY_NONE;
+    hlpuart1.Init.Mode         = UART_MODE_TX_RX;
+    hlpuart1.Init.HwFlowCtl    = UART_HWCONTROL_NONE;
+    hlpuart1.Init.OverSampling = UART_OVERSAMPLING_16;
+    hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+    hlpuart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+    hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+    if (HAL_UART_Init(&hlpuart1) != HAL_OK) Error_Handler();
+    if (HAL_UARTEx_SetTxFifoThreshold(&hlpuart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK) Error_Handler();
+    if (HAL_UARTEx_SetRxFifoThreshold(&hlpuart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK) Error_Handler();
+    if (HAL_UARTEx_DisableFifoMode(&hlpuart1) != HAL_OK) Error_Handler();
 }
 
 /* ── I2C1: sensor bus ──────────────────────────────────────────────────────── */

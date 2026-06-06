@@ -43,6 +43,7 @@ namespace
 constexpr quint16 kStVendorId = 0x0483;
 constexpr quint16 kN657VcpProductId = 0x3754;
 constexpr quint16 kH7VcpProductId = 0x374E;
+constexpr int kN6DefaultBaud = 209700;
 
 QString boardSearchText(const BoardInfo &board)
 {
@@ -261,6 +262,23 @@ QString cleanPortName(const QString &portName)
     return portName.section(' ', 0, 0).trimmed();
 }
 
+bool serialPortLooksLikeN6(const QString &portName)
+{
+    const QString clean = cleanPortName(portName);
+    if (clean.isEmpty())
+        return false;
+    for (const QSerialPortInfo &info : SerialManager::availablePorts()) {
+        if (info.portName().compare(clean, Qt::CaseInsensitive) == 0)
+            return hasProductId(info, kN657VcpProductId);
+    }
+    return false;
+}
+
+bool boardOrPortLooksLikeN6(const BoardInfo &board, const QString &portName)
+{
+    return boardLooksLikeN6(board) || serialPortLooksLikeN6(portName);
+}
+
 QSerialPortInfo preferredSerialPortForBoard(const BoardInfo &board, const QString &requestedPort = {})
 {
     const auto ports = SerialManager::availablePorts();
@@ -311,8 +329,93 @@ QSerialPortInfo preferredSerialPortForBoard(const BoardInfo &board, const QStrin
 int preferredBaudForBoard(const BoardInfo &board, int requestedBaud)
 {
     if (boardLooksLikeN6(board))
-        return 115200;
+        return kN6DefaultBaud;
     return requestedBaud > 0 ? requestedBaud : 115200;
+}
+
+qulonglong namedUIntValue(const QString &line, const QString &name, qulonglong fallback = 0)
+{
+    const QRegularExpression re(QStringLiteral("\\b%1\\s*=\\s*([0-9]+)").arg(QRegularExpression::escape(name)),
+                                QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = re.match(line);
+    if (!match.hasMatch())
+        return fallback;
+    bool ok = false;
+    const qulonglong value = match.captured(1).toULongLong(&ok);
+    return ok ? value : fallback;
+}
+
+double namedDoubleValue(const QString &line, const QString &name, double fallback = 0.0)
+{
+    const QRegularExpression re(QStringLiteral("\\b%1\\s*=\\s*([0-9]+(?:\\.[0-9]+)?)")
+                                    .arg(QRegularExpression::escape(name)),
+                                QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = re.match(line);
+    if (!match.hasMatch())
+        return fallback;
+    bool ok = false;
+    const double value = match.captured(1).toDouble(&ok);
+    return ok ? value : fallback;
+}
+
+QString namedTextValue(const QString &line, const QString &name)
+{
+    const QRegularExpression re(QStringLiteral("\\b%1\\s*=\\s*([^\\s,|]+)")
+                                    .arg(QRegularExpression::escape(name)),
+                                QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = re.match(line);
+    return match.hasMatch() ? match.captured(1).trimmed() : QString();
+}
+
+quint8 confidencePercentFromLine(const QString &line)
+{
+    const QRegularExpression re(QStringLiteral("\\b(?:conf|pct)\\s*=\\s*([0-9]+)\\s*%?"),
+                                QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = re.match(line);
+    if (!match.hasMatch())
+        return 0;
+    bool ok = false;
+    const int value = match.captured(1).toInt(&ok);
+    return ok ? static_cast<quint8>(qBound(0, value, 100)) : 0;
+}
+
+QString n6PredictionLabelFromLine(const QString &line)
+{
+    QString label = namedTextValue(line, QStringLiteral("label"));
+    if (!label.isEmpty())
+        return label;
+
+    label = namedTextValue(line, QStringLiteral("best"));
+    if (!label.isEmpty())
+        return label;
+
+    const QRegularExpression parenRe(QStringLiteral("\\(([^)]+)\\)"));
+    const QRegularExpressionMatch parenMatch = parenRe.match(line);
+    if (parenMatch.hasMatch())
+        return parenMatch.captured(1).trimmed();
+
+    const QRegularExpression pctLabelRe(QStringLiteral("\\bpct\\s*=\\s*[0-9]+\\s+([^\\s]+)\\s+cy\\s*="),
+                                        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch pctLabelMatch = pctLabelRe.match(line);
+    if (pctLabelMatch.hasMatch())
+        return pctLabelMatch.captured(1).trimmed();
+
+    const QRegularExpression irlRe(QStringLiteral("^\\[IRL[^\\]]*\\]\\s*([^\\s]+)"),
+                                   QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch irlMatch = irlRe.match(line);
+    if (irlMatch.hasMatch())
+        return irlMatch.captured(1).trimmed();
+
+    return {};
+}
+
+quint32 cyclesToMicros(qulonglong cycles, double cpuMhz)
+{
+    if (cycles == 0 || cpuMhz <= 0.0)
+        return 0;
+    const double micros = static_cast<double>(cycles) / cpuMhz;
+    const qulonglong rounded = static_cast<qulonglong>(qMax<qint64>(0, qRound64(micros)));
+    return static_cast<quint32>(qMin<qulonglong>(rounded, std::numeric_limits<quint32>::max()));
 }
 
 QString programmerSnForBoard(const QString &cliPath, const BoardInfo &board)
@@ -395,7 +498,7 @@ Backend::Backend(AppState        *state,
     m_pipelinePulseTimer->setInterval(1200);
     connect(m_benchmarkTimeout, &QTimer::timeout, this, [this]() {
         if (!m_benchmarkBusy) return;
-        appendBenchmarkLine("Benchmark yanÄ±tÄ± alÄ±namadÄ±. Firmware BENCH komutunu destekliyor mu?", "warn");
+        appendBenchmarkLine("Benchmark yaniti alinamadi. Kartin guncel template firmware ile flashlandigini ve BENCH komutunu isledigini dogrulayin.", "warn");
         m_benchmarkBusy = false;
         emit benchmarkChanged();
     });
@@ -537,18 +640,102 @@ void Backend::connectSerial(const QString &portName, int baud)
     }
     if (cleanPort.isEmpty()) return;
     const BoardInfo activeBoard = m_state ? m_state->activeBoard() : BoardInfo{};
-    const int actualBaud = preferredBaudForBoard(activeBoard, baud);
+    const int actualBaud = boardOrPortLooksLikeN6(activeBoard, cleanPort)
+        ? kN6DefaultBaud
+        : preferredBaudForBoard(activeBoard, baud);
     if (m_state) {
         m_state->setActivePort(cleanPort);
         m_state->setActiveBaud(actualBaud);
     }
     AppSettings().setLastBaud(actualBaud);
     m_serial->connectToPort(cleanPort, actualBaud);
+    if (boardOrPortLooksLikeN6(activeBoard, cleanPort)) {
+        QTimer::singleShot(900, this, [this]() {
+            resetN6TargetForCapture(QStringLiteral("connect"), false);
+        });
+    }
 }
 
 void Backend::disconnectSerial()
 {
     if (m_serial) m_serial->disconnectPort();
+}
+
+void Backend::resetN6TargetForCapture(const QString &reason, bool benchmarkLog)
+{
+    if (!m_state)
+        return;
+
+    const BoardInfo board = m_state->activeBoard();
+    const QString port = m_state->activePort();
+    if (!boardOrPortLooksLikeN6(board, port))
+        return;
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (nowMs - m_n6LastResetRequestMs < 1200)
+        return;
+    m_n6LastResetRequestMs = nowMs;
+
+    auto logLine = [this, benchmarkLog](const QString &text, const QString &type) {
+        if (benchmarkLog)
+            appendBenchmarkLine(text, type);
+        else
+            appendMonitorLine(text, type);
+    };
+
+    AppSettings settings;
+    QString cliPath = settings.programmerCliPath();
+    if (cliPath.isEmpty()) {
+        cliPath = FlashManager::detectCliPath();
+        if (!cliPath.isEmpty())
+            settings.setProgrammerCliPath(cliPath);
+    }
+
+    if (cliPath.isEmpty()) {
+        logLine("[n6-reset] STM32_Programmer_CLI bulunamadi; port acikken karta manuel NRST/reset atin.", "warn");
+        return;
+    }
+
+    QSerialPortInfo portInfo = preferredSerialPortForBoard(board, port);
+    QString selectedSn = board.stlinkSn;
+    if (selectedSn.isEmpty() && !portInfo.isNull())
+        selectedSn = portInfo.serialNumber();
+    if (selectedSn.isEmpty())
+        selectedSn = programmerSnForBoard(cliPath, board);
+
+    // NOTE: N6 boots from external flash with TrustZone/RIF active. Once the
+    // secured firmware runs, a normal SWD connect fails with "can't get core ID"
+    // (exit=1). mode=UR (connect under reset) holds NRST low during connection so
+    // the core is always reachable regardless of what firmware is running.
+    QStringList args{QStringLiteral("-c"), QStringLiteral("port=SWD"), QStringLiteral("mode=UR")};
+    if (!selectedSn.isEmpty())
+        args << QStringLiteral("sn=%1").arg(selectedSn);
+    args << QStringLiteral("-rst");
+
+    logLine(QString("[n6-reset] %1: STM32_Programmer_CLI %2")
+                .arg(reason.isEmpty() ? QStringLiteral("capture") : reason,
+                     args.join(QLatin1Char(' '))), "cmd");
+
+    QProcess *resetProcess = new QProcess(this);
+    connect(resetProcess, &QProcess::errorOccurred, this,
+            [resetProcess, logLine](QProcess::ProcessError) {
+                logLine(QString("[n6-reset] reset baslatilamadi: %1").arg(resetProcess->errorString()), "warn");
+                resetProcess->deleteLater();
+            });
+    connect(resetProcess, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [resetProcess, logLine](int exitCode, QProcess::ExitStatus) {
+                const QString output = QString::fromLocal8Bit(resetProcess->readAllStandardOutput()
+                                                              + resetProcess->readAllStandardError()).trimmed();
+                if (exitCode == 0) {
+                    logLine("[n6-reset] reset gonderildi; boot UART cikisi yakalaniyor.", "ok");
+                } else {
+                    logLine(QString("[n6-reset] reset basarisiz (exit=%1). Manuel NRST/reset deneyin.%2")
+                                .arg(exitCode)
+                                .arg(output.isEmpty() ? QString() : QStringLiteral(" ") + output.left(180)), "warn");
+                }
+                resetProcess->deleteLater();
+            });
+    resetProcess->start(cliPath, args);
 }
 
 void Backend::probeStLinkBoard()
@@ -703,7 +890,7 @@ void Backend::selectBoard(const QString &boardName)
     }
     m_state->setActiveBoard(board);
     if (boardLooksLikeN6(board))
-        m_state->setActiveBaud(115200);
+        m_state->setActiveBaud(kN6DefaultBaud);
 }
 
 void Backend::addCustomBoard(const QString &name, int flashKb, int ramKb, int clockMhz)
@@ -1025,12 +1212,22 @@ void Backend::startHardwareSimulation(int intervalMs, double minVal, double maxV
     m_hwSimSentCount = 0;
     m_hwSimResponseCount = 0;
     m_hwSimRunning = true;
-    appendMonitorLine(QString("[hw-sim] Donanim simulasyonu basladi Â- aralik %1 ms").arg(intervalMs), "warn");
-    appendMonitorLine("[hw-sim] Sentetik sensor verisi karta gonderilecek. Yanit bekleniyor...", "info");
-    const int baud = preferredBaudForBoard(m_state->activeBoard(), m_state->activeBaud());
+    // The N6 board runs the deployer's own template firmware, whose main loop
+    // polls UART and answers the INFER command with a §inf packet — exactly like
+    // the other boards. So drive it the same way (send synthetic INFER frames).
+    // The old N6 "passive capture + reset" path was written for the reference KWS
+    // firmware; on the template firmware the reset only dropped the live VCP
+    // stream, so the simulation never appeared to start.
+    m_hwSimPassiveCapture = false;
+    const bool n6Board = boardOrPortLooksLikeN6(m_state->activeBoard(), port);
+    const int baud = n6Board
+        ? kN6DefaultBaud
+        : preferredBaudForBoard(m_state->activeBoard(), m_state->activeBaud());
     m_state->setActiveBaud(baud);
     if (!m_state->isConnected())
         m_serial->connectToPort(port, baud);
+    appendMonitorLine(QString("[hw-sim] Donanim simulasyonu basladi - aralik %1 ms").arg(intervalMs), "warn");
+    appendMonitorLine("[hw-sim] Sentetik sensor verisi karta INFER ile gonderilecek. Yanit bekleniyor...", "info");
     m_hwSimTimer->start(qMax(50, intervalMs));
     emit simRunningChanged();
 }
@@ -1064,13 +1261,22 @@ void Backend::stopHardwareSimulation()
     if (!m_hwSimRunning) return;
     m_hwSimTimer->stop();
     m_hwSimRunning = false;
-    appendMonitorLine(QString("[hw-sim] Simulasyon durduruldu Â- gonderilen=%1  yanit=%2")
-                          .arg(m_hwSimSentCount).arg(m_hwSimResponseCount), "warn");
+    if (m_hwSimPassiveCapture) {
+        appendMonitorLine(QString("[hw-sim] N6 pasif dinleme durduruldu - yakalanan=%1")
+                              .arg(m_hwSimResponseCount), "warn");
+    } else {
+        appendMonitorLine(QString("[hw-sim] Simulasyon durduruldu - gonderilen=%1  yanit=%2")
+                              .arg(m_hwSimSentCount).arg(m_hwSimResponseCount), "warn");
+    }
+    m_hwSimPassiveCapture = false;
     emit simRunningChanged();
 }
 
 void Backend::tickHardwareSimulation()
 {
+    if (m_hwSimPassiveCapture)
+        return;
+
     if (!m_serial || !m_state || !m_state->isConnected()) {
         appendMonitorLine("[hw-sim] UART baglantisi yok; durduruldu.", "err");
         stopHardwareSimulation();
@@ -1647,6 +1853,7 @@ void Backend::startBenchmark(int samples, double minValue, double maxValue, int 
         return;
     }
 
+    const bool n6Board = boardOrPortLooksLikeN6(m_state->activeBoard(), port);
     m_benchmarkLines.clear();
     m_benchmarkMetrics.clear();
     m_benchmarkBusy = true;
@@ -1672,13 +1879,19 @@ void Backend::startBenchmark(int samples, double minValue, double maxValue, int 
         m_benchmarkTimeout->start(10000);
     };
 
-    const int baud = preferredBaudForBoard(m_state->activeBoard(), m_state->activeBaud());
+    const int baud = n6Board ? kN6DefaultBaud
+                             : preferredBaudForBoard(m_state->activeBoard(), m_state->activeBaud());
     m_state->setActiveBaud(baud);
 
+    // NOTE: The N6 board runs the deployer's own template firmware (§JSON
+    // protocol). Its main loop polls UART before the sensor read, so it processes
+    // "BENCH n min max seed" even with no sensor wired — Run_Benchmark feeds
+    // synthetic input and replies with a §bench packet. So drive it the same way
+    // as the other boards: send the BENCH command, no reset/passive capture.
     if (m_state->isConnected()) {
         sendCommand();
     } else {
-        appendBenchmarkLine(QString("UART baÄŸlantÄ±sÄ± aÃ§Ä±lÄ±yor: %1 @ %2")
+        appendBenchmarkLine(QString("UART baglantisi aciliyor: %1 @ %2")
                                 .arg(port).arg(m_state->activeBaud()), "cmd");
         m_serial->connectToPort(port, m_state->activeBaud() > 0 ? m_state->activeBaud() : 115200);
         QTimer::singleShot(1200, this, sendCommand);
@@ -1715,7 +1928,7 @@ void Backend::startBenchmarkWithInputs(int samples, const QVariantList &inputs, 
         std::swap(minValue, maxValue);
 
     startBenchmark(samples, minValue, maxValue, seed);
-    if (inputs.size() > 1)
+    if (inputs.size() > 1 && m_state && !boardOrPortLooksLikeN6(m_state->activeBoard(), m_state->activePort()))
         appendBenchmarkLine("Not: Mevcut kart firmware'i tek BENCH araligi destekliyor; input araliklari birlestirilerek gonderilecek.", "warn");
 }
 
@@ -2322,6 +2535,185 @@ void Backend::wireAnalysis()
             });
 }
 
+void Backend::handleN6TextLine(const QString &line)
+{
+    if (!m_state)
+        return;
+
+    const QString trimmed = line.trimmed();
+    if (trimmed.isEmpty())
+        return;
+
+    const bool activeN6 = boardOrPortLooksLikeN6(m_state->activeBoard(), m_state->activePort());
+    const bool lineLooksN6 = trimmed.contains("N6", Qt::CaseInsensitive)
+                          || trimmed.contains("STAI", Qt::CaseInsensitive)
+                          || trimmed.contains("NPU", Qt::CaseInsensitive)
+                          || trimmed.contains("BENCH-SUMMARY", Qt::CaseInsensitive)
+                          || trimmed.contains("[PRED]", Qt::CaseInsensitive)
+                          || trimmed.contains("[IRL", Qt::CaseInsensitive);
+    if (!activeN6 && !lineLooksN6)
+        return;
+
+    const QRegularExpression cpuRe(QStringLiteral("\\bCPU\\s*=\\s*([0-9]+(?:\\.[0-9]+)?)\\s*MHz"),
+                                   QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch cpuMatch = cpuRe.match(trimmed);
+    if (cpuMatch.hasMatch()) {
+        bool ok = false;
+        const double cpuMhz = cpuMatch.captured(1).toDouble(&ok);
+        if (ok && cpuMhz > 0.0)
+            m_n6LastCpuMhz = cpuMhz;
+    }
+    const double namedCpuMhz = namedDoubleValue(trimmed, QStringLiteral("cpu_mhz"), 0.0);
+    if (namedCpuMhz > 0.0)
+        m_n6LastCpuMhz = namedCpuMhz;
+
+    QString model = namedTextValue(trimmed, QStringLiteral("model"));
+    if (model.isEmpty()) {
+        const QRegularExpression modelRe(QStringLiteral("^\\[[^\\]]*N6[^\\]]*\\]\\s*([^|]+)"),
+                                         QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch modelMatch = modelRe.match(trimmed);
+        if (modelMatch.hasMatch())
+            model = modelMatch.captured(1).trimmed();
+    }
+    if (!model.isEmpty()) {
+        m_n6LastTextModel = model;
+        m_state->setLastModel(model, m_state->lastInferenceMs(), m_state->lastAccuracy());
+    }
+
+    if (trimmed.startsWith(QStringLiteral("CSV:"), Qt::CaseInsensitive)) {
+        const QString csvBody = trimmed.mid(4).trimmed();
+        const QStringList fields = csvBody.split(',', Qt::KeepEmptyParts);
+        if (fields.size() >= 11) {
+            const QString csvModel = fields.value(2).trimmed();
+            const QString csvBoard = fields.value(5).trimmed();
+            bool okSamples = false;
+            bool okMean = false;
+            bool okMin = false;
+            bool okMax = false;
+            const quint32 samples = fields.value(6).trimmed().toUInt(&okSamples);
+            const double meanUs = fields.value(7).trimmed().toDouble(&okMean);
+            const double minUs = fields.value(9).trimmed().toDouble(&okMin);
+            const double maxUs = fields.value(10).trimmed().toDouble(&okMax);
+            if (okMean) {
+                if (m_benchmarkTimeout)
+                    m_benchmarkTimeout->stop();
+                m_benchmarkBusy = false;
+
+                const QString benchModel = csvModel.isEmpty() ? m_state->lastModelName() : csvModel;
+                const quint32 avgUs = static_cast<quint32>(qMax(0.0, meanUs));
+                const quint32 minValUs = static_cast<quint32>(qMax(0.0, okMin ? minUs : meanUs));
+                const quint32 maxValUs = static_cast<quint32>(qMax(0.0, okMax ? maxUs : meanUs));
+                const quint32 sampleCount = okSamples && samples > 0 ? samples : 1;
+
+                m_benchmarkMetrics["model"] = benchModel;
+                m_benchmarkMetrics["avg"] = QString("%1 us").arg(avgUs);
+                m_benchmarkMetrics["min"] = QString("%1 us").arg(minValUs);
+                m_benchmarkMetrics["max"] = QString("%1 us").arg(maxValUs);
+                m_benchmarkMetrics["ram"] = QStringLiteral("--");
+                m_benchmarkMetrics["freeRam"] = QStringLiteral("--");
+                m_benchmarkMetrics["samples"] = sampleCount;
+                appendBenchmarkLine(QString("N6 CSV result: samples=%1 avg=%2us min=%3us max=%4us")
+                                        .arg(sampleCount).arg(avgUs).arg(minValUs).arg(maxValUs), "ok");
+                if (m_hwSimRunning && m_hwSimPassiveCapture)
+                    ++m_hwSimResponseCount;
+
+                if (m_analysis) {
+                    const BoardInfo board = m_state->activeBoard();
+                    QStringList cells;
+                    cells << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+                          << QString("BENCH-N6-%1").arg(sampleCount)
+                          << (csvBoard.isEmpty() ? (board.name.isEmpty() ? QStringLiteral("STM32N6") : board.name) : csvBoard)
+                          << (board.deviceName.isEmpty() ? board.name : board.deviceName)
+                          << (board.deviceCpu.isEmpty() ? QStringLiteral("Cortex-M55 + NPU") : board.deviceCpu)
+                          << (benchModel.isEmpty() ? QStringLiteral("--") : benchModel)
+                          << "INT8" << "--"
+                          << (QString::number(avgUs / 1000.0, 'f', 2) + " ms")
+                          << "--" << "--" << "Tamamlandi";
+                    m_analysis->addRecord("benchmark", cells);
+                    emit analysisChanged();
+                }
+                emit benchmarkChanged();
+            }
+        }
+        return;
+    }
+
+    if (trimmed.contains("BENCH-SUMMARY", Qt::CaseInsensitive)) {
+        const qulonglong samples = namedUIntValue(trimmed, QStringLiteral("n"),
+                                  namedUIntValue(trimmed, QStringLiteral("samples"), 1));
+        const qulonglong meanCy = namedUIntValue(trimmed, QStringLiteral("infer_mean_cy"),
+                                namedUIntValue(trimmed, QStringLiteral("avg_cy"), 0));
+        const qulonglong minCy = namedUIntValue(trimmed, QStringLiteral("min"),
+                               namedUIntValue(trimmed, QStringLiteral("min_cy"), meanCy));
+        const qulonglong maxCy = namedUIntValue(trimmed, QStringLiteral("max"),
+                               namedUIntValue(trimmed, QStringLiteral("max_cy"), meanCy));
+        if (meanCy > 0) {
+            if (m_benchmarkTimeout)
+                m_benchmarkTimeout->stop();
+            m_benchmarkBusy = false;
+
+            const QString benchModel = !model.isEmpty() ? model
+                                    : (!m_n6LastTextModel.isEmpty() ? m_n6LastTextModel
+                                                                    : m_state->lastModelName());
+            const quint32 avgUs = cyclesToMicros(meanCy, m_n6LastCpuMhz);
+            const quint32 minUs = cyclesToMicros(minCy, m_n6LastCpuMhz);
+            const quint32 maxUs = cyclesToMicros(maxCy, m_n6LastCpuMhz);
+
+            m_benchmarkMetrics["model"] = benchModel;
+            m_benchmarkMetrics["avg"] = QString("%1 us").arg(avgUs);
+            m_benchmarkMetrics["min"] = QString("%1 us").arg(minUs);
+            m_benchmarkMetrics["max"] = QString("%1 us").arg(maxUs);
+            m_benchmarkMetrics["ram"] = QStringLiteral("--");
+            m_benchmarkMetrics["freeRam"] = QStringLiteral("--");
+            m_benchmarkMetrics["samples"] = static_cast<quint32>(qMax<qulonglong>(1, samples));
+            appendBenchmarkLine(QString("N6 BENCH result: samples=%1 avg=%2us min=%3us max=%4us cpu=%5MHz")
+                                    .arg(samples).arg(avgUs).arg(minUs).arg(maxUs)
+                                    .arg(m_n6LastCpuMhz, 0, 'f', 0), "ok");
+            if (m_hwSimRunning && m_hwSimPassiveCapture)
+                ++m_hwSimResponseCount;
+
+            // N6 reference firmware usually emits both BENCH-SUMMARY and CSV for one run.
+            // Keep summary for live metrics; persist only CSV to avoid duplicate analysis rows.
+            emit benchmarkChanged();
+        }
+        return;
+    }
+
+    const bool predictionLine = trimmed.contains("[PRED]", Qt::CaseInsensitive)
+                             || trimmed.contains("[IRL", Qt::CaseInsensitive);
+    if (!predictionLine)
+        return;
+
+    QString label = n6PredictionLabelFromLine(trimmed);
+    if (!label.isEmpty())
+        m_n6LastTextLabel = label;
+
+    const qulonglong cycles = namedUIntValue(trimmed, QStringLiteral("cy"),
+                            namedUIntValue(trimmed, QStringLiteral("cycles"), 0));
+    const quint32 infUs = cyclesToMicros(cycles, m_n6LastCpuMhz);
+    const quint8 confidence = confidencePercentFromLine(trimmed);
+    const QString liveModel = !m_n6LastTextModel.isEmpty() ? m_n6LastTextModel : m_state->lastModelName();
+    const QString liveLabel = !label.isEmpty() ? label : m_n6LastTextLabel;
+    if (infUs > 0 || !liveLabel.isEmpty()) {
+        m_state->setLiveMetrics(liveModel, infUs / 1000.0, confidence, m_state->lastRamKb(), liveLabel);
+        if (m_hwSimRunning && m_hwSimPassiveCapture)
+            ++m_hwSimResponseCount;
+        if (m_sensorAnalysisRunning) {
+            ++m_sensorAnalysisCount;
+            m_sensorAnalysisTotalInfUs += infUs;
+            m_sensorAnalysisTotalAcc += confidence;
+            if (!liveModel.isEmpty()) m_sensorAnalysisLastModel = liveModel;
+            if (!liveLabel.isEmpty()) {
+                m_sensorAnalysisLastLabel = liveLabel;
+                ++m_sensorAnalysisLabelCounts[liveLabel];
+            }
+            m_sensorAnalysisLastCard = m_state->activeBoard().name;
+            if (m_sensorAnalysisLastSensor.isEmpty())
+                m_sensorAnalysisLastSensor = m_state->lastSensor();
+        }
+    }
+}
+
 // â”€â”€ Serial â†’ AppState + monitor wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 void Backend::wireSerial()
 {
@@ -2336,7 +2728,10 @@ void Backend::wireSerial()
             });
 
     connect(m_serial, &SerialManager::rawLineReceived, this,
-            [this](const QString &line) { appendMonitorLine(line, "info"); });
+            [this](const QString &line) {
+                appendMonitorLine(line, "info");
+                handleN6TextLine(line);
+            });
 
     connect(m_serial, &SerialManager::bootReceived, this,
             [this](const BootData &boot) {
@@ -2432,6 +2827,8 @@ void Backend::wireSerial()
 void Backend::requestBoardInfoBurst()
 {
     if (!m_serial) return;
+    if (m_state && boardOrPortLooksLikeN6(m_state->activeBoard(), m_state->activePort()))
+        return;
 
     auto request = [this]() {
         if (!m_serial || !m_serial->isConnected()) return;

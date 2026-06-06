@@ -2,7 +2,7 @@
 
 #include "main.h"
 
-extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef hlpuart1;
 extern I2C_HandleTypeDef  hi2c1;
 
 void HAL_MspInit(void)
@@ -13,15 +13,15 @@ void HAL_MspInit(void)
 /* ── USART1 — ST-Link VCP: TX=PE5, RX=PE6 ──────────────────────────────── */
 void HAL_UART_MspInit(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance == USART1) {
+    if (huart->Instance == LPUART1) {
         RCC_PeriphCLKInitTypeDef periphClk = {0};
-        periphClk.PeriphClockSelection = RCC_PERIPHCLK_USART1;
-        periphClk.Usart1ClockSelection = RCC_USART1CLKSOURCE_HSI;
+        periphClk.PeriphClockSelection = RCC_PERIPHCLK_LPUART1;
+        periphClk.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_HSI;
         if (HAL_RCCEx_PeriphCLKConfig(&periphClk) != HAL_OK) {
             Error_Handler();
         }
 
-        __HAL_RCC_USART1_CLK_ENABLE();
+        __HAL_RCC_LPUART1_CLK_ENABLE();
         __HAL_RCC_GPIOE_CLK_ENABLE();
         HAL_GPIO_ConfigPinAttributes(GPIOE, GPIO_PIN_5 | GPIO_PIN_6, GPIO_PIN_SEC | GPIO_PIN_NPRIV);
 
@@ -30,21 +30,17 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
         gpio.Mode      = GPIO_MODE_AF_PP;
         gpio.Pull      = GPIO_PULLUP;
         gpio.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
-        gpio.Alternate = GPIO_AF7_USART1;
+        gpio.Alternate = GPIO_AF3_LPUART1;
         HAL_GPIO_Init(GPIOE, &gpio);
-
-        HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
-        HAL_NVIC_EnableIRQ(USART1_IRQn);
     }
 }
 
 void HAL_UART_MspDeInit(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance == USART1) {
-        __HAL_RCC_USART1_FORCE_RESET();
-        __HAL_RCC_USART1_RELEASE_RESET();
+    if (huart->Instance == LPUART1) {
+        __HAL_RCC_LPUART1_FORCE_RESET();
+        __HAL_RCC_LPUART1_RELEASE_RESET();
         HAL_GPIO_DeInit(GPIOE, GPIO_PIN_5 | GPIO_PIN_6);
-        HAL_NVIC_DisableIRQ(USART1_IRQn);
     }
 }
 
