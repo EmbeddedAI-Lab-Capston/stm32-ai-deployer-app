@@ -122,7 +122,11 @@ public:
     QVariantList benchmarkLines() const { return m_benchmarkLines; }
     QVariantMap  benchmarkMetrics() const { return m_benchmarkMetrics; }
     bool         benchmarkBusy() const { return m_benchmarkBusy; }
+    Q_INVOKABLE QVariantMap deployedModelInfo() const;
+    Q_INVOKABLE QVariantList deployedModelInputSpecs();
+    Q_INVOKABLE QVariantList modelInputSpecs(const QString &modelPath);
     Q_INVOKABLE void startBenchmark(int samples, double minValue, double maxValue, int seed);
+    Q_INVOKABLE void startBenchmarkWithInputs(int samples, const QVariantList &inputs, int seed);
     Q_INVOKABLE void cancelBenchmark();
     Q_INVOKABLE void clearBenchmarkLog();
 

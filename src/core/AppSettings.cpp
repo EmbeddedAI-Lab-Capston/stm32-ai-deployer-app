@@ -172,6 +172,54 @@ void AppSettings::setLastOutputDir(const QString &dir)
     s.setValue(kKeyLastOutputDir, dir);
 }
 
+QString AppSettings::deployedModelName() const
+{
+    QSettings s;
+    return s.value(kKeyDeployedModelName, QString{}).toString();
+}
+
+void AppSettings::setDeployedModelName(const QString &name)
+{
+    QSettings s;
+    s.setValue(kKeyDeployedModelName, name);
+}
+
+QString AppSettings::deployedModelPath() const
+{
+    QSettings s;
+    return s.value(kKeyDeployedModelPath, QString{}).toString();
+}
+
+void AppSettings::setDeployedModelPath(const QString &path)
+{
+    QSettings s;
+    s.setValue(kKeyDeployedModelPath, path);
+}
+
+QString AppSettings::deployedModelOutputDir() const
+{
+    QSettings s;
+    return s.value(kKeyDeployedOutputDir, QString{}).toString();
+}
+
+void AppSettings::setDeployedModelOutputDir(const QString &dir)
+{
+    QSettings s;
+    s.setValue(kKeyDeployedOutputDir, dir);
+}
+
+QString AppSettings::deployedSensorType() const
+{
+    QSettings s;
+    return s.value(kKeyDeployedSensorType, QString{}).toString();
+}
+
+void AppSettings::setDeployedSensorType(const QString &sensorType)
+{
+    QSettings s;
+    s.setValue(kKeyDeployedSensorType, sensorType);
+}
+
 QString AppSettings::cubeSdkPath() const
 {
     QSettings s;

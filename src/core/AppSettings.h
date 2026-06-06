@@ -64,6 +64,16 @@ public:
     QString lastOutputDir() const;
     void    setLastOutputDir(const QString &dir);
 
+    // Last model deployed to the board through the pipeline
+    QString deployedModelName() const;
+    void    setDeployedModelName(const QString &name);
+    QString deployedModelPath() const;
+    void    setDeployedModelPath(const QString &path);
+    QString deployedModelOutputDir() const;
+    void    setDeployedModelOutputDir(const QString &dir);
+    QString deployedSensorType() const;
+    void    setDeployedSensorType(const QString &sensorType);
+
     // STM32CubeF4/H7/N6 SDK root (STM32Cube_FW_Fx_Vx.xx.x)
     QString cubeSdkPath() const;
     void    setCubeSdkPath(const QString &path);
@@ -81,6 +91,10 @@ private:
     static constexpr auto kKeyToolsAutoDetected = "tools/auto_detected";
     static constexpr auto kKeyLastModelDir     = "flash/last_model_dir";
     static constexpr auto kKeyLastOutputDir    = "flash/last_output_dir";
+    static constexpr auto kKeyDeployedModelName = "benchmark/deployed_model_name";
+    static constexpr auto kKeyDeployedModelPath = "benchmark/deployed_model_path";
+    static constexpr auto kKeyDeployedOutputDir = "benchmark/deployed_output_dir";
+    static constexpr auto kKeyDeployedSensorType = "benchmark/deployed_sensor_type";
     static constexpr auto kKeyCubeSdkPath     = "tools/cube_sdk_path";
     static constexpr auto kArrayCustomBoards   = "boards/custom";
 };

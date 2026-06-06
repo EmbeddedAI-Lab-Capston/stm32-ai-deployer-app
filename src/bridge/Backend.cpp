@@ -11,6 +11,7 @@
 #include <QLocale>
 #include <QRandomGenerator>
 #include <QDateTime>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QFile>
@@ -20,8 +21,10 @@
 #include <QPdfWriter>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QTemporaryDir>
 #include <QTextStream>
 #include <QUrl>
+#include <QtMath>
 
 #include "core/AppState.h"
 #include "core/AppSettings.h"
@@ -77,6 +80,150 @@ bool isStVcp(const QSerialPortInfo &info)
 bool hasProductId(const QSerialPortInfo &info, quint16 productId)
 {
     return isStVcp(info) && info.hasProductIdentifier() && info.productIdentifier() == productId;
+}
+
+QString jsonArrayToShapeString(const QJsonArray &shape)
+{
+    QStringList parts;
+    for (const QJsonValue &value : shape)
+        parts << QString::number(value.toInt());
+    return parts.join('x');
+}
+
+int flattenedInputElementCount(const QJsonArray &shape)
+{
+    int count = 1;
+    for (int i = 0; i < shape.size(); ++i) {
+        const int dim = shape.at(i).toInt(1);
+        if (i == 0 && dim == 1)
+            continue;
+        count *= qMax(1, dim);
+        if (count > 64)
+            return count;
+    }
+    return qMax(1, count);
+}
+
+QPair<double, double> defaultRangeForInput(const QJsonObject &input)
+{
+    const QJsonObject format = input.value(QStringLiteral("data_format")).toObject();
+    const QString type = format.value(QStringLiteral("type")).toString().toUpper();
+    const int size = format.value(QStringLiteral("size")).toInt(32);
+    const QJsonArray scales = format.value(QStringLiteral("scale")).toArray();
+    const QJsonArray zeros = format.value(QStringLiteral("zero")).toArray();
+
+    if ((type.contains(QStringLiteral("SIGNED")) || type.contains(QStringLiteral("UNSIGNED")))
+        && size > 0 && size <= 16 && !scales.isEmpty()) {
+        const double scale = scales.first().toDouble(1.0);
+        const double zero = zeros.isEmpty() ? 0.0 : zeros.first().toDouble(0.0);
+        const double qMin = type.contains(QStringLiteral("UNSIGNED")) ? 0.0 : -qPow(2.0, size - 1);
+        const double qMax = type.contains(QStringLiteral("UNSIGNED")) ? qPow(2.0, size) - 1.0
+                                                                      : qPow(2.0, size - 1) - 1.0;
+        return { (qMin - zero) * scale, (qMax - zero) * scale };
+    }
+
+    if (type.contains(QStringLiteral("FLOAT")))
+        return {0.0, 1.0};
+
+    return {0.0, 1.0};
+}
+
+void appendInputSpecsFromArray(const QJsonArray &inputs, QVariantList *specs)
+{
+    for (const QJsonValue &value : inputs) {
+        const QJsonObject input = value.toObject();
+        const QString tensorName = input.value(QStringLiteral("name")).toString(QStringLiteral("input"));
+        const QJsonArray shape = input.value(QStringLiteral("shape")).toArray();
+        const QString shapeText = jsonArrayToShapeString(shape);
+        const auto range = defaultRangeForInput(input);
+        const int elementCount = flattenedInputElementCount(shape);
+        const bool expandElements = elementCount > 1 && elementCount <= 64;
+
+        const int rows = expandElements ? elementCount : 1;
+        for (int i = 0; i < rows; ++i) {
+            QVariantMap spec;
+            spec[QStringLiteral("name")] = expandElements
+                ? QStringLiteral("%1[%2]").arg(tensorName).arg(i)
+                : tensorName;
+            spec[QStringLiteral("tensorName")] = tensorName;
+            spec[QStringLiteral("shape")] = shapeText.isEmpty() ? QStringLiteral("-") : shapeText;
+            spec[QStringLiteral("elements")] = elementCount;
+            spec[QStringLiteral("elementIndex")] = expandElements ? i : -1;
+            spec[QStringLiteral("min")] = range.first;
+            spec[QStringLiteral("max")] = range.second;
+            specs->append(spec);
+        }
+    }
+}
+
+QVariantList parseInputSpecsFromReport(const QString &reportPath)
+{
+    QFile file(reportPath);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject())
+        return {};
+
+    QVariantList specs;
+    const QJsonObject root = doc.object();
+    appendInputSpecsFromArray(root.value(QStringLiteral("original_inputs")).toArray(), &specs);
+
+    const QJsonArray graphs = root.value(QStringLiteral("graphs")).toArray();
+    for (const QJsonValue &graphValue : graphs)
+        appendInputSpecsFromArray(graphValue.toObject().value(QStringLiteral("original_inputs")).toArray(), &specs);
+
+    return specs;
+}
+
+QString semanticInputLabel(const QString &sensorType, int elementIndex)
+{
+    if (elementIndex < 0)
+        return {};
+
+    const QString sensor = sensorType.toUpper();
+    if (sensor == QStringLiteral("BME280")) {
+        const QStringList labels = {
+            QStringLiteral("Sicaklik (C)"),
+            QStringLiteral("Basinc (hPa)"),
+            QStringLiteral("Nem (%)"),
+        };
+        return labels.at(elementIndex % labels.size());
+    }
+
+    if (sensor == QStringLiteral("MPU6050")) {
+        const QStringList labels = {
+            QStringLiteral("Ivme X"),
+            QStringLiteral("Ivme Y"),
+            QStringLiteral("Ivme Z"),
+            QStringLiteral("Gyro X"),
+            QStringLiteral("Gyro Y"),
+            QStringLiteral("Gyro Z"),
+        };
+        return labels.at(elementIndex % labels.size());
+    }
+
+    if (sensor == QStringLiteral("PDM_MIC") || sensor == QStringLiteral("PDM")) {
+        return QStringLiteral("MFCC %1").arg(elementIndex);
+    }
+
+    return {};
+}
+
+QVariantList withSemanticInputLabels(QVariantList specs, const QString &sensorType)
+{
+    for (QVariant &value : specs) {
+        QVariantMap spec = value.toMap();
+        bool ok = false;
+        const int parsedIndex = spec.value(QStringLiteral("elementIndex")).toInt(&ok);
+        const int elementIndex = ok ? parsedIndex : -1;
+        const QString label = semanticInputLabel(sensorType, elementIndex);
+        if (!label.isEmpty())
+            spec[QStringLiteral("label")] = label;
+        value = spec;
+    }
+    return specs;
 }
 
 QString cleanPortName(const QString &portName)
@@ -1080,6 +1227,11 @@ void Backend::runPipeline(const QVariantMap &config)
         m_pipelineStage = success ? "Pipeline tamamlandı" : "Pipeline başarısız";
         if (success) {
             addCompiledRecord(m_lastPipelineConfig);
+            AppSettings settings;
+            settings.setDeployedModelName(m_lastPipelineConfig.modelName);
+            settings.setDeployedModelPath(m_lastPipelineConfig.modelPath);
+            settings.setDeployedModelOutputDir(m_lastPipelineConfig.outputDir);
+            settings.setDeployedSensorType(m_lastPipelineConfig.sensorType);
             if (m_state) {
                 m_state->setLastModel(m_lastPipelineConfig.modelName,
                                       m_state->lastInferenceMs(), m_state->lastAccuracy());
@@ -1162,6 +1314,104 @@ void Backend::appendBenchmarkLine(const QString &text, const QString &type)
     emit benchmarkChanged();
 }
 
+QVariantMap Backend::deployedModelInfo() const
+{
+    AppSettings settings;
+    QVariantMap info;
+    const QString modelPath = settings.deployedModelPath();
+    QString outputDir = settings.deployedModelOutputDir();
+    if (outputDir.isEmpty())
+        outputDir = settings.lastOutputDir();
+    QString modelName = settings.deployedModelName();
+    if (modelName.isEmpty() && m_state)
+        modelName = m_state->lastModelName();
+
+    info[QStringLiteral("name")] = modelName;
+    info[QStringLiteral("modelPath")] = modelPath;
+    info[QStringLiteral("outputDir")] = outputDir;
+    info[QStringLiteral("sensorType")] = settings.deployedSensorType();
+    info[QStringLiteral("reportPath")] = outputDir.isEmpty()
+        ? QString()
+        : QDir(outputDir).filePath(QStringLiteral("xcubeai_output/network_c_info.json"));
+    info[QStringLiteral("hasModelPath")] = !modelPath.isEmpty() && QFileInfo::exists(modelPath);
+    info[QStringLiteral("hasReport")] = !info.value(QStringLiteral("reportPath")).toString().isEmpty()
+        && QFileInfo::exists(info.value(QStringLiteral("reportPath")).toString());
+    return info;
+}
+
+QVariantList Backend::deployedModelInputSpecs()
+{
+    const QVariantMap info = deployedModelInfo();
+    const QString sensorType = info.value(QStringLiteral("sensorType")).toString();
+    const QString reportPath = info.value(QStringLiteral("reportPath")).toString();
+    if (!reportPath.isEmpty() && QFileInfo::exists(reportPath)) {
+        const QVariantList specs = parseInputSpecsFromReport(reportPath);
+        if (!specs.isEmpty())
+            return withSemanticInputLabels(specs, sensorType);
+    }
+
+    const QString modelPath = info.value(QStringLiteral("modelPath")).toString();
+    if (!modelPath.isEmpty() && QFileInfo::exists(modelPath))
+        return withSemanticInputLabels(modelInputSpecs(modelPath), sensorType);
+
+    return {};
+}
+
+QVariantList Backend::modelInputSpecs(const QString &modelPath)
+{
+    const QString path = QUrl(modelPath).isLocalFile() ? QUrl(modelPath).toLocalFile() : modelPath;
+    if (path.trimmed().isEmpty() || !QFileInfo::exists(path))
+        return {};
+
+    AppSettings settings;
+    QString cliPath = settings.xcubeAICliPath();
+    if (cliPath.isEmpty()) {
+        cliPath = ToolDetector::detectXCubeAI();
+        if (!cliPath.isEmpty())
+            settings.setXCubeAICliPath(cliPath);
+    }
+
+    if (cliPath.isEmpty())
+        return {};
+
+    QTemporaryDir outputDir(QDir::tempPath() + "/stm32-ai-inputs-XXXXXX");
+    if (!outputDir.isValid())
+        return {};
+
+    QProcess proc;
+    proc.setProgram(cliPath);
+    proc.setArguments({
+        QStringLiteral("analyze"),
+        QStringLiteral("--model"), path,
+        QStringLiteral("--target"), QStringLiteral("stm32"),
+        QStringLiteral("--output"), outputDir.path(),
+        QStringLiteral("--no-workspace"),
+    });
+    proc.start();
+    if (!proc.waitForFinished(30000))
+        return {};
+
+    if (proc.exitCode() != 0)
+        return {};
+
+    QVariantList specs = parseInputSpecsFromReport(
+        QDir(outputDir.path()).filePath(QStringLiteral("network_c_info.json")));
+    if (!specs.isEmpty())
+        return specs;
+
+    QVariantMap fallback;
+    fallback[QStringLiteral("name")] = QFileInfo(path).baseName() + QStringLiteral("_input");
+    fallback[QStringLiteral("tensorName")] = fallback.value(QStringLiteral("name"));
+    fallback[QStringLiteral("shape")] = QStringLiteral("-");
+    fallback[QStringLiteral("elements")] = 1;
+    fallback[QStringLiteral("elementIndex")] = -1;
+    fallback[QStringLiteral("min")] = 0.0;
+    fallback[QStringLiteral("max")] = 1.0;
+    QVariantList list;
+    list.append(fallback);
+    return list;
+}
+
 void Backend::startBenchmark(int samples, double minValue, double maxValue, int seed)
 {
     if (!m_serial || !m_state || m_benchmarkBusy) return;
@@ -1215,6 +1465,40 @@ void Backend::startBenchmark(int samples, double minValue, double maxValue, int 
         m_serial->connectToPort(port, m_state->activeBaud() > 0 ? m_state->activeBaud() : 115200);
         QTimer::singleShot(1200, this, sendCommand);
     }
+}
+
+void Backend::startBenchmarkWithInputs(int samples, const QVariantList &inputs, int seed)
+{
+    if (inputs.isEmpty()) {
+        startBenchmark(samples, 0.0, 1.0, seed);
+        return;
+    }
+
+    double minValue = std::numeric_limits<double>::infinity();
+    double maxValue = -std::numeric_limits<double>::infinity();
+
+    for (const QVariant &value : inputs) {
+        const QVariantMap input = value.toMap();
+        bool okMin = false;
+        bool okMax = false;
+        const double inputMin = input.value(QStringLiteral("min")).toDouble(&okMin);
+        const double inputMax = input.value(QStringLiteral("max")).toDouble(&okMax);
+        if (okMin)
+            minValue = qMin(minValue, inputMin);
+        if (okMax)
+            maxValue = qMax(maxValue, inputMax);
+    }
+
+    if (!qIsFinite(minValue))
+        minValue = 0.0;
+    if (!qIsFinite(maxValue))
+        maxValue = 1.0;
+    if (minValue > maxValue)
+        std::swap(minValue, maxValue);
+
+    startBenchmark(samples, minValue, maxValue, seed);
+    if (inputs.size() > 1)
+        appendBenchmarkLine("Not: Mevcut kart firmware'i tek BENCH araligi destekliyor; input araliklari birlestirilerek gonderilecek.", "warn");
 }
 
 void Backend::cancelBenchmark()

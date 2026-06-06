@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import STM32AiDeployer
 
 Item {
@@ -9,7 +8,9 @@ Item {
 
     signal settingsRequested()
 
-    property string _modelPath: ""
+    property string _modelName: ""
+    property string _modelSource: ""
+    property bool _inputSpecsLoaded: false
     readonly property bool _busy: (typeof backend !== "undefined" && backend) ? backend.benchmarkBusy : false
     readonly property var _lines: (typeof backend !== "undefined" && backend) ? backend.benchmarkLines : []
     readonly property var _metrics: (typeof backend !== "undefined" && backend) ? backend.benchmarkMetrics : ({})
@@ -31,6 +32,61 @@ Item {
             ["Free RAM", m.freeRam || "-"],
             ["Ornek", m.samples ? String(m.samples) : "-"]
         ]
+    }
+
+    function resetInputSpecs() {
+        inputModel.clear()
+        inputModel.append({ name: "input[0]", shape: "-", min: "0.0", max: "1.0" })
+        root._inputSpecsLoaded = false
+    }
+
+    function loadDeployedModelInputs() {
+        var info = (typeof backend !== "undefined" && backend) ? backend.deployedModelInfo() : ({})
+        root._modelName = info.name || ((typeof appState !== "undefined" && appState) ? appState.lastModel : "")
+        root._modelSource = info.hasReport ? info.reportPath : (info.hasModelPath ? info.modelPath : "")
+        inputModel.clear()
+        var specs = (typeof backend !== "undefined" && backend) ? backend.deployedModelInputSpecs() : []
+        if (!specs || specs.length === 0) {
+            inputModel.append({ name: "input[0]", shape: "-", min: "0.0", max: "1.0" })
+            root._inputSpecsLoaded = false
+            return
+        }
+        for (var i = 0; i < specs.length; i++) {
+            inputModel.append({
+                name: specs[i].name || ("input[" + i + "]"),
+                label: specs[i].label || "",
+                shape: specs[i].shape || "-",
+                min: Number(specs[i].min || 0).toFixed(4),
+                max: Number(specs[i].max || 1).toFixed(4)
+            })
+        }
+        root._inputSpecsLoaded = true
+    }
+
+    function collectInputRanges() {
+        var ranges = []
+        for (var i = 0; i < inputModel.count; i++) {
+            var row = inputModel.get(i)
+            var minValue = parseFloat(row.min)
+            var maxValue = parseFloat(row.max)
+            if (isNaN(minValue)) minValue = 0.0
+            if (isNaN(maxValue)) maxValue = 1.0
+            ranges.push({
+                name: row.name,
+                min: minValue,
+                max: maxValue
+            })
+        }
+        return ranges
+    }
+
+    Component.onCompleted: loadDeployedModelInputs()
+
+    ListModel { id: inputModel }
+
+    Connections {
+        target: (typeof appState !== "undefined") ? appState : null
+        function onLastModelChanged() { root.loadDeployedModelInputs() }
     }
 
     ColumnLayout {
@@ -55,10 +111,9 @@ Item {
                 enabled: !root._busy
                 onClicked: {
                     if (typeof backend === "undefined" || !backend) return
-                    backend.startBenchmark(parseInt(samplesField.text) || 20,
-                                           parseFloat(minField.text) || 0.0,
-                                           parseFloat(maxField.text) || 1.0,
-                                           parseInt(seedField.text) || 42)
+                    backend.startBenchmarkWithInputs(parseInt(samplesField.text) || 20,
+                                                     root.collectInputRanges(),
+                                                     parseInt(seedField.text) || 42)
                 }
             }
         }
@@ -78,7 +133,7 @@ Item {
                 Card {
                     title: "Benchmark Ayarlari"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 330
+                    Layout.preferredHeight: 460
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -88,7 +143,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: Theme.spacingXs
                             Text {
-                                text: "Model dosyasi opsiyonel; UART BENCH icin zorunlu degil"
+                                text: root._inputSpecsLoaded ? "Karttaki model inputlari okundu" : "Karttaki model icin input raporu bulunamadi"
                                 color: Theme.textMuted
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontXs
@@ -108,14 +163,14 @@ Item {
                                         anchors.left: parent.left
                                         anchors.leftMargin: Theme.spacingSm
                                         width: parent.width - Theme.spacingMd
-                                        text: root._modelPath.length > 0 ? root._modelPath.split(/[\\/]/).pop() : "Dosya secilmedi"
-                                        color: root._modelPath.length > 0 ? Theme.text : Theme.textFaint
+                                        text: root._modelName.length > 0 ? root._modelName : "Karttaki model bilinmiyor"
+                                        color: root._modelName.length > 0 ? Theme.text : Theme.textFaint
                                         font.family: Theme.fontFamily
                                         font.pixelSize: Theme.fontSm
                                         elide: Text.ElideLeft
                                     }
                                 }
-                                AppButton { text: "Sec"; variant: "secondary"; onClicked: modelDialog.open() }
+                                AppButton { text: "Yenile"; variant: "secondary"; onClicked: root.loadDeployedModelInputs() }
                             }
                         }
 
@@ -159,41 +214,62 @@ Item {
                                 }
                             }
                         }
-                        RowLayout {
+
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: Theme.spacingMd
-                            ColumnLayout {
-                                spacing: Theme.spacingXs
+                            spacing: Theme.spacingXs
+                            Text { text: "Input araliklari"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                            ScrollView {
                                 Layout.fillWidth: true
-                                Text { text: "Min"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
-                                TextField {
-                                    id: minField
-                                    Layout.fillWidth: true
-                                    text: "0.0"
-                                    enabled: !root._busy
-                                    selectByMouse: true
-                                    color: Theme.text
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSm
-                                    background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: minField.activeFocus ? Theme.primary : Theme.border }
-                                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
-                                }
-                            }
-                            ColumnLayout {
-                                spacing: Theme.spacingXs
-                                Layout.fillWidth: true
-                                Text { text: "Max"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
-                                TextField {
-                                    id: maxField
-                                    Layout.fillWidth: true
-                                    text: "1.0"
-                                    enabled: !root._busy
-                                    selectByMouse: true
-                                    color: Theme.text
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSm
-                                    background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: maxField.activeFocus ? Theme.primary : Theme.border }
-                                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                                Layout.preferredHeight: 128
+                                clip: true
+
+                                ColumnLayout {
+                                    width: parent.width
+                                    spacing: Theme.spacingXs
+                                    Repeater {
+                                        model: inputModel
+                                        delegate: RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: Theme.spacingSm
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: (model.label && model.label.length > 0 ? model.label : model.name)
+                                                      + (model.label && model.label.length > 0 ? "  -  " + model.name : "")
+                                                      + (model.shape !== "-" ? "  [" + model.shape + "]" : "")
+                                                color: Theme.text
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: Theme.fontXs
+                                                elide: Text.ElideRight
+                                            }
+                                            TextField {
+                                                id: minInput
+                                                Layout.preferredWidth: 84
+                                                text: model.min
+                                                enabled: !root._busy
+                                                selectByMouse: true
+                                                color: Theme.text
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: Theme.fontXs
+                                                background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: minInput.activeFocus ? Theme.primary : Theme.border }
+                                                leftPadding: Theme.spacingXs; rightPadding: Theme.spacingXs
+                                                onEditingFinished: inputModel.setProperty(index, "min", text)
+                                            }
+                                            TextField {
+                                                id: maxInput
+                                                Layout.preferredWidth: 84
+                                                text: model.max
+                                                enabled: !root._busy
+                                                selectByMouse: true
+                                                color: Theme.text
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: Theme.fontXs
+                                                background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: maxInput.activeFocus ? Theme.primary : Theme.border }
+                                                leftPadding: Theme.spacingXs; rightPadding: Theme.spacingXs
+                                                onEditingFinished: inputModel.setProperty(index, "max", text)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -226,10 +302,9 @@ Item {
                                 enabled: !root._busy
                                 onClicked: {
                                     if (typeof backend === "undefined" || !backend) return
-                                    backend.startBenchmark(parseInt(samplesField.text) || 20,
-                                                           parseFloat(minField.text) || 0.0,
-                                                           parseFloat(maxField.text) || 1.0,
-                                                           parseInt(seedField.text) || 42)
+                                    backend.startBenchmarkWithInputs(parseInt(samplesField.text) || 20,
+                                                                     root.collectInputRanges(),
+                                                                     parseInt(seedField.text) || 42)
                                 }
                             }
                             AppButton {
@@ -238,7 +313,7 @@ Item {
                                 enabled: root._busy
                                 onClicked: if (typeof backend !== "undefined" && backend) backend.cancelBenchmark()
                             }
-                            AppButton { text: "Model Sec"; variant: "secondary"; onClicked: modelDialog.open() }
+                            AppButton { text: "Input Yenile"; variant: "secondary"; onClicked: root.loadDeployedModelInputs() }
                         }
                     }
                 }
@@ -306,12 +381,4 @@ Item {
             }
         }
     }
-
-    FileDialog {
-        id: modelDialog
-        title: "Model dosyasi secin"
-        nameFilters: ["AI Model (*.tflite *.h5 *.onnx)", "Tum dosyalar (*)"]
-        onAccepted: root._modelPath = selectedFile.toString().replace("file:///", "")
-    }
-
 }
