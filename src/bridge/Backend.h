@@ -93,8 +93,10 @@ public:
     // ── Simulation (Monitor screen) ───────────────────────────────────────
     bool simRunning() const { return m_simRunning || m_hwSimRunning; }
     Q_INVOKABLE void startSimulation(int intervalMs, double minVal, double maxVal);
+    Q_INVOKABLE void startSimulationWithInputs(int intervalMs, const QVariantList &inputs);
     Q_INVOKABLE void stopSimulation();
     Q_INVOKABLE void startHardwareSimulation(int intervalMs, double minVal, double maxVal);
+    Q_INVOKABLE void startHardwareSimulationWithInputs(int intervalMs, const QVariantList &inputs);
     Q_INVOKABLE void stopHardwareSimulation();
     Q_INVOKABLE bool saveMonitorLog(const QString &path) const;
 
@@ -208,6 +210,7 @@ private:
     bool          m_simRunning = false;
     double        m_simMin     = 0.0;
     double        m_simMax     = 1.0;
+    QVariantList  m_simInputRanges;
     quint32       m_simUptime  = 0;
     // Session accumulators: collect every tick, persist the average on stop.
     quint32       m_simSampleCount = 0;
@@ -245,6 +248,7 @@ private:
     bool     m_hwSimRunning = false;
     double   m_hwSimMin = 0.0;
     double   m_hwSimMax = 1.0;
+    QVariantList m_hwSimInputRanges;
     quint32  m_hwSimSeed = 1234;
     quint32  m_hwSimSentCount = 0;
     quint32  m_hwSimResponseCount = 0;

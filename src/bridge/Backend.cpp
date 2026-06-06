@@ -226,6 +226,34 @@ QVariantList withSemanticInputLabels(QVariantList specs, const QString &sensorTy
     return specs;
 }
 
+QString inputDisplayLabel(const QVariantMap &input, int fallbackIndex)
+{
+    const QString label = input.value(QStringLiteral("label")).toString();
+    if (!label.isEmpty())
+        return label;
+    const QString name = input.value(QStringLiteral("name")).toString();
+    if (!name.isEmpty())
+        return name;
+    return QStringLiteral("input[%1]").arg(fallbackIndex);
+}
+
+double rangedRandomValue(const QVariantMap &input, double fallbackMin, double fallbackMax)
+{
+    bool okMin = false;
+    bool okMax = false;
+    double lo = input.value(QStringLiteral("min")).toDouble(&okMin);
+    double hi = input.value(QStringLiteral("max")).toDouble(&okMax);
+    if (!okMin)
+        lo = fallbackMin;
+    if (!okMax)
+        hi = fallbackMax;
+    if (lo > hi)
+        std::swap(lo, hi);
+
+    const double unit = QRandomGenerator::global()->generateDouble();
+    return lo + unit * (hi - lo);
+}
+
 QString cleanPortName(const QString &portName)
 {
     return portName.section(' ', 0, 0).trimmed();
@@ -798,6 +826,7 @@ void Backend::startSimulation(int intervalMs, double minVal, double maxVal)
     if (m_simRunning) return;
     m_simMin     = minVal;
     m_simMax     = maxVal;
+    m_simInputRanges.clear();
     m_simUptime  = 0;
     m_simSampleCount = 0;
     m_simTotalInfUs  = 0;
@@ -810,6 +839,30 @@ void Backend::startSimulation(int intervalMs, double minVal, double maxVal)
     emit simRunningChanged();
     appendMonitorLine(QString("[sim] Simülasyon başladı · aralık %1 ms").arg(intervalMs), "cmd");
     m_simTimer->start(intervalMs);
+}
+
+void Backend::startSimulationWithInputs(int intervalMs, const QVariantList &inputs)
+{
+    if (m_simRunning) return;
+    double minValue = 0.0;
+    double maxValue = 1.0;
+    if (!inputs.isEmpty()) {
+        minValue = std::numeric_limits<double>::infinity();
+        maxValue = -std::numeric_limits<double>::infinity();
+        for (const QVariant &value : inputs) {
+            const QVariantMap input = value.toMap();
+            bool okMin = false;
+            bool okMax = false;
+            const double inputMin = input.value(QStringLiteral("min")).toDouble(&okMin);
+            const double inputMax = input.value(QStringLiteral("max")).toDouble(&okMax);
+            if (okMin) minValue = qMin(minValue, inputMin);
+            if (okMax) maxValue = qMax(maxValue, inputMax);
+        }
+        if (!qIsFinite(minValue)) minValue = 0.0;
+        if (!qIsFinite(maxValue)) maxValue = 1.0;
+    }
+    startSimulation(intervalMs, minValue, maxValue);
+    m_simInputRanges = inputs;
 }
 
 void Backend::stopSimulation()
@@ -874,6 +927,7 @@ void Backend::startHardwareSimulation(int intervalMs, double minVal, double maxV
     }
     m_hwSimMin = minVal;
     m_hwSimMax = maxVal;
+    m_hwSimInputRanges.clear();
     m_hwSimSeed = 1234;
     m_hwSimSentCount = 0;
     m_hwSimResponseCount = 0;
@@ -886,6 +940,30 @@ void Backend::startHardwareSimulation(int intervalMs, double minVal, double maxV
         m_serial->connectToPort(port, baud);
     m_hwSimTimer->start(qMax(50, intervalMs));
     emit simRunningChanged();
+}
+
+void Backend::startHardwareSimulationWithInputs(int intervalMs, const QVariantList &inputs)
+{
+    if (m_hwSimRunning) return;
+    double minValue = 0.0;
+    double maxValue = 1.0;
+    if (!inputs.isEmpty()) {
+        minValue = std::numeric_limits<double>::infinity();
+        maxValue = -std::numeric_limits<double>::infinity();
+        for (const QVariant &value : inputs) {
+            const QVariantMap input = value.toMap();
+            bool okMin = false;
+            bool okMax = false;
+            const double inputMin = input.value(QStringLiteral("min")).toDouble(&okMin);
+            const double inputMax = input.value(QStringLiteral("max")).toDouble(&okMax);
+            if (okMin) minValue = qMin(minValue, inputMin);
+            if (okMax) maxValue = qMax(maxValue, inputMax);
+        }
+        if (!qIsFinite(minValue)) minValue = 0.0;
+        if (!qIsFinite(maxValue)) maxValue = 1.0;
+    }
+    startHardwareSimulation(intervalMs, minValue, maxValue);
+    m_hwSimInputRanges = inputs;
 }
 
 void Backend::stopHardwareSimulation()
@@ -943,24 +1021,35 @@ void Backend::tickHardwareSimulation()
 
     QStringList values;
     QStringList displayParts;
-    for (int i = 0; i < profile.labels.size(); ++i) {
-        m_hwSimSeed = (m_hwSimSeed * 1664525u) + 1013904223u;
-        const double unit  = static_cast<double>(m_hwSimSeed & 0x00FFFFFFu) / 16777215.0;
-        const double value = lo + unit * (hi - lo);
-        values      << QString::number(qRound(value * 1000.0));
-        displayParts << QString("%1=%2").arg(profile.labels[i],
-                                             QString::number(value, 'f', 3));
+    const QVariantList activeInputs = m_hwSimInputRanges.isEmpty() ? QVariantList() : m_hwSimInputRanges;
+    if (!activeInputs.isEmpty()) {
+        for (int i = 0; i < activeInputs.size(); ++i) {
+            const QVariantMap input = activeInputs.at(i).toMap();
+            const double value = rangedRandomValue(input, lo, hi);
+            values << QString::number(qRound(value * 1000.0));
+            displayParts << QString("%1=%2").arg(inputDisplayLabel(input, i),
+                                                 QString::number(value, 'f', 3));
+        }
+    } else {
+        for (int i = 0; i < profile.labels.size(); ++i) {
+            m_hwSimSeed = (m_hwSimSeed * 1664525u) + 1013904223u;
+            const double unit  = static_cast<double>(m_hwSimSeed & 0x00FFFFFFu) / 16777215.0;
+            const double value = lo + unit * (hi - lo);
+            values      << QString::number(qRound(value * 1000.0));
+            displayParts << QString("%1=%2").arg(profile.labels[i],
+                                                 QString::number(value, 'f', 3));
+        }
     }
 
     const QByteArray command = QString("INFER %1").arg(values.join(' ')).toUtf8();
     ++m_hwSimSentCount;
 
     // For PDM_MIC condense the display (16 values is too long)
-    const QString displayLine = (profile.labels.size() > 6)
+    const QString displayLine = (displayParts.size() > 6)
         ? QString("sim sensor  [%1 deger]  %2=%3 ... %4=%5")
-              .arg(profile.labels.size())
-              .arg(profile.labels.first(), displayParts.first().section('=', 1))
-              .arg(profile.labels.last(),  displayParts.last().section('=', 1))
+              .arg(displayParts.size())
+              .arg(displayParts.first().section('=', 0, 0), displayParts.first().section('=', 1))
+              .arg(displayParts.last().section('=', 0, 0),  displayParts.last().section('=', 1))
         : QString("sim sensor  %1").arg(displayParts.join("  "));
 
     appendMonitorLine(displayLine, "warn");
@@ -1027,6 +1116,42 @@ void Backend::tickSimulation()
     const QByteArray packet =
         "\xC2\xA7" + QJsonDocument(obj).toJson(QJsonDocument::Compact) + "\r\n";
     m_simParser->feed(packet);
+
+    const QVariantList activeInputs = m_simInputRanges;
+    if (!activeInputs.isEmpty()) {
+        QJsonArray sensorValues;
+        QStringList displayParts;
+        for (int i = 0; i < activeInputs.size(); ++i) {
+            const QVariantMap input = activeInputs.at(i).toMap();
+            const double value = rangedRandomValue(input, m_simMin, m_simMax);
+            sensorValues.append(value);
+            displayParts << QString("%1=%2").arg(inputDisplayLabel(input, i),
+                                                 QString::number(value, 'f', 3));
+        }
+
+        QJsonObject sensorObj;
+        sensorObj["t"] = "sensor";
+        sensorObj["model"] = model;
+        sensorObj["sensor"] = m_state ? m_state->lastSensor() : deployedModelInfo().value(QStringLiteral("sensorType")).toString();
+        sensorObj["card"] = card;
+        sensorObj["seq"] = static_cast<int>(m_simUptime);
+        sensorObj["samples"] = sensorValues.size();
+        sensorObj["inf_us"] = infUs;
+        sensorObj["ram_b"] = ramB;
+        sensorObj["acc_pct"] = accPct;
+        sensorObj["label"] = label;
+        sensorObj["values"] = sensorValues;
+        const QByteArray sensorPacket =
+            "\xC2\xA7" + QJsonDocument(sensorObj).toJson(QJsonDocument::Compact) + "\r\n";
+        m_simParser->feed(sensorPacket);
+
+        const QString sensorLine = (displayParts.size() > 6)
+            ? QString("[sim] sensor  [%1 deger]  %2 ... %3")
+                  .arg(displayParts.size())
+                  .arg(displayParts.first(), displayParts.last())
+            : QString("[sim] sensor  %1").arg(displayParts.join("  "));
+        appendMonitorLine(sensorLine, "info");
+    }
 
     // Every 5 ticks also generate a sys packet so the Sistem card updates.
     if (m_simUptime % 5 == 0) {

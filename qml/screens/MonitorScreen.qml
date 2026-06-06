@@ -16,6 +16,55 @@ Item {
     readonly property string _lastLabel: (typeof appState !== "undefined" && appState && appState.lastLabel.length > 0)
                                          ? appState.lastLabel
                                          : ((typeof appState !== "undefined" && appState) ? appState.lastModel : "")
+    property bool _simInputsLoaded: false
+
+    function resetSimInputs() {
+        simInputModel.clear()
+        simInputModel.append({ name: "input[0]", label: "", shape: "-", min: "0.0", max: "1.0" })
+        root._simInputsLoaded = false
+    }
+
+    function loadSimInputs() {
+        simInputModel.clear()
+        var specs = (typeof backend !== "undefined" && backend) ? backend.deployedModelInputSpecs() : []
+        if (!specs || specs.length === 0) {
+            resetSimInputs()
+            return
+        }
+        for (var i = 0; i < specs.length; i++) {
+            simInputModel.append({
+                name: specs[i].name || ("input[" + i + "]"),
+                label: specs[i].label || "",
+                shape: specs[i].shape || "-",
+                min: Number(specs[i].min || 0).toFixed(4),
+                max: Number(specs[i].max || 1).toFixed(4)
+            })
+        }
+        root._simInputsLoaded = true
+    }
+
+    function collectSimInputs() {
+        var ranges = []
+        for (var i = 0; i < simInputModel.count; i++) {
+            var row = simInputModel.get(i)
+            var minValue = parseFloat(row.min)
+            var maxValue = parseFloat(row.max)
+            if (isNaN(minValue)) minValue = 0.0
+            if (isNaN(maxValue)) maxValue = 1.0
+            ranges.push({ name: row.name, label: row.label, min: minValue, max: maxValue })
+        }
+        return ranges
+    }
+
+    Component.onCompleted: loadSimInputs()
+
+    ListModel { id: simInputModel }
+
+    Connections {
+        target: (typeof appState !== "undefined") ? appState : null
+        function onLastModelChanged() { root.loadSimInputs() }
+        function onLastSensorChanged() { root.loadSimInputs() }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -179,7 +228,7 @@ Item {
                 Card {
                     title: "Simulasyon"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 290
+                    Layout.preferredHeight: 420
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -231,43 +280,69 @@ Item {
                             rightPadding: Theme.spacingSm
                         }
 
-                        RowLayout {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: Theme.spacingSm
-                            ColumnLayout {
+                            spacing: Theme.spacingXs
+                            RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 4
-                                Text { text: "Min"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
-                                TextField {
-                                    id: minField
+                                Text {
                                     Layout.fillWidth: true
-                                    text: "0.0"
-                                    enabled: !root._simRunning
-                                    color: Theme.text
+                                    text: root._simInputsLoaded ? "Model inputlari" : "Varsayilan input"
+                                    color: Theme.textMuted
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSm
-                                    selectByMouse: true
-                                    background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: minField.activeFocus ? Theme.primary : Theme.border }
-                                    leftPadding: Theme.spacingSm
-                                    rightPadding: Theme.spacingSm
+                                    font.pixelSize: Theme.fontXs
+                                    font.weight: Font.DemiBold
                                 }
+                                AppButton { text: "Yenile"; variant: "secondary"; enabled: !root._simRunning; onClicked: root.loadSimInputs() }
                             }
-                            ColumnLayout {
+                            ScrollView {
                                 Layout.fillWidth: true
-                                spacing: 4
-                                Text { text: "Max"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
-                                TextField {
-                                    id: maxField
-                                    Layout.fillWidth: true
-                                    text: "1.0"
-                                    enabled: !root._simRunning
-                                    color: Theme.text
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSm
-                                    selectByMouse: true
-                                    background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: maxField.activeFocus ? Theme.primary : Theme.border }
-                                    leftPadding: Theme.spacingSm
-                                    rightPadding: Theme.spacingSm
+                                Layout.preferredHeight: 108
+                                clip: true
+                                ColumnLayout {
+                                    width: parent.width
+                                    spacing: Theme.spacingXs
+                                    Repeater {
+                                        model: simInputModel
+                                        delegate: RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: Theme.spacingSm
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: (model.label && model.label.length > 0 ? model.label : model.name)
+                                                color: Theme.text
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: Theme.fontXs
+                                                elide: Text.ElideRight
+                                            }
+                                            TextField {
+                                                id: simMinInput
+                                                Layout.preferredWidth: 74
+                                                text: model.min
+                                                enabled: !root._simRunning
+                                                color: Theme.text
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: Theme.fontXs
+                                                selectByMouse: true
+                                                background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: simMinInput.activeFocus ? Theme.primary : Theme.border }
+                                                leftPadding: Theme.spacingXs; rightPadding: Theme.spacingXs
+                                                onEditingFinished: simInputModel.setProperty(index, "min", text)
+                                            }
+                                            TextField {
+                                                id: simMaxInput
+                                                Layout.preferredWidth: 74
+                                                text: model.max
+                                                enabled: !root._simRunning
+                                                color: Theme.text
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: Theme.fontXs
+                                                selectByMouse: true
+                                                background: Rectangle { radius: Theme.radiusMd; color: Theme.surfaceRaised; border.color: simMaxInput.activeFocus ? Theme.primary : Theme.border }
+                                                leftPadding: Theme.spacingXs; rightPadding: Theme.spacingXs
+                                                onEditingFinished: simInputModel.setProperty(index, "max", text)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -283,9 +358,8 @@ Item {
                                 Layout.minimumWidth: 0
                                 onClicked: {
                                     if (typeof backend === "undefined" || !backend) return
-                                    backend.startSimulation(parseInt(intervalField.text) || 500,
-                                                            parseFloat(minField.text) || 0.0,
-                                                            parseFloat(maxField.text) || 1.0)
+                                    backend.startSimulationWithInputs(parseInt(intervalField.text) || 500,
+                                                                      root.collectSimInputs())
                                 }
                             }
                             AppButton {
@@ -297,9 +371,8 @@ Item {
                                 Layout.minimumWidth: 0
                                 onClicked: {
                                     if (typeof backend === "undefined" || !backend) return
-                                    backend.startHardwareSimulation(parseInt(intervalField.text) || 500,
-                                                                    parseFloat(minField.text) || 0.0,
-                                                                    parseFloat(maxField.text) || 1.0)
+                                    backend.startHardwareSimulationWithInputs(parseInt(intervalField.text) || 500,
+                                                                              root.collectSimInputs())
                                 }
                             }
                             AppButton {
