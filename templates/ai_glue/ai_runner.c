@@ -18,6 +18,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 
 /* Static activation buffer — size comes from AI_ACTIVATIONS_SIZE in ai_config.h */
 static uint8_t ai_activations[AI_ACTIVATIONS_SIZE] __attribute__((aligned(4)));
@@ -47,6 +48,52 @@ static const char *const CLASS_LABELS[] = {
 #endif
 };
 
+static int name_contains(const char *name, const char *needle)
+{
+    return strstr(name, needle) != NULL;
+}
+
+static ai_i8 clamp_i8(int32_t v)
+{
+    if (v > 127) return 127;
+    if (v < -128) return -128;
+    return (ai_i8)v;
+}
+
+static ai_i8 quantize_norm(float norm, float scale, int32_t zero_point)
+{
+    float q = (norm / scale) + (float)zero_point;
+    int32_t qi = (int32_t)(q >= 0.0f ? q + 0.5f : q - 0.5f);
+    return clamp_i8(qi);
+}
+
+static void prepare_s8_input(const float *input, ai_i8 *q_input)
+{
+    if (name_contains(AI_SENSOR_TYPE, "BME280") && name_contains(AI_MODEL_NAME, "anomaly")) {
+        const float norm_t = (input[0] - 22.267314f) / 2.788822f;
+        const float norm_h = (input[1] - 61.317606f) / 11.624848f;
+        const float norm_c = 0.0f;
+        q_input[0] = quantize_norm(norm_t, 0.037805241f, 45);
+        q_input[1] = quantize_norm(norm_h, 0.037805241f, 45);
+        q_input[2] = quantize_norm(norm_c, 0.037805241f, 45);
+        return;
+    }
+
+    if (name_contains(AI_SENSOR_TYPE, "BME280") && name_contains(AI_MODEL_NAME, "weather")) {
+        const float norm_t = (input[0] - 19.080682f) / 17.331159f;
+        const float norm_h = (input[1] - 68.559091f) / 20.172474f;
+        const float norm_p = (input[2] - 1005.656206f) / 37.311331f;
+        q_input[0] = quantize_norm(norm_t, 0.030175343f, -26);
+        q_input[1] = quantize_norm(norm_h, 0.030175343f, -26);
+        q_input[2] = quantize_norm(norm_p, 0.030175343f, -26);
+        return;
+    }
+
+    for (uint32_t i = 0; i < AI_INPUT_SIZE; ++i) {
+        q_input[i] = clamp_i8((int32_t)(input[i] >= 0.0f ? input[i] + 0.5f : input[i] - 0.5f));
+    }
+}
+
 /* ── Init ─────────────────────────────────────────────────────────────── */
 
 void AI_Runner_Init(void)
@@ -73,8 +120,14 @@ void AI_Runner_Init(void)
 
 uint32_t AI_Runner_Infer(const float *input, AI_InferenceResult *result)
 {
+#if defined(AI_NETWORK_IN_1_FORMAT) && (AI_NETWORK_IN_1_FORMAT == AI_BUFFER_FORMAT_S8)
+    ai_i8 q_input[AI_NETWORK_IN_1_SIZE] = {0};
+    prepare_s8_input(input, q_input);
+    s_in_buffer[0].data = AI_HANDLE_PTR(q_input);
+#else
     /* Point input buffer to caller's data */
     s_in_buffer[0].data = AI_HANDLE_PTR(input);
+#endif
 
     /* Allocate output on stack */
     ai_i8 output_data[AI_NETWORK_OUT_1_SIZE] = {0};

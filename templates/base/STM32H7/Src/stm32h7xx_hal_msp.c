@@ -43,6 +43,13 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef *huart)
 void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 {
     if (hi2c->Instance == {{I2C_INSTANCE}}) {
+        RCC_PeriphCLKInitTypeDef periph_clk = {0};
+        periph_clk.PeriphClockSelection = RCC_PERIPHCLK_I2C1;
+        periph_clk.I2c123ClockSelection = RCC_I2C1235CLKSOURCE_D2PCLK1;
+        if (HAL_RCCEx_PeriphCLKConfig(&periph_clk) != HAL_OK) {
+            Error_Handler();
+        }
+
         __HAL_RCC_{{I2C_INSTANCE}}_CLK_ENABLE();
         __HAL_RCC_GPIOB_CLK_ENABLE();
 

@@ -18,8 +18,8 @@
 
 typedef struct {
     float temperature_c;
-    float pressure_hpa;
     float humidity_pct;
+    float pressure_hpa;
 } BME280_Data;
 
 HAL_StatusTypeDef BME280_Init(I2C_HandleTypeDef *hi2c);
