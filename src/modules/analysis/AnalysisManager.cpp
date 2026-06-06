@@ -116,3 +116,19 @@ void AnalysisManager::deleteRecord(int id)
     q.bindValue(QStringLiteral(":id"), id);
     q.exec();
 }
+
+int AnalysisManager::deleteRecordsForKindOnDate(const QString &kind, const QString &datePrefix)
+{
+    if (!isOpen() || kind.isEmpty() || datePrefix.isEmpty())
+        return 0;
+
+    QSqlQuery q(QSqlDatabase::database(m_connectionName));
+    q.prepare(QStringLiteral(
+        "DELETE FROM analysis_records "
+        "WHERE kind = :kind AND (c0 LIKE :prefix OR created_at LIKE :prefix)"));
+    q.bindValue(QStringLiteral(":kind"), kind);
+    q.bindValue(QStringLiteral(":prefix"), datePrefix + QStringLiteral("%"));
+    if (!q.exec())
+        return 0;
+    return q.numRowsAffected();
+}

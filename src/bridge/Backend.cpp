@@ -1,4 +1,4 @@
-#include "Backend.h"
+﻿#include "Backend.h"
 
 #include <algorithm>
 #include <limits>
@@ -10,11 +10,13 @@
 #include <QDir>
 #include <QLocale>
 #include <QRandomGenerator>
+#include <QDate>
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QFile>
+#include <QHash>
 #include <QPageLayout>
 #include <QPageSize>
 #include <QPainter>
@@ -186,8 +188,8 @@ QString semanticInputLabel(const QString &sensorType, int elementIndex)
     if (sensor == QStringLiteral("BME280")) {
         const QStringList labels = {
             QStringLiteral("Sicaklik (C)"),
-            QStringLiteral("Basinc (hPa)"),
             QStringLiteral("Nem (%)"),
+            QStringLiteral("Basinc (hPa)"),
         };
         return labels.at(elementIndex % labels.size());
     }
@@ -393,7 +395,7 @@ Backend::Backend(AppState        *state,
     m_pipelinePulseTimer->setInterval(1200);
     connect(m_benchmarkTimeout, &QTimer::timeout, this, [this]() {
         if (!m_benchmarkBusy) return;
-        appendBenchmarkLine("Benchmark yanıtı alınamadı. Firmware BENCH komutunu destekliyor mu?", "warn");
+        appendBenchmarkLine("Benchmark yanÄ±tÄ± alÄ±namadÄ±. Firmware BENCH komutunu destekliyor mu?", "warn");
         m_benchmarkBusy = false;
         emit benchmarkChanged();
     });
@@ -406,7 +408,7 @@ Backend::Backend(AppState        *state,
     seedAnalysisIfEmpty();
 }
 
-// ── Tool paths ──────────────────────────────────────────────────────────────
+// â”€â”€ Tool paths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 QVariantList Backend::toolPaths() const
 {
     AppSettings s;
@@ -455,7 +457,7 @@ void Backend::scanTools()
                 else if (info.key == "tools/make_path")           s.setMakePath(info.path);
                 else if (info.key == "programmer/cli_path")       s.setProgrammerCliPath(info.path);
                 else if (info.key == "tools/xcubeai_cli_path")    s.setXCubeAICliPath(info.path);
-                emit statusMessage(QString("✓ %1 bulundu").arg(info.name));
+                emit statusMessage(QString("âœ“ %1 bulundu").arg(info.name));
             }, Qt::UniqueConnection);
 
     connect(m_detector, &ToolDetector::detectionFinished, this,
@@ -470,7 +472,7 @@ void Backend::scanTools()
     m_detector->detectAll();
 }
 
-// ── Serial ──────────────────────────────────────────────────────────────────
+// â”€â”€ Serial â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 QStringList Backend::availablePorts() const
 {
     QStringList out;
@@ -479,7 +481,7 @@ QStringList Backend::availablePorts() const
         if (p.vendorIdentifier() == 0x0483)
             label += " (ST-Link)";
         else if (!p.description().isEmpty())
-            label += " · " + p.description();
+            label += " Â- " + p.description();
         out << label;
     }
     return out;
@@ -495,7 +497,7 @@ QVariantList Backend::availablePortEntries() const
         if (isStlink)
             label += " (ST-Link)";
         else if (!p.description().isEmpty())
-            label += " · " + p.description();
+            label += " Â- " + p.description();
         QString role;
         if (hasProductId(p, kN657VcpProductId)) {
             role = "NUCLEO-N657 VCP";
@@ -561,7 +563,7 @@ void Backend::probeStLinkBoardForPort(const QString &portName)
     const BoardInfo activeBoard = m_state ? m_state->activeBoard() : BoardInfo{};
     QSerialPortInfo stlink = preferredSerialPortForBoard(activeBoard, portName);
     if (stlink.isNull()) {
-        m_probeStatus = "ST-Link portu bulunamadı.";
+        m_probeStatus = "ST-Link portu bulunamadÄ±.";
         emit probeChanged();
         emit probeFinished(false, m_probeStatus);
         return;
@@ -575,7 +577,7 @@ void Backend::probeStLinkBoardForPort(const QString &portName)
             settings.setProgrammerCliPath(cliPath);
     }
     if (cliPath.isEmpty()) {
-        m_probeStatus = "STM32_Programmer_CLI bulunamadı.";
+        m_probeStatus = "STM32_Programmer_CLI bulunamadÄ±.";
         emit probeChanged();
         emit probeFinished(false, m_probeStatus);
         return;
@@ -587,7 +589,7 @@ void Backend::probeStLinkBoardForPort(const QString &portName)
     }
 
     m_probeBusy = true;
-    m_probeStatus = "ST-Link taranıyor...";
+    m_probeStatus = "ST-Link taranÄ±yor...";
     emit probeChanged();
 
     const QString selectedPort = stlink.portName();
@@ -609,7 +611,7 @@ void Backend::probeStLinkBoardForPort(const QString &portName)
                     emit probeChanged();
                     emit probeFinished(true, m_probeStatus);
                 } else {
-                    m_probeStatus = "ST-Link probe başarısız.";
+                    m_probeStatus = "ST-Link probe baÅŸarÄ±sÄ±z.";
                     emit probeChanged();
                     emit probeFinished(false, m_probeStatus);
                 }
@@ -619,7 +621,7 @@ void Backend::probeStLinkBoardForPort(const QString &portName)
         args << QString("sn=%1").arg(selectedSn);
     appendMonitorLine(QString("[probe] ST-Link %1%2")
                           .arg(selectedPort.isEmpty() ? QString("SWD") : selectedPort,
-                               selectedSn.isEmpty() ? QString() : QString(" · SN %1").arg(selectedSn)),
+                               selectedSn.isEmpty() ? QString() : QString(" Â- SN %1").arg(selectedSn)),
                       "cmd");
     m_stlinkProbe->start(cliPath, args);
 }
@@ -745,14 +747,14 @@ void Backend::seedAnalysisIfEmpty()
     struct SeedRow { const char *date; const char *session; const char *board; const char *chip; const char *cpu; const char *model; const char *type; const char *sensor; const char *avg; const char *ram; const char *weights; const char *result; };
 
     static const SeedRow benchRows[] = {
-        {"2026-05-28 14:12","BENCH-001","STM32F407 Discovery","STM32F407VG","Cortex-M4","har_mlp","INT8","MPU6050","8.20 ms","3.00 KiB","12.4 KiB","Tamamlandı"},
-        {"2026-05-28 13:40","BENCH-002","STM32F407 Discovery","STM32F407VG","Cortex-M4","vibration_mlp","INT8","MPU6050","6.75 ms","2.60 KiB","9.80 KiB","Tamamlandı"},
-        {"2026-05-27 17:05","BENCH-003","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","BME280","0.934 ms","6.44 KiB","6.70 KiB","Tamamlandı"},
-        {"2026-05-27 16:22","BENCH-004","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","Float32","BME280","2.84 ms","18.2 KiB","25.2 KiB","Tamamlandı"},
-        {"2026-05-26 11:48","BENCH-005","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","motor_fault_cnn","INT8","MPU6050","1.42 ms","9.10 KiB","18.2 KiB","Tamamlandı"},
-        {"2026-05-25 18:31","BENCH-006","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","PDM_MIC","0.61 ms","22.1 KiB","96.8 KiB","Tamamlandı"},
-        {"2026-05-25 18:02","BENCH-007","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","voice_kws","INT8","PDM_MIC","0.48 ms","19.4 KiB","78.2 KiB","Tamamlandı"},
-        {"2026-05-24 09:54","BENCH-008","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","gesture_tcn","Dynamic Q","MPU6050","0.88 ms","14.7 KiB","32.4 KiB","Tamamlandı"},
+        {"2026-05-28 14:12","BENCH-001","STM32F407 Discovery","STM32F407VG","Cortex-M4","har_mlp","INT8","MPU6050","8.20 ms","3.00 KiB","12.4 KiB","TamamlandÄ±"},
+        {"2026-05-28 13:40","BENCH-002","STM32F407 Discovery","STM32F407VG","Cortex-M4","vibration_mlp","INT8","MPU6050","6.75 ms","2.60 KiB","9.80 KiB","TamamlandÄ±"},
+        {"2026-05-27 17:05","BENCH-003","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","BME280","0.934 ms","6.44 KiB","6.70 KiB","TamamlandÄ±"},
+        {"2026-05-27 16:22","BENCH-004","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","Float32","BME280","2.84 ms","18.2 KiB","25.2 KiB","TamamlandÄ±"},
+        {"2026-05-26 11:48","BENCH-005","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","motor_fault_cnn","INT8","MPU6050","1.42 ms","9.10 KiB","18.2 KiB","TamamlandÄ±"},
+        {"2026-05-25 18:31","BENCH-006","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","PDM_MIC","0.61 ms","22.1 KiB","96.8 KiB","TamamlandÄ±"},
+        {"2026-05-25 18:02","BENCH-007","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","voice_kws","INT8","PDM_MIC","0.48 ms","19.4 KiB","78.2 KiB","TamamlandÄ±"},
+        {"2026-05-24 09:54","BENCH-008","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","gesture_tcn","Dynamic Q","MPU6050","0.88 ms","14.7 KiB","32.4 KiB","TamamlandÄ±"},
     };
     if (m_analysis->records("benchmark").isEmpty()) {
         for (const auto &r : benchRows)
@@ -760,12 +762,12 @@ void Backend::seedAnalysisIfEmpty()
     }
 
     static const SeedRow simRows[] = {
-        {"2026-05-28 10:15","SIM-101","STM32F407 Discovery","STM32F407VG","Cortex-M4","har_mlp","INT8","Simülasyon","8.18 ms","3.00 KiB","--","avg 94% | label=walking | n=48"},
-        {"2026-05-28 10:31","SIM-102","STM32F407 Discovery","STM32F407VG","Cortex-M4","vibration_mlp","INT8","Simülasyon","6.71 ms","2.60 KiB","--","avg 93% | label=idle | n=36"},
-        {"2026-05-27 15:02","SIM-103","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","Simülasyon","0.94 ms","6.44 KiB","--","avg 97% | label=normal | n=62"},
-        {"2026-05-27 15:20","SIM-104","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","motor_fault_cnn","INT8","Simülasyon","1.40 ms","9.10 KiB","--","avg 91% | label=fault | n=54"},
-        {"2026-05-26 19:44","SIM-105","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","Simülasyon","0.62 ms","22.1 KiB","--","avg 95% | label=yes | n=80"},
-        {"2026-05-26 20:01","SIM-106","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","voice_kws","INT8","Simülasyon","0.49 ms","19.4 KiB","--","avg 89% | label=stop | n=72"},
+        {"2026-05-28 10:15","SIM-101","STM32F407 Discovery","STM32F407VG","Cortex-M4","har_mlp","INT8","SimÃ¼lasyon","8.18 ms","3.00 KiB","--","avg 94% | label=walking | n=48"},
+        {"2026-05-28 10:31","SIM-102","STM32F407 Discovery","STM32F407VG","Cortex-M4","vibration_mlp","INT8","SimÃ¼lasyon","6.71 ms","2.60 KiB","--","avg 93% | label=idle | n=36"},
+        {"2026-05-27 15:02","SIM-103","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","anomaly_cnn","INT8","SimÃ¼lasyon","0.94 ms","6.44 KiB","--","avg 97% | label=normal | n=62"},
+        {"2026-05-27 15:20","SIM-104","NUCLEO-H723ZG","STM32H723ZG","Cortex-M7","motor_fault_cnn","INT8","SimÃ¼lasyon","1.40 ms","9.10 KiB","--","avg 91% | label=fault | n=54"},
+        {"2026-05-26 19:44","SIM-105","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","kws_lstm","INT8","SimÃ¼lasyon","0.62 ms","22.1 KiB","--","avg 95% | label=yes | n=80"},
+        {"2026-05-26 20:01","SIM-106","NUCLEO-N657X0-Q","STM32N657","Cortex-M55/NPU","voice_kws","INT8","SimÃ¼lasyon","0.49 ms","19.4 KiB","--","avg 89% | label=stop | n=72"},
     };
     if (m_analysis->records("simulation").isEmpty()) {
         for (const auto &r : simRows)
@@ -788,11 +790,11 @@ void Backend::seedAnalysisIfEmpty()
     // date, model, type, board, chip, sensor, input, params, macc, weights, firmware, status
     struct CompiledSeed { const char *date; const char *model; const char *type; const char *board; const char *chip; const char *sensor; const char *input; const char *params; const char *macc; const char *weights; const char *firmware; const char *status; };
     static const CompiledSeed compiledRows[] = {
-        {"2026-05-27 17:10","anomaly_cnn","INT8","NUCLEO-H723ZG","STM32H723ZG","BME280","1x128x3","12.4 K","0.9 M","6.70 KiB","182.4 KiB","Arşivlendi"},
-        {"2026-05-28 14:18","har_mlp","INT8","STM32F407 Discovery","STM32F407VG","MPU6050","1x100x6","8.2 K","0.4 M","12.4 KiB","96.2 KiB","Arşivlendi"},
-        {"2026-05-25 18:36","kws_lstm","INT8","NUCLEO-N657X0-Q","STM32N657","PDM_MIC","1x16000","84 K","12.6 M","96.8 KiB","412.6 KiB","Arşivlendi"},
+        {"2026-05-27 17:10","anomaly_cnn","INT8","NUCLEO-H723ZG","STM32H723ZG","BME280","1x128x3","12.4 K","0.9 M","6.70 KiB","182.4 KiB","ArÅŸivlendi"},
+        {"2026-05-28 14:18","har_mlp","INT8","STM32F407 Discovery","STM32F407VG","MPU6050","1x100x6","8.2 K","0.4 M","12.4 KiB","96.2 KiB","ArÅŸivlendi"},
+        {"2026-05-25 18:36","kws_lstm","INT8","NUCLEO-N657X0-Q","STM32N657","PDM_MIC","1x16000","84 K","12.6 M","96.8 KiB","412.6 KiB","ArÅŸivlendi"},
         {"2026-05-26 11:55","motor_fault_cnn","INT8","NUCLEO-H723ZG","STM32H723ZG","MPU6050","1x256x6","18.7 K","1.8 M","18.2 KiB","201.0 KiB","Derlendi"},
-        {"2026-05-24 10:02","gesture_tcn","Dynamic Q","NUCLEO-N657X0-Q","STM32N657","MPU6050","1x128x6","26.3 K","3.1 M","32.4 KiB","236.8 KiB","Arşivlendi"},
+        {"2026-05-24 10:02","gesture_tcn","Dynamic Q","NUCLEO-N657X0-Q","STM32N657","MPU6050","1x128x6","26.3 K","3.1 M","32.4 KiB","236.8 KiB","ArÅŸivlendi"},
     };
     if (m_analysis->records("compiled").isEmpty()) {
         for (const auto &r : compiledRows)
@@ -802,11 +804,102 @@ void Backend::seedAnalysisIfEmpty()
     emit analysisChanged();
 }
 
-// ── Monitor terminal ────────────────────────────────────────────────────────
+// â”€â”€ Monitor terminal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 void Backend::clearMonitor()
 {
     m_monitorLines.clear();
     emit monitorLinesChanged();
+}
+
+void Backend::startSensorAnalysis()
+{
+    if (m_sensorAnalysisRunning)
+        return;
+
+    m_sensorAnalysisRunning = true;
+    m_sensorAnalysisStartedAt = QDateTime::currentDateTime();
+    m_sensorAnalysisCount = 0;
+    m_sensorAnalysisTotalInfUs = 0;
+    m_sensorAnalysisTotalRamB = 0;
+    m_sensorAnalysisTotalAcc = 0;
+    m_sensorAnalysisLastModel.clear();
+    m_sensorAnalysisLastSensor.clear();
+    m_sensorAnalysisLastCard.clear();
+    m_sensorAnalysisLastLabel.clear();
+    m_sensorAnalysisLabelCounts.clear();
+
+    appendMonitorLine("[real] Gercek sensor analizi baslatildi.", "cmd");
+    emit sensorAnalysisChanged();
+}
+
+void Backend::stopSensorAnalysis()
+{
+    if (!m_sensorAnalysisRunning)
+        return;
+
+    m_sensorAnalysisRunning = false;
+    emit sensorAnalysisChanged();
+
+    if (!m_analysis || m_sensorAnalysisCount == 0) {
+        appendMonitorLine("[real] Analiz bitirildi; kaydedilecek sensor ornegi yok.", "warn");
+        return;
+    }
+
+    QString bestLabel = m_sensorAnalysisLastLabel;
+    int bestCount = -1;
+    for (auto it = m_sensorAnalysisLabelCounts.cbegin(); it != m_sensorAnalysisLabelCounts.cend(); ++it) {
+        if (it.value() > bestCount) {
+            bestCount = it.value();
+            bestLabel = it.key();
+        }
+    }
+
+    const BoardInfo board = m_state ? m_state->activeBoard() : BoardInfo{};
+    const double avgMs = (double)m_sensorAnalysisTotalInfUs / (double)m_sensorAnalysisCount / 1000.0;
+    const double avgRamKb = (double)m_sensorAnalysisTotalRamB / (double)m_sensorAnalysisCount / 1024.0;
+    const int avgAcc = qRound((double)m_sensorAnalysisTotalAcc / (double)m_sensorAnalysisCount);
+    const QString model = m_sensorAnalysisLastModel.isEmpty()
+        ? (m_state ? m_state->lastModelName() : QStringLiteral("--"))
+        : m_sensorAnalysisLastModel;
+    const QString sensor = m_sensorAnalysisLastSensor.isEmpty()
+        ? (m_state ? m_state->lastSensor() : QStringLiteral("--"))
+        : m_sensorAnalysisLastSensor;
+    const QString card = m_sensorAnalysisLastCard.isEmpty() ? board.name : m_sensorAnalysisLastCard;
+    const QString session = QStringLiteral("REAL-AVG-%1")
+        .arg(m_sensorAnalysisStartedAt.toString(QStringLiteral("hhmmss")));
+
+    QStringList cells;
+    cells << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+          << session
+          << (card.isEmpty() ? QStringLiteral("--") : card)
+          << (board.deviceName.isEmpty() ? board.name : board.deviceName)
+          << board.deviceCpu
+          << model << "INT8" << sensor
+          << (QString::number(avgMs, 'f', 2) + " ms")
+          << (QString::number(avgRamKb, 'f', 2) + " KiB")
+          << "--"
+          << (bestLabel.isEmpty()
+              ? QString("avg %1%  n=%2").arg(avgAcc).arg(m_sensorAnalysisCount)
+              : QString("%1  %2%  n=%3").arg(bestLabel).arg(avgAcc).arg(m_sensorAnalysisCount));
+
+    m_analysis->addRecord("sensor", cells);
+    emit analysisChanged();
+    appendMonitorLine(QString("[real] Ortalama kaydedildi - n=%1  ort=%2 ms  acc=%3%")
+                          .arg(m_sensorAnalysisCount)
+                          .arg(avgMs, 0, 'f', 2)
+                          .arg(avgAcc), "ok");
+}
+
+void Backend::clearTodaySensorAnalysis()
+{
+    if (!m_analysis)
+        return;
+
+    const QString today = QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd"));
+    const int removed = m_analysis->deleteRecordsForKindOnDate(QStringLiteral("sensor"), today);
+    emit analysisChanged();
+    appendMonitorLine(QString("[real] Bugunun gercek sensor kayitlari temizlendi - silinen=%1")
+                          .arg(removed), removed > 0 ? "ok" : "warn");
 }
 
 void Backend::appendMonitorLine(const QString &text, const QString &type)
@@ -820,7 +913,7 @@ void Backend::appendMonitorLine(const QString &text, const QString &type)
     emit monitorLinesChanged();
 }
 
-// ── Simulation ──────────────────────────────────────────────────────────────
+// â”€â”€ Simulation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 void Backend::startSimulation(int intervalMs, double minVal, double maxVal)
 {
     if (m_simRunning) return;
@@ -837,7 +930,7 @@ void Backend::startSimulation(int intervalMs, double minVal, double maxVal)
     m_simLastCard.clear();
     m_simRunning = true;
     emit simRunningChanged();
-    appendMonitorLine(QString("[sim] Simülasyon başladı · aralık %1 ms").arg(intervalMs), "cmd");
+    appendMonitorLine(QString("[sim] SimÃ¼lasyon baÅŸladÄ± Â- aralÄ±k %1 ms").arg(intervalMs), "cmd");
     m_simTimer->start(intervalMs);
 }
 
@@ -871,7 +964,7 @@ void Backend::stopSimulation()
     m_simTimer->stop();
     m_simRunning = false;
     emit simRunningChanged();
-    appendMonitorLine("[sim] Simülasyon durduruldu.", "warn");
+    appendMonitorLine("[sim] SimÃ¼lasyon durduruldu.", "warn");
 
     // Persist one averaged record for the whole session (not per-tick).
     if (m_analysis && m_simSampleCount > 0) {
@@ -889,7 +982,7 @@ void Backend::stopSimulation()
               << (cpuName.isEmpty()  ? "--" : cpuName)
               << (m_simLastModel.isEmpty() ? QString("--") : m_simLastModel)
               << "INT8"
-              << "Simülasyon"
+              << "SimÃ¼lasyon"
               << (QString::number(avgInfUs / 1000.0, 'f', 2) + " ms")
               << (QString::number(avgRamB  / 1024.0, 'f', 2) + " KiB")
               << "--"
@@ -899,7 +992,7 @@ void Backend::stopSimulation()
                      .arg(m_simSampleCount);
         m_analysis->addRecord("simulation", cells);
         emit analysisChanged();
-        appendMonitorLine(QString("[sim] Ortalama kayıt edildi · n=%1  ort=%2 ms  acc=%3%")
+        appendMonitorLine(QString("[sim] Ortalama kayÄ±t edildi Â- n=%1  ort=%2 ms  acc=%3%")
                               .arg(m_simSampleCount)
                               .arg(avgInfUs / 1000.0, 0, 'f', 2)
                               .arg(avgAcc), "ok");
@@ -932,7 +1025,7 @@ void Backend::startHardwareSimulation(int intervalMs, double minVal, double maxV
     m_hwSimSentCount = 0;
     m_hwSimResponseCount = 0;
     m_hwSimRunning = true;
-    appendMonitorLine(QString("[hw-sim] Donanim simulasyonu basladi · aralik %1 ms").arg(intervalMs), "warn");
+    appendMonitorLine(QString("[hw-sim] Donanim simulasyonu basladi Â- aralik %1 ms").arg(intervalMs), "warn");
     appendMonitorLine("[hw-sim] Sentetik sensor verisi karta gonderilecek. Yanit bekleniyor...", "info");
     const int baud = preferredBaudForBoard(m_state->activeBoard(), m_state->activeBaud());
     m_state->setActiveBaud(baud);
@@ -971,7 +1064,7 @@ void Backend::stopHardwareSimulation()
     if (!m_hwSimRunning) return;
     m_hwSimTimer->stop();
     m_hwSimRunning = false;
-    appendMonitorLine(QString("[hw-sim] Simulasyon durduruldu · gonderilen=%1  yanit=%2")
+    appendMonitorLine(QString("[hw-sim] Simulasyon durduruldu Â- gonderilen=%1  yanit=%2")
                           .arg(m_hwSimSentCount).arg(m_hwSimResponseCount), "warn");
     emit simRunningChanged();
 }
@@ -994,7 +1087,7 @@ void Backend::tickHardwareSimulation()
     const QString sensor = m_state ? m_state->lastSensor() : QString();
     SensorProfile profile;
     if (sensor == "BME280") {
-        // temperature (°C), pressure (hPa normalized 0-1), humidity (%)
+        // temperature (Â°C), pressure (hPa normalized 0-1), humidity (%)
         profile.labels    = {"temp", "press", "hum"};
         profile.defaultLo = 0.0;
         profile.defaultHi = 1.0;
@@ -1094,7 +1187,7 @@ void Backend::tickSimulation()
     ++m_simUptime;
     auto *rng = QRandomGenerator::global();
 
-    // Build a fake §{JSON}\r\n inference packet and feed it to PacketParser.
+    // Build a fake Â§{JSON}\r\n inference packet and feed it to PacketParser.
     const QStringList labels = simLabelsForSensor();
     const QString label = labels.at(rng->bounded(labels.size()));
     const int infUs     = 800 + rng->bounded(500);
@@ -1168,7 +1261,7 @@ void Backend::tickSimulation()
 
     // Log to monitor (same format as real board inference)
     appendMonitorLine(
-        QString("§ inf  %1  %2 ms  %3 KB  acc=%4%  label=%5")
+        QString("Â§ inf  %1  %2 ms  %3 KB  acc=%4%  label=%5")
             .arg(model)
             .arg(infUs / 1000.0, 0, 'f', 1)
             .arg(ramB  / 1024.0, 0, 'f', 1)
@@ -1186,12 +1279,12 @@ void Backend::tickSimulation()
     m_simLastCard    = card;
 }
 
-// ── Flash ───────────────────────────────────────────────────────────────────
+// â”€â”€ Flash â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 QString Backend::fileInfo(const QString &path) const
 {
     QFileInfo fi(path);
     if (!fi.exists()) return QString();
-    return fi.fileName() + "  ·  " + QLocale().formattedDataSize(fi.size());
+    return fi.fileName() + "  Â-  " + QLocale().formattedDataSize(fi.size());
 }
 
 void Backend::clearFlashLog()
@@ -1231,7 +1324,7 @@ void Backend::flashFirmware(const QString &path, const QString &modelName,
 
     m_flashProgress = 0; emit flashProgressChanged();
     m_flashBusy     = true; emit flashBusyChanged();
-    appendFlashLine(QString("$ Flash başlatılıyor: %1").arg(modelName), "cmd");
+    appendFlashLine(QString("$ Flash baÅŸlatÄ±lÄ±yor: %1").arg(modelName), "cmd");
     m_flash->flash(cfg);
 }
 
@@ -1255,7 +1348,7 @@ void Backend::wireFlash()
                 m_flashProgress = ok ? 100 : m_flashProgress;
                 emit flashProgressChanged();
                 m_flashBusy = false; emit flashBusyChanged();
-                appendFlashLine(ok ? "✓ Flash tamamlandı." : "✗ Flash başarısız.",
+                appendFlashLine(ok ? "âœ“ Flash tamamlandÄ±." : "âœ— Flash baÅŸarÄ±sÄ±z.",
                                 ok ? "ok" : "err");
                 if (ok && m_state)
                     m_state->setLastModel(cfg.modelName,
@@ -1264,7 +1357,7 @@ void Backend::wireFlash()
             });
 }
 
-// ── Pipeline ───────────────────────────────────────────────────────────────
+// â”€â”€ Pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 void Backend::appendPipelineLine(const QString &text, const QString &type)
 {
     QVariantMap m;
@@ -1315,11 +1408,11 @@ void Backend::runPipeline(const QVariantMap &config)
     if (m_pipelineBusy) return;
     m_lastPipelineConfig = pipelineConfigFromMap(config);
     if (m_lastPipelineConfig.modelPath.isEmpty() || !QFileInfo::exists(m_lastPipelineConfig.modelPath)) {
-        appendPipelineLine("HATA: Model dosyası seçilmedi veya bulunamadı.", "err");
+        appendPipelineLine("HATA: Model dosyasÄ± seÃ§ilmedi veya bulunamadÄ±.", "err");
         return;
     }
     if (m_lastPipelineConfig.outputDir.isEmpty()) {
-        appendPipelineLine("HATA: Çıktı dizini seçilmedi.", "err");
+        appendPipelineLine("HATA: Ã‡Ä±ktÄ± dizini seÃ§ilmedi.", "err");
         return;
     }
 
@@ -1329,7 +1422,7 @@ void Backend::runPipeline(const QVariantMap &config)
     m_pipelineLines.clear();
     m_pipelineProgress = 0;
     m_pipelineBusy = true;
-    m_pipelineStage = "Pipeline başlatılıyor...";
+    m_pipelineStage = "Pipeline baÅŸlatÄ±lÄ±yor...";
     emit pipelineChanged();
     if (m_pipelinePulseTimer) m_pipelinePulseTimer->start();
 
@@ -1349,7 +1442,7 @@ void Backend::runPipeline(const QVariantMap &config)
         m_pipelineBusy = false;
         if (m_pipelinePulseTimer) m_pipelinePulseTimer->stop();
         m_pipelineProgress = success ? 100 : 0;
-        m_pipelineStage = success ? "Pipeline tamamlandı" : "Pipeline başarısız";
+        m_pipelineStage = success ? "Pipeline tamamlandÄ±" : "Pipeline baÅŸarÄ±sÄ±z";
         if (success) {
             addCompiledRecord(m_lastPipelineConfig);
             AppSettings settings;
@@ -1392,7 +1485,7 @@ void Backend::clearPipelineLog()
     m_pipelineLines.clear();
     if (!m_pipelineBusy) {
         m_pipelineProgress = 0;
-        m_pipelineStage = "Hazır";
+        m_pipelineStage = "HazÄ±r";
     }
     emit pipelineChanged();
 }
@@ -1421,7 +1514,7 @@ void Backend::addCompiledRecord(const PipelineConfig &config)
           << "--"
           << "--"
           << firmwareSize
-          << (firmwarePath.isEmpty() ? "Derlendi" : "Arşivlendi")
+          << (firmwarePath.isEmpty() ? "Derlendi" : "ArÅŸivlendi")
           << firmwarePath
           << config.modelPath
           << config.outputDir;
@@ -1429,7 +1522,7 @@ void Backend::addCompiledRecord(const PipelineConfig &config)
     emit analysisChanged();
 }
 
-// ── Benchmark ──────────────────────────────────────────────────────────────
+// â”€â”€ Benchmark â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 void Backend::appendBenchmarkLine(const QString &text, const QString &type)
 {
     QVariantMap m;
@@ -1550,7 +1643,7 @@ void Backend::startBenchmark(int samples, double minValue, double maxValue, int 
         }
     }
     if (port.isEmpty()) {
-        appendBenchmarkLine("Aktif COM port yok. Kartlar ekranından port seçin.", "err");
+        appendBenchmarkLine("Aktif COM port yok. Kartlar ekranÄ±ndan port seÃ§in.", "err");
         return;
     }
 
@@ -1561,7 +1654,7 @@ void Backend::startBenchmark(int samples, double minValue, double maxValue, int 
 
     auto sendCommand = [this, samples, minValue, maxValue, seed]() {
         if (!m_state || !m_state->isConnected()) {
-            appendBenchmarkLine("UART bağlantısı kurulamadı.", "err");
+            appendBenchmarkLine("UART baÄŸlantÄ±sÄ± kurulamadÄ±.", "err");
             m_benchmarkBusy = false;
             emit benchmarkChanged();
             return;
@@ -1585,7 +1678,7 @@ void Backend::startBenchmark(int samples, double minValue, double maxValue, int 
     if (m_state->isConnected()) {
         sendCommand();
     } else {
-        appendBenchmarkLine(QString("UART bağlantısı açılıyor: %1 @ %2")
+        appendBenchmarkLine(QString("UART baÄŸlantÄ±sÄ± aÃ§Ä±lÄ±yor: %1 @ %2")
                                 .arg(port).arg(m_state->activeBaud()), "cmd");
         m_serial->connectToPort(port, m_state->activeBaud() > 0 ? m_state->activeBaud() : 115200);
         QTimer::singleShot(1200, this, sendCommand);
@@ -1641,7 +1734,7 @@ void Backend::clearBenchmarkLog()
     emit benchmarkChanged();
 }
 
-// ── Analysis ────────────────────────────────────────────────────────────────
+// â”€â”€ Analysis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 QVariantList Backend::recordsForKind(const QString &kind) const
 {
     if (!m_analysis) return {};
@@ -1698,7 +1791,7 @@ bool Backend::flashCompiledModel(int recordId)
         const QString firmwarePath = record.cells.value(12);
         const QString modelName = record.cells.value(1);
         if (firmwarePath.isEmpty() || !QFileInfo::exists(firmwarePath)) {
-            appendFlashLine("HATA: Arşivlenmiş firmware bulunamadı.", "err");
+            appendFlashLine("HATA: ArÅŸivlenmiÅŸ firmware bulunamadÄ±.", "err");
             return false;
         }
         flashFirmware(firmwarePath, modelName, record.cells.value(2), "INT8", false);
@@ -1774,7 +1867,7 @@ static int distinctCount(const QVariantList &rows, int col)
     QSet<QString> seen;
     for (const QVariant &rv : rows) {
         const QString v = cellAt(rv.toList(), col).trimmed();
-        if (!v.isEmpty() && v != QStringLiteral("--") && v != QStringLiteral("—"))
+        if (!v.isEmpty() && v != QStringLiteral("--") && v != QStringLiteral("â€”"))
             seen.insert(v);
     }
     return seen.size();
@@ -1787,7 +1880,7 @@ bool Backend::exportAnalysisCsv(const QString &path,
     const QString outPath = normalizedLocalPath(path, ".csv");
     QFile file(outPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        emit statusMessage("CSV yazılamadı: " + file.errorString());
+        emit statusMessage("CSV yazÄ±lamadÄ±: " + file.errorString());
         return false;
     }
 
@@ -1799,25 +1892,25 @@ bool Backend::exportAnalysisCsv(const QString &path,
     const int boardCol  = columnIndexByTitle(columns, {"Kart"});
     const int modelCol  = columnIndexByTitle(columns, {"Model"});
     const int metricCol = columnIndexByTitle(columns, {"Ort", "MACC", "Params"});
-    const int resultCol = columnIndexByTitle(columns, {"Sonuç"});
+    const int resultCol = columnIndexByTitle(columns, {"SonuÃ§"});
     double accSum = 0; int accCount = 0;
     for (const QVariant &rv : rows) {
         const double p = parsePercent(cellAt(rv.toList(), resultCol));
         if (!std::isnan(p)) { accSum += p; ++accCount; }
     }
 
-    // ── Metadata header block (Excel-friendly: sep hint + two-column key/value) ──
+    // â”€â”€ Metadata header block (Excel-friendly: sep hint + two-column key/value) â”€â”€
     stream << "sep=,\n"; // tells Excel (incl. tr-TR locale) to split on comma
-    stream << csvEscape("STM32 AI Deployer — Analiz Raporu") << '\n';
-    stream << csvEscape("Kurum") << ',' << csvEscape("Marmara Üniversitesi · Bilgisayar Mühendisliği") << '\n';
+    stream << csvEscape("STM32 AI Deployer â€” Analiz Raporu") << '\n';
+    stream << csvEscape("Kurum") << ',' << csvEscape("Marmara Ãœniversitesi Â- Bilgisayar MÃ¼hendisliÄŸi") << '\n';
     stream << csvEscape("Rapor Tarihi") << ',' << csvEscape(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm")) << '\n';
-    stream << csvEscape("Toplam Kayıt") << ',' << csvEscape(QString::number(rows.size())) << '\n';
+    stream << csvEscape("Toplam KayÄ±t") << ',' << csvEscape(QString::number(rows.size())) << '\n';
     if (boardCol >= 0)
-        stream << csvEscape("Kart Sayısı") << ',' << csvEscape(QString::number(distinctCount(rows, boardCol))) << '\n';
+        stream << csvEscape("Kart SayÄ±sÄ±") << ',' << csvEscape(QString::number(distinctCount(rows, boardCol))) << '\n';
     if (modelCol >= 0)
-        stream << csvEscape("Model Sayısı") << ',' << csvEscape(QString::number(distinctCount(rows, modelCol))) << '\n';
+        stream << csvEscape("Model SayÄ±sÄ±") << ',' << csvEscape(QString::number(distinctCount(rows, modelCol))) << '\n';
     if (accCount > 0)
-        stream << csvEscape("Ort. Doğruluk") << ',' << csvEscape(QString("%%1").arg(qRound(accSum / accCount))) << '\n';
+        stream << csvEscape("Ort. DoÄŸruluk") << ',' << csvEscape(QString("%%1").arg(qRound(accSum / accCount))) << '\n';
     stream << '\n';
 
     QStringList headers;
@@ -1833,7 +1926,7 @@ bool Backend::exportAnalysisCsv(const QString &path,
         stream << cells.join(',') << '\n';
     }
 
-    emit statusMessage("CSV oluşturuldu: " + outPath);
+    emit statusMessage("CSV oluÅŸturuldu: " + outPath);
     return true;
 }
 
@@ -1850,7 +1943,7 @@ bool Backend::exportAnalysisPdf(const QString &path,
 
     QPainter painter(&writer);
     if (!painter.isActive()) {
-        emit statusMessage("PDF oluşturulamadı.");
+        emit statusMessage("PDF oluÅŸturulamadÄ±.");
         return false;
     }
     painter.setRenderHint(QPainter::Antialiasing, true);
@@ -1865,7 +1958,7 @@ bool Backend::exportAnalysisPdf(const QString &path,
     const int right  = width;
     const int height = page.height();
 
-    // ── Palette ──────────────────────────────────────────────────────────────
+    // â”€â”€ Palette â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const QColor cInk("#0f172a");      // near-black text
     const QColor cMuted("#64748b");    // grey text
     const QColor cFaint("#94a3b8");
@@ -1877,7 +1970,7 @@ bool Backend::exportAnalysisPdf(const QString &path,
     const QColor cGrid("#e2e8f0");
     const QColor cCardBg("#f1f5f9");
 
-    // ── Fonts ────────────────────────────────────────────────────────────────
+    // â”€â”€ Fonts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const QFont titleFont("Arial", 18, QFont::Bold);
     const QFont subFont("Arial", 9);
     const QFont metaFont("Arial", 8);
@@ -1900,12 +1993,12 @@ bool Backend::exportAnalysisPdf(const QString &path,
         painter.drawLine(left, fy, right, fy);
         painter.setPen(cFaint);
         painter.drawText(QRect(left, fy + 2, width, 20), Qt::AlignLeft | Qt::AlignVCenter,
-                         "Marmara Üniversitesi · Bilgisayar Mühendisliği · STM32 AI Deployer");
+                         "Marmara Ãœniversitesi Â- Bilgisayar MÃ¼hendisliÄŸi Â- STM32 AI Deployer");
         painter.drawText(QRect(left, fy + 2, width, 20), Qt::AlignRight | Qt::AlignVCenter,
                          QString("Sayfa %1").arg(n));
     };
 
-    // ── Cover header band ──────────────────────────────────────────────────────
+    // â”€â”€ Cover header band â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     int y = 0;
     const int bandH = 90;
     QLinearGradient bandGrad(left, y, right, y + bandH);
@@ -1924,29 +2017,29 @@ bool Backend::exportAnalysisPdf(const QString &path,
     painter.setFont(subFont);
     painter.setPen(QColor("#cbd5e1"));
     painter.drawText(QRect(left + 18, y + 48, width - 36, 22), Qt::AlignLeft | Qt::AlignVCenter,
-                     "Karşılaştırmalı Performans ve Kaynak Analizi");
+                     "KarÅŸÄ±laÅŸtÄ±rmalÄ± Performans ve Kaynak Analizi");
     y += bandH + 16;
 
-    // ── Meta line ──────────────────────────────────────────────────────────────
+    // â”€â”€ Meta line â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     painter.setFont(metaFont);
     painter.setPen(cMuted);
     painter.drawText(QRect(left, y, width, 18), Qt::AlignLeft | Qt::AlignVCenter,
                      QString("Rapor Tarihi: %1").arg(stamp));
     painter.drawText(QRect(left, y, width, 18), Qt::AlignRight | Qt::AlignVCenter,
-                     QString("Toplam Kayıt: %1").arg(rows.size()));
+                     QString("Toplam KayÄ±t: %1").arg(rows.size()));
     y += 26;
 
-    // ── Resolve key columns for stats / chart ──────────────────────────────────
+    // â”€â”€ Resolve key columns for stats / chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const int boardCol  = columnIndexByTitle(columns, {"Kart"});
     const int modelCol  = columnIndexByTitle(columns, {"Model"});
     const int metricCol = columnIndexByTitle(columns, {"Ort", "MACC", "Params"});
-    const int resultCol = columnIndexByTitle(columns, {"Sonuç"});
+    const int resultCol = columnIndexByTitle(columns, {"SonuÃ§"});
     const QString metricTitle = metricCol >= 0 ? columnTitle(columns.at(metricCol)) : QString();
     // Unit suffix from the first parseable metric value (e.g. "ms", "M").
     QString metricUnit;
     for (const QVariant &rv : rows) {
         const QString s = cellAt(rv.toList(), metricCol);
-        const QRegularExpression ru(QStringLiteral("[A-Za-zµ%]+\\s*$"));
+        const QRegularExpression ru(QStringLiteral("[A-Za-zÂµ%]+\\s*$"));
         const QRegularExpressionMatch mu = ru.match(s.trimmed());
         if (!std::isnan(parseLeadingNumber(s)) && mu.hasMatch()) { metricUnit = mu.captured(0).trimmed(); break; }
     }
@@ -1964,14 +2057,14 @@ bool Backend::exportAnalysisPdf(const QString &path,
         if (!std::isnan(v)) { metSum += v; ++metCount; }
     }
 
-    // ── Summary stat cards ─────────────────────────────────────────────────────
+    // â”€â”€ Summary stat cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     struct Stat { QString label; QString value; QColor accent; };
     QVector<Stat> stats;
-    stats.append({"Toplam Kayıt", QString::number(rows.size()), cAccent});
-    stats.append({"Kart Sayısı",  QString::number(distinctCount(rows, boardCol)), cAccent2});
-    stats.append({"Model Sayısı", QString::number(distinctCount(rows, modelCol)), QColor("#16a34a")});
+    stats.append({"Toplam KayÄ±t", QString::number(rows.size()), cAccent});
+    stats.append({"Kart SayÄ±sÄ±",  QString::number(distinctCount(rows, boardCol)), cAccent2});
+    stats.append({"Model SayÄ±sÄ±", QString::number(distinctCount(rows, modelCol)), QColor("#16a34a")});
     if (accCount > 0)
-        stats.append({"Ort. Doğruluk", QString("%%1").arg(qRound(accSum / accCount)), QColor("#f59e0b")});
+        stats.append({"Ort. DoÄŸruluk", QString("%%1").arg(qRound(accSum / accCount)), QColor("#f59e0b")});
     else if (metCount > 0)
         stats.append({QString("Ort. %1").arg(metricTitle),
                       QString("%1 %2").arg(metSum / metCount, 0, 'f', 2).arg(metricUnit), QColor("#f59e0b")});
@@ -1999,11 +2092,11 @@ bool Backend::exportAnalysisPdf(const QString &path,
     }
     y += cardH + 22;
 
-    // ── Bar chart (top records by metric) ──────────────────────────────────────
+    // â”€â”€ Bar chart (top records by metric) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (metricCol >= 0 && metCount > 0) {
         painter.setPen(cInk);
         painter.setFont(sectionFont);
-        const QString chartTitle = QString("Model Karşılaştırması — %1%2")
+        const QString chartTitle = QString("Model KarÅŸÄ±laÅŸtÄ±rmasÄ± â€” %1%2")
                                        .arg(metricTitle)
                                        .arg(metricUnit.isEmpty() ? QString() : QString(" (%1)").arg(metricUnit));
         painter.drawText(QRect(left, y, width, 22), Qt::AlignLeft | Qt::AlignVCenter, chartTitle);
@@ -2062,10 +2155,10 @@ bool Backend::exportAnalysisPdf(const QString &path,
         y = baseY + 34;
     }
 
-    // ── Data table ─────────────────────────────────────────────────────────────
+    // â”€â”€ Data table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     painter.setPen(cInk);
     painter.setFont(sectionFont);
-    painter.drawText(QRect(left, y, width, 22), Qt::AlignLeft | Qt::AlignVCenter, "Detaylı Kayıt Tablosu");
+    painter.drawText(QRect(left, y, width, 22), Qt::AlignLeft | Qt::AlignVCenter, "DetaylÄ± KayÄ±t Tablosu");
     y += 28;
 
     const int cols = qMax(1, columns.size());
@@ -2125,7 +2218,7 @@ bool Backend::exportAnalysisPdf(const QString &path,
             painter.setFont(sectionFont);
             painter.setPen(cInk);
             painter.drawText(QRect(left, y, width, 20), Qt::AlignLeft | Qt::AlignVCenter,
-                             "Detaylı Kayıt Tablosu (devam)");
+                             "DetaylÄ± KayÄ±t Tablosu (devam)");
             y += 26;
             drawTableHeader();
             painter.setFont(bodyFont);
@@ -2152,7 +2245,7 @@ bool Backend::exportAnalysisPdf(const QString &path,
 
     drawFooter(pageNo);
     painter.end();
-    emit statusMessage("PDF oluşturuldu: " + outPath);
+    emit statusMessage("PDF oluÅŸturuldu: " + outPath);
     return true;
 }
 
@@ -2186,34 +2279,28 @@ void Backend::wireAnalysis()
                       << "INT8" << "--"
                       << (QString::number(d.avg_us / 1000.0, 'f', 2) + " ms")
                       << (QString::number(d.ram_b  / 1024.0, 'f', 2) + " KiB")
-                      << "--" << "Tamamlandı";
+                      << "--" << "TamamlandÄ±";
                 m_analysis->addRecord("benchmark", cells);
                 emit analysisChanged();
                 emit benchmarkChanged();
             });
 
-    // Real sensor results
+    // Real sensor results are persisted as explicit sessions only.
     connect(m_serial, &SerialManager::sensorReceived, this,
             [this](const SensorData &d) {
-                if (!m_analysis) return;
-                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-                if (nowMs - m_lastSensorAnalysisMs < 1000)
+                if (!m_sensorAnalysisRunning)
                     return;
-                m_lastSensorAnalysisMs = nowMs;
-                const BoardInfo board = m_state ? m_state->activeBoard() : BoardInfo{};
-                QStringList cells;
-                cells << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-                      << QString("REAL-LIVE-%1").arg(d.seq > 0 ? (int)d.seq : 1)
-                      << (d.card.isEmpty() ? board.name : d.card)
-                      << (board.deviceName.isEmpty() ? board.name : board.deviceName)
-                      << board.deviceCpu
-                      << d.model << "INT8" << d.sensor
-                      << (d.inf_us > 0 ? QString::number(d.inf_us / 1000.0, 'f', 2) + " ms" : "--")
-                      << (d.ram_b  > 0 ? QString::number(d.ram_b  / 1024.0, 'f', 2) + " KiB" : "--")
-                      << "--"
-                      << (d.label + "  " + QString::number(d.acc_pct) + "%");
-                m_analysis->addRecord("sensor", cells);
-                emit analysisChanged();
+                ++m_sensorAnalysisCount;
+                m_sensorAnalysisTotalInfUs += d.inf_us;
+                m_sensorAnalysisTotalRamB += d.ram_b;
+                m_sensorAnalysisTotalAcc += d.acc_pct;
+                if (!d.model.isEmpty()) m_sensorAnalysisLastModel = d.model;
+                if (!d.sensor.isEmpty()) m_sensorAnalysisLastSensor = d.sensor;
+                if (!d.card.isEmpty()) m_sensorAnalysisLastCard = d.card;
+                if (!d.label.isEmpty()) {
+                    m_sensorAnalysisLastLabel = d.label;
+                    ++m_sensorAnalysisLabelCounts[d.label];
+                }
             });
 
     // Simulation packets feed analysis via simParser
@@ -2235,7 +2322,7 @@ void Backend::wireAnalysis()
             });
 }
 
-// ── Serial → AppState + monitor wiring ──────────────────────────────────────
+// â”€â”€ Serial â†’ AppState + monitor wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 void Backend::wireSerial()
 {
     if (!m_serial) return;
@@ -2243,7 +2330,7 @@ void Backend::wireSerial()
     connect(m_serial, &SerialManager::connectionChanged, this,
             [this](bool connected, const QString &info) {
                 if (m_state) m_state->setConnected(connected, info);
-                appendMonitorLine(connected ? ("[bağlandı] " + info) : "[bağlantı kesildi]",
+                appendMonitorLine(connected ? ("[baÄŸlandÄ±] " + info) : "[baÄŸlantÄ± kesildi]",
                                   connected ? "ok" : "warn");
                 if (connected) requestBoardInfoBurst();
             });
@@ -2253,7 +2340,7 @@ void Backend::wireSerial()
 
     connect(m_serial, &SerialManager::bootReceived, this,
             [this](const BootData &boot) {
-                appendMonitorLine(QString("§ boot  card=%1  sdk=%2  model=%3  baud=%4")
+                appendMonitorLine(QString("Â§ boot  card=%1  sdk=%2  model=%3  baud=%4")
                                       .arg(boot.card.isEmpty()  ? "--" : boot.card)
                                       .arg(boot.sdk.isEmpty()   ? "--" : boot.sdk)
                                       .arg(boot.model.isEmpty() ? "--" : boot.model)
@@ -2285,7 +2372,7 @@ void Backend::wireSerial()
                 if (logLine)
                     m_lastInferenceLogMs = nowMs;
                 if (logLine)
-                appendMonitorLine(QString("§ inf  %1  %2 ms  %3 KB  acc=%4%  label=%5")
+                appendMonitorLine(QString("Â§ inf  %1  %2 ms  %3 KB  acc=%4%  label=%5")
                                       .arg(d.model.isEmpty() ? "--" : d.model)
                                       .arg(d.inf_us / 1000.0, 0, 'f', 1)
                                       .arg(d.ram_b  / 1024.0, 0, 'f', 1)
@@ -2306,7 +2393,7 @@ void Backend::wireSerial()
                 if (logLine)
                     m_lastSensorLogMs = nowMs;
                 if (logLine)
-                appendMonitorLine(QString("§ sensor  %1  model=%2  values=[%3]  %4%  label=%5")
+                appendMonitorLine(QString("Â§ sensor  %1  model=%2  values=[%3]  %4%  label=%5")
                                       .arg(d.sensor.isEmpty() ? "--" : d.sensor)
                                       .arg(d.model.isEmpty()  ? "--" : d.model)
                                       .arg(valStr)
@@ -2327,7 +2414,7 @@ void Backend::wireSerial()
                 if (logLine)
                     m_lastSysLogMs = nowMs;
                 if (logLine)
-                appendMonitorLine(QString("§ sys  uptime=%1s  temp=%2C  free=%3 KB  state=%4")
+                appendMonitorLine(QString("Â§ sys  uptime=%1s  temp=%2C  free=%3 KB  state=%4")
                                       .arg(s.uptime_s)
                                       .arg(s.temp_c)
                                       .arg(s.free_ram_b / 1024)

@@ -6,6 +6,8 @@
 #include <QStringList>
 #include <QTimer>
 #include <QVariantMap>
+#include <QHash>
+#include <QDateTime>
 #include "modules/flash/PipelineConfig.h"
 
 class AppState;
@@ -32,6 +34,7 @@ class Backend : public QObject
     // Monitor terminal
     Q_PROPERTY(QVariantList monitorLines READ monitorLines NOTIFY monitorLinesChanged)
     Q_PROPERTY(bool simRunning READ simRunning NOTIFY simRunningChanged)
+    Q_PROPERTY(bool sensorAnalysisRunning READ sensorAnalysisRunning NOTIFY sensorAnalysisChanged)
 
     // Flash
     Q_PROPERTY(QVariantList flashLines   READ flashLines   NOTIFY flashLinesChanged)
@@ -88,7 +91,11 @@ public:
 
     // ── Monitor terminal ──────────────────────────────────────────────────
     QVariantList monitorLines() const { return m_monitorLines; }
+    bool sensorAnalysisRunning() const { return m_sensorAnalysisRunning; }
     Q_INVOKABLE void clearMonitor();
+    Q_INVOKABLE void startSensorAnalysis();
+    Q_INVOKABLE void stopSensorAnalysis();
+    Q_INVOKABLE void clearTodaySensorAnalysis();
 
     // ── Simulation (Monitor screen) ───────────────────────────────────────
     bool simRunning() const { return m_simRunning || m_hwSimRunning; }
@@ -171,6 +178,7 @@ signals:
     void probeChanged();
     void probeFinished(bool success, const QString &message);
     void statusMessage(const QString &text);
+    void sensorAnalysisChanged();
 
 private:
     void appendMonitorLine(const QString &text, const QString &type);
@@ -202,7 +210,18 @@ private:
     qint64       m_lastInferenceLogMs = 0;
     qint64       m_lastSensorLogMs = 0;
     qint64       m_lastSysLogMs = 0;
-    qint64       m_lastSensorAnalysisMs = 0;
+
+    bool         m_sensorAnalysisRunning = false;
+    QDateTime    m_sensorAnalysisStartedAt;
+    quint32      m_sensorAnalysisCount = 0;
+    quint64      m_sensorAnalysisTotalInfUs = 0;
+    quint64      m_sensorAnalysisTotalRamB = 0;
+    quint64      m_sensorAnalysisTotalAcc = 0;
+    QString      m_sensorAnalysisLastModel;
+    QString      m_sensorAnalysisLastSensor;
+    QString      m_sensorAnalysisLastCard;
+    QString      m_sensorAnalysisLastLabel;
+    QHash<QString, int> m_sensorAnalysisLabelCounts;
 
     // simulation
     QTimer       *m_simTimer   = nullptr;

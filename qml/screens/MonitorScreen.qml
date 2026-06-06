@@ -10,6 +10,7 @@ Item {
     readonly property var _lines: (typeof backend !== "undefined" && backend) ? backend.monitorLines : []
     readonly property bool _connected: (typeof appState !== "undefined" && appState) ? appState.connected : false
     readonly property bool _simRunning: (typeof backend !== "undefined" && backend) ? backend.simRunning : false
+    readonly property bool _sensorAnalysisRunning: (typeof backend !== "undefined" && backend) ? backend.sensorAnalysisRunning : false
     readonly property string _connText: _connected
         ? ((typeof appState !== "undefined" && appState) ? (appState.activePort + " @ " + appState.activeBaud) : "Bagli")
         : "Bagli degil"
@@ -220,6 +221,64 @@ Item {
                                     font.weight: Font.DemiBold
                                     Layout.fillWidth: true
                                 }
+                            }
+                        }
+                    }
+                }
+
+                Card {
+                    title: "Gercek Sensor Analizi"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 150
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: Theme.spacingMd
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingXs
+                            Text {
+                                text: "Durum"
+                                color: Theme.textMuted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontXs
+                                font.weight: Font.DemiBold
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: root._sensorAnalysisRunning ? "Kayit aliniyor" : "Hazir"
+                                color: root._sensorAnalysisRunning ? Theme.success : Theme.text
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSm
+                                font.weight: Font.DemiBold
+                                horizontalAlignment: Text.AlignRight
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spacingSm
+                            AppButton {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                text: root._sensorAnalysisRunning ? "Bitir" : "Baslat"
+                                iconText: root._sensorAnalysisRunning ? "x" : ">"
+                                variant: root._sensorAnalysisRunning ? "danger" : "primary"
+                                onClicked: {
+                                    if (typeof backend === "undefined" || !backend) return
+                                    if (root._sensorAnalysisRunning) backend.stopSensorAnalysis()
+                                    else backend.startSensorAnalysis()
+                                }
+                            }
+                            AppButton {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                text: "Bugunu Temizle"
+                                iconText: "x"
+                                variant: "secondary"
+                                enabled: !root._sensorAnalysisRunning
+                                onClicked: if (typeof backend !== "undefined" && backend) backend.clearTodaySensorAnalysis()
                             }
                         }
                     }

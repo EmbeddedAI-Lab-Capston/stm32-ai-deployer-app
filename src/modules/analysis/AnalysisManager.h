@@ -23,6 +23,7 @@ public:
     int addRecord(const QString &kind, const QStringList &cells);
     QVector<AnalysisRecord> records(const QString &kind) const;
     void deleteRecord(int id);
+    int deleteRecordsForKindOnDate(const QString &kind, const QString &datePrefix);
 
 private:
     void openDatabase();
