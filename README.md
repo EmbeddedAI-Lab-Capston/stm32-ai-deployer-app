@@ -18,7 +18,7 @@ inference metriklerini gerçek zamanlı izle → karşılaştırmalı analiz et 
 
 ---
 
-## 📋 İçindekiler
+## İçindekiler
 
 - [Genel Bakış](#-genel-bakış)
 - [Öne Çıkan Özellikler](#-öne-çıkan-özellikler)
@@ -34,22 +34,22 @@ inference metriklerini gerçek zamanlı izle → karşılaştırmalı analiz et 
 
 ---
 
-## 🎯 Genel Bakış
+## Genel Bakış
 
 **STM32 AI Deployer**, STM32 mikrodenetleyiciler üzerinde çalışan yapay zeka
 modellerinin tüm yaşam döngüsünü tek bir masaüstü uygulamasından yöneten bir
 araçtır. Dört temel işi bir arada yapar:
 
-| | İş | Açıklama |
-|---|----|----------|
-| 🚀 | **Dağıtım** | Bir `.tflite` modelini X-CUBE-AI ile C koduna çevirir, GCC ile derler ve STM32 kartına flash'lar — tek tıkla uçtan uca |
-| 📡 | **İzleme** | Karttan UART üzerinden gelen inference metriklerini (`§{JSON}` protokolü) gerçek zamanlı gösterir |
-| 📊 | **Analiz & Benchmark** | Modellerin hız / RAM / doğruluk değerlerini SQLite'ta saklar, karşılaştırmalı tablolar ve CSV/PDF dışa aktarımı üretir |
-| 🏭 | **Fabrika Simülasyonu** | Gerçek donanım olmadan 5 bölgeli / 20 düğümlü / ~68 sensörlü akıllı fabrikayı sentetik canlı veriyle canlandıran demo modu |
+| İş | Açıklama |
+|----|----------|
+| **Dağıtım** | Bir `.tflite` modelini X-CUBE-AI ile C koduna çevirir, GCC ile derler ve STM32 kartına flash'lar — tek tıkla uçtan uca |
+| **İzleme** | Karttan UART üzerinden gelen inference metriklerini (`§{JSON}` protokolü) gerçek zamanlı gösterir |
+| **Analiz & Benchmark** | Modellerin hız / RAM / doğruluk değerlerini SQLite'ta saklar, karşılaştırmalı tablolar ve CSV/PDF dışa aktarımı üretir |
+| **Fabrika Simülasyonu** | Gerçek donanım olmadan 5 bölgeli / 20 düğümlü / ~68 sensörlü akıllı fabrikayı sentetik canlı veriyle canlandıran demo modu |
 
 ---
 
-## ✨ Öne Çıkan Özellikler
+## Öne Çıkan Özellikler
 
 - **Tek tıkla pipeline** — `.tflite`'tan flash'lanmış karta kadar 5 adımlı otomatik orkestrasyon
 - **Otomatik araç tespiti** — `arm-none-eabi-gcc`, `make`, `STM32_Programmer_CLI`, `stedgeai` ilk açılışta otomatik bulunur
@@ -61,7 +61,7 @@ araçtır. Dört temel işi bir arada yapar:
 
 ---
 
-## 🔌 Hedef Donanım
+## Hedef Donanım
 
 | Kart    | Flash   | RAM     | Hız     | Tipik Model | Not |
 |---------|---------|---------|---------|-------------|-----|
@@ -75,7 +75,7 @@ araçtır. Dört temel işi bir arada yapar:
 
 ---
 
-## 🏗 Mimari
+## Mimari
 
 Uygulama katmanlı bir mimari kullanır. QML arayüzü iş mantığını doğrudan
 yapmaz; her şey tek bir cephe (facade) sınıfı olan **`Backend`** üzerinden
@@ -105,7 +105,7 @@ Tam mimari, sınıf sorumlulukları ve veri akışı için → [`docs/PROJECT.md
 
 ---
 
-## 🧰 Teknik Yığın
+## Teknik Yığın
 
 | Bileşen | Teknoloji |
 |---------|-----------|
@@ -123,7 +123,7 @@ Tam mimari, sınıf sorumlulukları ve veri akışı için → [`docs/PROJECT.md
 
 ---
 
-## 🚀 Hızlı Başlangıç
+## Hızlı Başlangıç
 
 ### Ön Koşullar
 
@@ -159,7 +159,7 @@ cmake --build build
 
 ---
 
-## ⚙️ Pipeline Akışı
+## Pipeline Akışı
 
 `PipelineRunner` tek bir `run(PipelineConfig)` çağrısıyla beş adımı sırayla,
 asenkron yürütür:
@@ -184,7 +184,7 @@ Model → Sensör → Özet/Araç Doğrulama → Derleme+Flash.
 
 ---
 
-## 📡 UART Protokolü v1.0
+## UART Protokolü v1.0
 
 Firmware → Qt yönünde her paket:
 
@@ -207,7 +207,7 @@ Tam referans → [`docs/protocol_v1.md`](docs/protocol_v1.md)
 
 ---
 
-## 📁 Klasör Yapısı
+## Klasör Yapısı
 
 ```
 stm32-ai-deployer-app/
@@ -235,7 +235,7 @@ stm32-ai-deployer-app/
 
 ---
 
-## 📚 Dokümantasyon
+## Dokümantasyon
 
 | Doküman | İçerik |
 |---------|--------|
@@ -246,7 +246,7 @@ stm32-ai-deployer-app/
 
 ---
 
-## 👥 Ekip
+## Ekip
 
 **Muhammet Ali Şeker** · **Furkan Talha Kasım** · **Kadir Mert Abatay**
 
