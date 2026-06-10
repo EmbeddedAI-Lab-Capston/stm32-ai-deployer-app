@@ -87,8 +87,12 @@ private:
         qreal   normalMin = 0;
         qreal   normalMax = 0;
         qreal   phase = 0;        // sinusoid phase offset
+        qreal   freq = 1.0;       // per-sensor swing speed (de-synchronises nodes)
         int     decimals = 1;
         qreal   value = 0;
+        qreal   noiseState = 0;   // mean-reverting random-walk jitter
+        qreal   faultLevel = 0;   // 0..1 — how far into the fault the value is pushed
+        int     faultDir = 0;     // -1 below range, +1 above range, 0 idle
         QString status = QStringLiteral("ok");
     };
 

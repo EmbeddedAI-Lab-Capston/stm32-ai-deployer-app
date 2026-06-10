@@ -107,10 +107,12 @@ void FactorySimulator::addNode(int zoneId, const QString &name, const QString &b
     n.freeRamB = int(n.totalRamB * 0.55);
     n.uptimeS = QRandomGenerator::global()->bounded(3600, 864000);
 
-    // Seed each sensor at its baseline with a random phase.
+    // Seed each sensor at its baseline with a random phase and its own swing
+    // speed, so neighbouring sensors don't all rise and fall in lock-step.
     for (Sensor &s : n.sensors) {
         s.phase = randUniform(0, 6.28);
-        s.value = s.baseline;
+        s.freq  = randUniform(0.6, 1.5);
+        s.value = s.baseline + randNoise(s.amplitude * 0.5); // start mid-band, not all equal
     }
     m_nodes.push_back(n);
 }
@@ -237,31 +239,56 @@ QString FactorySimulator::worseStatus(const QString &a, const QString &b)
 void FactorySimulator::advance()
 {
     ++m_tickCount;
-    const qreal t = m_tickCount * 0.18;
+    // Moderate time base — fast enough that each sensor visibly rises AND falls
+    // over a short window, slow enough that it doesn't look twitchy.
+    const qreal t = m_tickCount * 0.12;
 
     for (Node &n : m_nodes) {
         n.uptimeS += qMax(1, int(m_intervalMs / 1000));
 
         // Decay an active fault, or roll a small chance to start one.
+        // Faults last longer so the anomaly is sustained, not a single spike.
         if (n.faultTicks > 0) {
             --n.faultTicks;
-        } else if (QRandomGenerator::global()->bounded(1000) < 6) { // ~0.6%/tick
-            n.faultTicks = QRandomGenerator::global()->bounded(4, 12);
+        } else if (QRandomGenerator::global()->bounded(1000) < 4) { // ~0.4%/tick
+            n.faultTicks = QRandomGenerator::global()->bounded(8, 22);
         }
         const bool faulting = n.faultTicks > 0;
 
         QString nodeStatus = QStringLiteral("ok");
         for (Sensor &s : n.sensors) {
-            const qreal swing = s.amplitude * qSin(t + s.phase);
-            qreal v = s.baseline + swing + randNoise(s.noise);
+            // 1) Where the value "wants" to be: baseline + a slow primary swing
+            //    plus a smaller, faster harmonic so the curve isn't a clean sine.
+            const qreal swing = s.amplitude * (0.78 * qSin(t * s.freq + s.phase)
+                                             + 0.22 * qSin(t * s.freq * 2.3 + s.phase * 1.7));
+            qreal target = s.baseline + swing;
 
-            // A fault pushes one band-edge well past the normal range.
-            if (faulting) {
-                const qreal over = (s.normalMax - s.normalMin) * randUniform(0.35, 0.85);
-                v = (QRandomGenerator::global()->bounded(2) ? s.normalMax + over
-                                                            : s.normalMin - over * 0.4);
+            // 2) Fault severity ramps up while active and decays slowly afterwards,
+            //    so out-of-range values persist and then recover gradually instead
+            //    of snapping back to normal on the very next tick.
+            const qreal desired = faulting ? 1.0 : 0.0;
+            s.faultLevel += (desired - s.faultLevel) * (faulting ? 0.22 : 0.06);
+            if (s.faultLevel > 0.01) {
+                if (s.faultDir == 0)
+                    s.faultDir = QRandomGenerator::global()->bounded(2) ? 1 : -1;
+                const qreal over = (s.normalMax - s.normalMin) * 0.55;
+                const qreal extreme = (s.faultDir > 0) ? s.normalMax + over
+                                                       : s.normalMin - over * 0.4;
+                target += (extreme - target) * s.faultLevel;
+            } else {
+                s.faultDir = 0;
             }
-            v = qMax<qreal>(0, v);
+
+            // 3) Mean-reverting random walk — each step nudges off the previous one,
+            //    so the jitter looks organic instead of independent per-tick spikes.
+            s.noiseState = s.noiseState * 0.82 + randNoise(s.noise * 0.6);
+            target += s.noiseState;
+
+            // 4) Low-pass filter the displayed value toward the target so it moves
+            //    smoothly rather than jumping.
+            s.value += (target - s.value) * 0.18;
+            s.value = qMax<qreal>(0, s.value);
+            const qreal v = s.value;
 
             const QString prev = s.status;
             const qreal margin = (s.normalMax - s.normalMin) * 0.12;
@@ -271,7 +298,6 @@ void FactorySimulator::advance()
                 s.status = QStringLiteral("warning");
             else
                 s.status = QStringLiteral("ok");
-            s.value = v;
 
             nodeStatus = worseStatus(nodeStatus, s.status);
 
@@ -294,10 +320,15 @@ void FactorySimulator::advance()
             }
         }
 
-        // Inference jitter; degrades a little while faulting.
-        const qreal jitter = randUniform(0.92, 1.10) * (faulting ? 1.18 : 1.0);
-        n.infUs = int(n.baseInfUs * jitter);
-        n.freeRamB = int(n.totalRamB * randUniform(0.45, 0.62));
+        // Inference time and free RAM also drift smoothly toward a target rather
+        // than jumping every tick; both degrade a little while faulting.
+        const qreal jitter = randUniform(0.97, 1.05) * (faulting ? 1.15 : 1.0);
+        const int targetInf = int(n.baseInfUs * jitter);
+        n.infUs += int((targetInf - n.infUs) * 0.22);
+
+        const qreal ramTarget = faulting ? randUniform(0.40, 0.50) : randUniform(0.50, 0.60);
+        const int targetRam = int(n.totalRamB * ramTarget);
+        n.freeRamB += int((targetRam - n.freeRamB) * 0.18);
         n.status = nodeStatus;
     }
 

@@ -9,7 +9,8 @@
       "Bash(Sort-Object FullName)",
       "PowerShell($env:PATH = \"C:\\\\Qt\\\\Tools\\\\CMake_64\\\\bin;C:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;$env:PATH\"; if \\(Test-Path build\\) { cmake --build build 2>&1 | Select-Object -Last 20 } else { \"no build dir\" })",
       "PowerShell($env:PATH = \"C:\\\\Qt\\\\Tools\\\\CMake_64\\\\bin;C:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;$env:PATH\"; cmake --build build 2>&1 | Select-Object -Last 8)",
-      "PowerShell($env:PATH = \"C:\\\\Qt\\\\Tools\\\\CMake_64\\\\bin;C:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;$env:PATH\"; cmake --build build 2>&1 | Select-Object -Last 12)"
+      "PowerShell($env:PATH = \"C:\\\\Qt\\\\Tools\\\\CMake_64\\\\bin;C:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;$env:PATH\"; cmake --build build 2>&1 | Select-Object -Last 12)",
+      "PowerShell($env:PATH = \"C:\\\\Qt\\\\Tools\\\\CMake_64\\\\bin;C:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;$env:PATH\"; if \\(-not \\(Test-Path build\\)\\) { cmake -B build -S . -DCMAKE_PREFIX_PATH=\"C:/Qt/6.11.0/mingw_64\" -DCMAKE_BUILD_TYPE=Release -G \"MinGW Makefiles\" }; cmake --build build 2>&1 | Select-Object -Last 15)"
     ]
   }
 }
