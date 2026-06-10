@@ -40,11 +40,12 @@ inference metriklerini gerçek zamanlı izle → karşılaştırmalı analiz et 
 modellerinin tüm yaşam döngüsünü tek bir masaüstü uygulamasından yöneten bir
 araçtır. Dört temel işi bir arada yapar:
 
-| İş | Açıklama |
-|----|----------|
-| **Dağıtım** | Bir `.tflite` modelini X-CUBE-AI ile C koduna çevirir, GCC ile derler ve STM32 kartına flash'lar — tek tıkla uçtan uca |
-| **İzleme** | Karttan UART üzerinden gelen inference metriklerini (`§{JSON}` protokolü) gerçek zamanlı gösterir |
-| **Analiz & Benchmark** | Modellerin hız / RAM / doğruluk değerlerini SQLite'ta saklar, karşılaştırmalı tablolar ve CSV/PDF dışa aktarımı üretir |
+
+| İş                     | Açıklama                                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dağıtım**           | Bir`.tflite` modelini X-CUBE-AI ile C koduna çevirir, GCC ile derler ve STM32 kartına flash'lar — tek tıkla uçtan uca               |
+| **İzleme**              | Karttan UART üzerinden gelen inference metriklerini (`§{JSON}` protokolü) gerçek zamanlı gösterir                                  |
+| **Analiz & Benchmark**   | Modellerin hız / RAM / doğruluk değerlerini SQLite'ta saklar, karşılaştırmalı tablolar ve CSV/PDF dışa aktarımı üretir      |
 | **Fabrika Simülasyonu** | Gerçek donanım olmadan 5 bölgeli / 20 düğümlü / ~68 sensörlü akıllı fabrikayı sentetik canlı veriyle canlandıran demo modu |
 
 ---
@@ -63,10 +64,11 @@ araçtır. Dört temel işi bir arada yapar:
 
 ## Hedef Donanım
 
-| Kart    | Flash   | RAM     | Hız     | Tipik Model | Not |
-|---------|---------|---------|---------|-------------|-----|
-| STM32F4 | 1024 KB | 192 KB  | 168 MHz | MLP INT8    | Giriş seviyesi, düşük güç |
-| STM32H7 | 2048 KB | 1024 KB | 480 MHz | 1D CNN INT8 | Orta sınıf, çoğu düğüm |
+
+| Kart    | Flash   | RAM     | Hız    | Tipik Model | Not                                               |
+| ------- | ------- | ------- | ------- | ----------- | ------------------------------------------------- |
+| STM32F4 | 1024 KB | 192 KB  | 168 MHz | MLP INT8    | Giriş seviyesi, düşük güç                   |
+| STM32H7 | 2048 KB | 1024 KB | 480 MHz | 1D CNN INT8 | Orta sınıf, çoğu düğüm                     |
 | STM32N6 | 4096 KB | 4096 KB | 800 MHz | LSTM / KWS  | NPU'lu, en güçlü; özel boot/flash prosedürü |
 
 > **STM32N6 notu:** N6 (NUCLEO-N657X0-Q) "LRUN" boot moduyla çalışır; binary'nin
@@ -107,19 +109,20 @@ Tam mimari, sınıf sorumlulukları ve veri akışı için → [`docs/PROJECT.md
 
 ## Teknik Yığın
 
-| Bileşen | Teknoloji |
-|---------|-----------|
-| Framework | Qt 6.11.0 (mingw_64) |
-| UI | Qt Quick / QML (ana arayüz) + Qt Widgets (yardımcı pencereler) |
-| Dil | C++17 + QML / JavaScript |
-| Derleyici | MinGW 13.1.0 (GCC) |
-| Derleme sistemi | CMake 3.21+ (QMake kullanılmaz) |
-| Veritabanı | SQLite (Qt SQL) |
-| Seri port | Qt SerialPort |
-| Grafikler | Qt Charts |
-| Süreç yönetimi | QProcess (CLI araçları) |
-| Thread modeli | QThread + Worker |
-| Platform | Windows 10 / 11 (yalnızca) |
+
+| Bileşen          | Teknoloji                                                         |
+| ----------------- | ----------------------------------------------------------------- |
+| Framework         | Qt 6.11.0 (mingw_64)                                              |
+| UI                | Qt Quick / QML (ana arayüz) + Qt Widgets (yardımcı pencereler) |
+| Dil               | C++17 + QML / JavaScript                                          |
+| Derleyici         | MinGW 13.1.0 (GCC)                                                |
+| Derleme sistemi   | CMake 3.21+ (QMake kullanılmaz)                                  |
+| Veritabanı       | SQLite (Qt SQL)                                                   |
+| Seri port         | Qt SerialPort                                                     |
+| Grafikler         | Qt Charts                                                         |
+| Süreç yönetimi | QProcess (CLI araçları)                                         |
+| Thread modeli     | QThread + Worker                                                  |
+| Platform          | Windows 10 / 11 (yalnızca)                                       |
 
 ---
 
@@ -237,12 +240,13 @@ stm32-ai-deployer-app/
 
 ## Dokümantasyon
 
-| Doküman | İçerik |
-|---------|--------|
-| [`docs/PROJECT.md`](docs/PROJECT.md) | Tüm mimari, modüller, veri akışı ve çalışma mantığı (uçtan uca) |
-| [`docs/protocol_v1.md`](docs/protocol_v1.md) | UART protokol referansı |
-| [`docs/n6_kaldigimiz_yer.md`](docs/n6_kaldigimiz_yer.md) | STM32N6 boot/flash prosedürü |
-| [`CLAUDE.md`](CLAUDE.md) | Geliştirme kuralları ve proje kimliği |
+
+| Doküman                                                 | İçerik                                                                    |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [`docs/PROJECT.md`](docs/PROJECT.md)                     | Tüm mimari, modüller, veri akışı ve çalışma mantığı (uçtan uca) |
+| [`docs/protocol_v1.md`](docs/protocol_v1.md)             | UART protokol referansı                                                    |
+| [`docs/n6_kaldigimiz_yer.md`](docs/n6_kaldigimiz_yer.md) | STM32N6 boot/flash prosedürü                                              |
+| [`CLAUDE.md`](CLAUDE.md)                                 | Geliştirme kuralları ve proje kimliği                                    |
 
 ---
 
@@ -256,7 +260,3 @@ stm32-ai-deployer-app/
 ---
 
 <div align="center">
-
-*STM32 üzerinde Edge AI'ı erişilebilir kılmak için ❤️ ile geliştirildi.*
-
-</div>
