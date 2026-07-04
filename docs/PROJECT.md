@@ -52,8 +52,15 @@ Uygulama üç STM32 sınıfını hedefler; her sınıf farklı bir model tipine 
 | STM32H7 | 2048 KB | 1024 KB | 480 MHz | 1D CNN INT8 | Orta sınıf, çoğu düğüm |
 | STM32N6 | 4096 KB | 4096 KB | 800 MHz | LSTM / KWS  | NPU'lu, en güçlü; özel boot/flash prosedürü |
 
-> **STM32N6 notu:** N6 (NUCLEO-N657X0-Q) "LRUN" boot moduyla çalışır; binary'nin
-> imzalanması (`-align 0x400`) ve özel re-flash adımları gerekir. Detay:
+> **STM32N6 notu (deneysel):** N6 (NUCLEO-N657X0-Q) "LRUN" external-flash boot
+> moduyla çalışır; binary'nin imzalanması (`-align 0x400`) ve özel re-flash
+> adımları gerekir — bu kısım **çözüldü ve çalışıyor**. UART tarafında ise
+> firmware'e komut gönderip cevap almak (`INFO?`/`BENCH`) güvenilir çalışmadığı
+> için Backend, N6'ya özel bir **reset + pasif yakalama** akışı kullanır:
+> bağlantı kurulunca kart `STM32_Programmer_CLI` ile resetlenir ve firmware'in
+> kendiliğinden (komutsuz) ürettiği `LPUART1 @ 209700` baud UART çıktısı
+> dinlenir (bkz. `Backend::resetN6TargetForCapture`). Doğrulanmış bir
+> startup/linker/HAL şablon seti hâlâ `TODO.md`'de açık madde. Detay ve geçmiş:
 > `docs/n6_kaldigimiz_yer.md`.
 
 ---
@@ -288,6 +295,17 @@ Bkz. **Bölüm 8** (kendi başına büyük bir alt sistem).
 - `appState` / `backend` tanımsızsa `MockData` singleton'ına düşer (QML'i
   C++ olmadan tasarımda önizleyebilmek için).
 
+> **Ana ekranlar tamamen QML'dir.** `src/ui/BoardTab.*`, `FlashTab.*`,
+> `MonitorTab.*`, `AnalysisTab.*`, `BenchmarkTab.*`, `Sidebar.*` ve
+> `src/mainwindow.*` erken bir Qt Widgets denemesinden kalan **ölü koddur**;
+> CMake hâlâ derliyor ama çalışma zamanında hiçbir ekran tarafından
+> kullanılmazlar. Yeni özellik eklerken bu dosyalara dokunmayın — ilgili ekran
+> zaten `qml/screens/` altındadır. İstisna: `src/ui/SplashScreen.*` hâlâ
+> aktiftir — `main.cpp` açılışta 3.5 sn'lik Widgets tabanlı splash ekranı
+> için kullanır (bkz. Bölüm 3, adım 9). `src/ui/SettingsDialog.*` ve
+> `src/ui/PipelineWizard.*` de ölü koddur — QML karşılıkları
+> `qml/dialogs/SettingsDialog.qml` ve `qml/dialogs/PipelineWizard.qml`'dir.
+
 ### 7.2 Ana Ekranlar (`qml/screens/`)
 | Ekran | İçerik |
 |-------|--------|
@@ -383,6 +401,7 @@ Firmware → Qt yönünde her paket:
 **Örnek mesajlar:**
 ```json
 {"t":"inf","model":"MLP_INT8","inf_us":8200,"ram_b":3072,"acc_pct":96,"label":"walking","card":"STM32F4"}
+{"t":"sensor","sensor":"BME280","seq":42,"values":[25120,100840,43600],"unit":"milli","model":"anomaly_cnn_int8","inf_us":956,"ram_b":6594,"acc_pct":90,"label":"normal","card":"STM32H7"}
 {"t":"sys","uptime_s":42,"temp_c":38,"free_ram_b":185000,"state":"running"}
 {"t":"boot","card":"STM32F4","sdk":"EdgeAI_v1.0","model":"MLP_INT8","baud":115200}
 {"t":"err","code":3,"msg":"sensor_timeout"}
@@ -393,35 +412,35 @@ Tam referans: `docs/protocol_v1.md`.
 
 ## 10. Veritabanı Şeması (SQLite)
 
-Kavramsal şema (kart, oturum, inference ve sistem logları):
+`AnalysisManager` çalışma zamanında **tek, esnek bir tablo** kullanır — kart/
+oturum/inference/sistem için ayrı normalize tablolar **yoktur** (aşağıdaki
+4-tablolu şema hiç implemente edilmemiştir, yalnızca gelecekte değerlendirilen
+bir hedeftir, bkz. not):
 
 ```sql
-CREATE TABLE boards (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL, flash_kb INTEGER, ram_kb INTEGER,
-    clock_mhz INTEGER, is_preset INTEGER DEFAULT 0
-);
-CREATE TABLE sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    board_id INTEGER REFERENCES boards(id),
-    model_name TEXT NOT NULL, architecture TEXT, quantization TEXT,
-    hex_path TEXT, flashed_at TEXT, notes TEXT
-);
-CREATE TABLE inference_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER REFERENCES sessions(id),
-    inf_us INTEGER, ram_b INTEGER, acc_pct INTEGER,
-    label TEXT, recorded_at TEXT
-);
-CREATE TABLE sys_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER REFERENCES sessions(id),
-    uptime_s INTEGER, temp_c INTEGER, free_ram_b INTEGER, recorded_at TEXT
+CREATE TABLE IF NOT EXISTS analysis_records (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,      -- "benchmark" | "simulation" | "sensor" | "compiled"
+    created_at TEXT NOT NULL,      -- ISO 8601
+    c0 TEXT, c1 TEXT, c2 TEXT, c3 TEXT, c4 TEXT,
+    c5 TEXT, c6 TEXT, c7 TEXT, c8 TEXT, c9 TEXT,
+    c10 TEXT, c11 TEXT, c12 TEXT, c13 TEXT, c14 TEXT
 );
 ```
-> Çalışma zamanında `AnalysisManager`, esnek `kind` + `cells` modeliyle genel
-> bir kayıt tablosu üzerinden benchmark/simülasyon/sensör/compiled kayıtlarını
-> saklar (Bölüm 6.4).
+
+- `kind` satırı hangi ekrandan/akıştan geldiğini ayırt eder (Bölüm 6.4'teki
+  `AnalysisRecord::kind`).
+- `c0..c14` sütunları, o `kind` için `Backend`'in doldurduğu sıralı hücre
+  listesidir (`QStringList cells` → tabloya yazılacak metin sütunları);
+  şema seviyesinde tipsizdir, anlamı `kind`'a göre değişir.
+- API: `addRecord(kind, cells)`, `records(kind)`, `deleteRecord(id)`,
+  `deleteRecordsForKindOnDate(kind, datePrefix)`.
+
+> **Gelecek plan (henüz yok):** `CLAUDE.md`'de tarif edilen `boards` /
+> `sessions` / `inference_logs` / `sys_logs` normalize edilmiş 4-tablolu şema,
+> Aşama 5 ("Veritabanı ve kayıt") için hedeflenen bir tasarımdır — kodda
+> karşılığı yoktur. Aşama 5 başladığında ya bu şema implemente edilmeli ya da
+> CLAUDE.md'deki hedef, mevcut esnek modele göre güncellenmelidir.
 
 ---
 
@@ -529,9 +548,11 @@ CMake özellikleri:
 | `src/modules/simulation/FactorySimulator.*` | Fabrika demo veri motoru |
 | `qml/Main.qml` | QML giriş noktası, sekme/ekran yönetimi |
 | `qml/Theme.qml` | Merkezi tema/renk tanımları |
-| `resources/style.qss` | Widgets stil dosyası |
+| `resources/style.qss` | Widgets stil dosyası (yalnızca `SplashScreen` için) |
 | `docs/protocol_v1.md` | UART protokol referansı |
-| `docs/n6_kaldigimiz_yer.md` | STM32N6 boot/flash prosedürü |
+| `docs/n6_kaldigimiz_yer.md` | STM32N6 boot/flash geçmişi ve güncel durum |
+| `docs/factory_simulation_plan.md` | FactorySimulator'ın orijinal tasarım planı (tarihi referans) |
+| `docs/lstm_stm32_export.md` | LSTM modellerini X-CUBE-AI ile uyumlu TFLite'a export etme rehberi |
 
 ---
 

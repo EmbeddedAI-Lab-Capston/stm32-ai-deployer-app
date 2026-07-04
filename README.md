@@ -71,9 +71,13 @@ araçtır. Dört temel işi bir arada yapar:
 | STM32H7 | 2048 KB | 1024 KB | 480 MHz | 1D CNN INT8 | Orta sınıf, çoğu düğüm                     |
 | STM32N6 | 4096 KB | 4096 KB | 800 MHz | LSTM / KWS  | NPU'lu, en güçlü; özel boot/flash prosedürü |
 
-> **STM32N6 notu:** N6 (NUCLEO-N657X0-Q) "LRUN" boot moduyla çalışır; binary'nin
-> imzalanması (`-align 0x400`) ve özel re-flash adımları gerekir. Detay için
-> [`docs/n6_kaldigimiz_yer.md`](docs/n6_kaldigimiz_yer.md).
+> **STM32N6 notu (deneysel):** N6 (NUCLEO-N657X0-Q) "LRUN" external-flash boot
+> moduyla çalışır; binary'nin imzalanması (`-align 0x400`) ve özel re-flash
+> adımları gerekir. UART tarafında komut-cevap (`INFO?`/`BENCH`) yerine
+> **reset + pasif yakalama** kullanılır: bağlantı kurulunca kart resetlenir ve
+> firmware'in kendiliğinden ürettiği `LPUART1 @ 209700` baud çıktısı dinlenir.
+> Doğrulanmış bir startup/linker/HAL şablon seti hâlâ yapılacaklar listesinde.
+> Detay için [`docs/n6_kaldigimiz_yer.md`](docs/n6_kaldigimiz_yer.md).
 
 ---
 
@@ -233,8 +237,14 @@ stm32-ai-deployer-app/
 │   └── factory/                  FactorySimWindow · FactoryDashboard · FactoryMap …
 ├── templates/                    STM32 firmware şablonları (base / sensors / ai_glue)
 ├── resources/                    style.qss · icons/
-└── docs/                         PROJECT.md · protocol_v1.md · n6_kaldigimiz_yer.md
+└── docs/                         PROJECT.md · protocol_v1.md · n6_kaldigimiz_yer.md · …
 ```
+
+> **Not:** `src/ui/BoardTab.*`, `FlashTab.*`, `MonitorTab.*`, `AnalysisTab.*`,
+> `BenchmarkTab.*`, `Sidebar.*` ve `src/mainwindow.*` erken bir Qt Widgets
+> denemesinden kalan **ölü koddur**, çalışma zamanında kullanılmazlar (CMake
+> hâlâ derliyor). Aktif ekranların tamamı `qml/` altındadır. İstisna:
+> `src/ui/SplashScreen.*` hâlâ açılış ekranı için kullanılan tek Widgets sınıfıdır.
 
 ---
 
@@ -245,7 +255,10 @@ stm32-ai-deployer-app/
 | -------------------------------------------------------- | --------------------------------------------------------------------------- |
 | [`docs/PROJECT.md`](docs/PROJECT.md)                     | Tüm mimari, modüller, veri akışı ve çalışma mantığı (uçtan uca) |
 | [`docs/protocol_v1.md`](docs/protocol_v1.md)             | UART protokol referansı                                                    |
-| [`docs/n6_kaldigimiz_yer.md`](docs/n6_kaldigimiz_yer.md) | STM32N6 boot/flash prosedürü                                              |
+| [`docs/n6_kaldigimiz_yer.md`](docs/n6_kaldigimiz_yer.md) | STM32N6 boot/flash geçmişi ve güncel (deneysel) durum                     |
+| [`docs/factory_simulation_plan.md`](docs/factory_simulation_plan.md) | Fabrika Simülasyonu'nun orijinal tasarım planı (tarihi referans) |
+| [`docs/lstm_stm32_export.md`](docs/lstm_stm32_export.md) | LSTM modellerini X-CUBE-AI ile uyumlu TFLite'a export etme rehberi        |
+| [`TODO.md`](TODO.md)                                     | Kısa çalıştırma/build komutları ve açık yapılacaklar listesi              |
 | [`CLAUDE.md`](CLAUDE.md)                                 | Geliştirme kuralları ve proje kimliği                                    |
 
 ---

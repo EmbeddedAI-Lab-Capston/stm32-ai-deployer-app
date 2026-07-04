@@ -1,8 +1,15 @@
 # STM32N6 Kaldigimiz Yer
 
-Tarih: 2026-06-02
+Tarih: 2026-06-02 (asagida 2026-06-06 guncellemesi var)
 
 Bu not, NUCLEO-N657X0-Q uzerinde monitor ve benchmark calismasinda kaldigimiz teknik durumu kaydetmek icin yazildi.
+
+> **Guncel durum ozeti (2026-06-06):** Asagidaki "Su An Takildigimiz Nokta"
+> bolumunde anlatilan UART RX/komut sorunu, komut-cevap modelini terk edip
+> **LPUART1 @ 209700 baud + reset-sonrasi pasif yakalama** mimarisine
+> gecilerek asildi. Detay icin dosyanin sonundaki "Guncelleme 2026-06-06"
+> bolumune bakin. Doğrulanmış startup/linker/HAL şablon seti hâlâ `TODO.md`'de
+> açık madde — mevcut çözüm çalışıyor ama "tam kanıtlanmış" değil.
 
 ## Kart ve Baglanti
 
@@ -121,4 +128,31 @@ Son test sonucu:
 
 - Boot JSON: geldi
 - `INFO?`, `BOOT?`, `INFER`, `BENCH`: cevap yok
+
+## Guncelleme 2026-06-06 — Komut yolu terk edildi, pasif yakalamaya gecildi
+
+Yukarida anlatilan RX/komut sorunu (host'tan giden `INFO?`/`BENCH` gibi
+komutlara firmware'in cevap vermemesi) cozulmedi — bunun yerine mimari
+degistirildi ve soruna ihtiyac kalmadi:
+
+- Firmware UART instance'i **USART1 → LPUART1** olarak degisti, baud
+  **115200 → 209700**'e cikarildi (`templates/base/STM32N6/Src/main.c`,
+  `MX_LPUART1_UART_Init`).
+- N6 icin artik host'tan komut gonderilmiyor. Bunun yerine `Backend`
+  (`src/bridge/Backend.cpp`) N6 karti/portu tespit edince
+  (`boardOrPortLooksLikeN6`) baglanti anında **STM32_Programmer_CLI ile karti
+  resetler** (`resetN6TargetForCapture()`) ve firmware'in reset sonrasi
+  kendiliginden urettigi boot/inference JSON akisini **pasif olarak dinler**.
+  Komut-cevap protokolu (INFO?/BENCH) N6 icin kullanilmiyor; F4/H7'de
+  degismedi.
+- `AppState::setActiveBoard` N6 secildiginde baud'u otomatik `209700`'e
+  ayarlar (`kN6DefaultBaud`), kullanicinin elle baud secmesine gerek yok.
+- Sonuc: N6 uzerinde boot mesaji + reset sonrasi otonom inference/sensor
+  akisi guvenilir sekilde calisiyor. Interaktif komut-cevap (canli `BENCH N`
+  parametreleri gibi) N6'da hala desteklenmiyor — F4/H7'de oldugu gibi
+  kullanici tetikli benchmark N6'da reset+capture akisina indirgenmis
+  durumda.
+- Acik kalan is: `TODO.md`'de "STM32N6 icin dogrulanmis startup/linker/HAL
+  template seti ekleme" hala isaretlenmemis — mevcut LPUART1 cozumu pratikte
+  calisiyor ama sablon seti tam anlamiyla "kanitlanmis/genellenmis" degil.
 

@@ -1,5 +1,10 @@
 # Fabrika Simülasyonu (Factory Simulation) — Uygulama Planı
 
+> **Not:** Bu doküman özelliğin **uygulanmadan önce yazılmış tasarım
+> planıdır** — tarihi bir referanstır, güncel durum değil. `FactorySimulator`
+> artık tamamen implemente edilmiş ve aktif kullanımdadır; güncel mimari için
+> [`docs/PROJECT.md`](PROJECT.md) Bölüm 8'e bakın.
+
 ## Context
 
 STM32 AI Deployer şu an tek kart üzerinde model yükleme, UART metrik izleme ve
