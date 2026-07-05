@@ -84,6 +84,13 @@ set(PROJECT_SOURCES
     src/modules/registers/SvdParser.cpp
     src/modules/registers/SvdCatalog.h
     src/modules/registers/SvdCatalog.cpp
+    src/modules/registers/RegisterReadModel.h
+    src/modules/registers/HexDumpParser.h
+    src/modules/registers/HexDumpParser.cpp
+    src/modules/registers/ReadPlanBuilder.h
+    src/modules/registers/ReadPlanBuilder.cpp
+    src/modules/registers/RegisterReader.h
+    src/modules/registers/RegisterReader.cpp
 
     src/modules/simulation/FactorySimulator.h
     src/modules/simulation/FactorySimulator.cpp
