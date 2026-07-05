@@ -18,6 +18,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Quick
     QuickControls2
     QuickWidgets
+    Concurrent
 )
 
 if(COMMAND qt_policy)
@@ -77,6 +78,12 @@ set(PROJECT_SOURCES
 
     src/modules/analysis/AnalysisManager.h
     src/modules/analysis/AnalysisManager.cpp
+
+    src/modules/registers/SvdModel.h
+    src/modules/registers/SvdParser.h
+    src/modules/registers/SvdParser.cpp
+    src/modules/registers/SvdCatalog.h
+    src/modules/registers/SvdCatalog.cpp
 
     src/modules/simulation/FactorySimulator.h
     src/modules/simulation/FactorySimulator.cpp
@@ -174,6 +181,7 @@ target_link_libraries(STM32AiDeployer PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::QuickWidgets
+    Qt6::Concurrent
 )
 
 target_include_directories(STM32AiDeployer PRIVATE
@@ -192,6 +200,16 @@ add_custom_command(TARGET STM32AiDeployer POST_BUILD
         "${CMAKE_SOURCE_DIR}/templates"
         "$<TARGET_FILE_DIR:STM32AiDeployer>/templates"
     COMMENT "Copying templates to build directory"
+)
+
+# Copy the svd/ directory (CMSIS-SVD register definitions + boards.json) next to
+# the executable. SvdCatalog finds them via applicationDirPath() + "/svd"
+# (same pattern as templates/). Not embedded in qrc: files are 2-23 MB each.
+add_custom_command(TARGET STM32AiDeployer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/svd"
+        "$<TARGET_FILE_DIR:STM32AiDeployer>/svd"
+    COMMENT "Copying SVD register definitions to build directory"
 )
 
 # Deploy Qt runtime DLLs + QML plugins next to the executable so the app runs

@@ -1,0 +1,46 @@
+{
+  "_comment": "Board -> SVD mapping + per-board metadata for Register Inspector. All board-specific knowledge lives here + in the SVD files, never hardcoded in C++. See docs/register_inspector_plan.md (Bolum 3.3, 4.3). Adding a new board = drop its .svd here + add a record below.",
+  "_schemaVersion": 1,
+  "boards": [
+    {
+      "match": { "names": ["STM32F4", "NUCLEO-F4"], "deviceIds": ["0x413", "0x419"] },
+      "svd": "STM32F407.svd",
+      "device": "STM32F407VGTx",
+      "access": "stable",
+      "connectMode": "HOTPLUG",
+      "defaultPeripherals": [
+        "RCC", "GPIOA", "GPIOB", "GPIOC", "GPIOD",
+        "DMA1", "DMA2", "USART1", "USART2", "USART3",
+        "I2C1", "SPI1", "EXTI"
+      ],
+      "rccOverrides": {}
+    },
+    {
+      "match": { "names": ["STM32H7", "NUCLEO-H7", "NUCLEO-H723ZG"], "deviceIds": ["0x483"] },
+      "svd": "STM32H723.svd",
+      "device": "STM32H723ZGTx",
+      "access": "stable",
+      "connectMode": "HOTPLUG",
+      "defaultPeripherals": [
+        "RCC", "GPIOA", "GPIOB", "GPIOC", "GPIOD",
+        "DMA1", "DMA2", "DMAMUX1", "USART1", "USART2", "USART3", "LPUART1",
+        "I2C1", "SPI1", "SAI1", "EXTI"
+      ],
+      "rccOverrides": {}
+    },
+    {
+      "match": { "names": ["STM32N6", "NUCLEO-N657X0-Q", "STM32N657"], "deviceIds": [] },
+      "svd": "STM32N657.svd",
+      "device": "STM32N657X0",
+      "access": "experimental",
+      "connectMode": "HOTPLUG",
+      "fallbackConnectMode": "UR",
+      "notes": "TrustZone/RIF: HOTPLUG may fail on secured firmware (can't get core ID). Fallback: mode=UR reset+snapshot (NOT live state). See plan Bolum 3.4 and docs/n6_kaldigimiz_yer.md. Faz 0 N6 checklist still deferred until board is on hand.",
+      "defaultPeripherals": [
+        "RCC", "GPIOA", "GPIOB", "GPDMA", "HPDMA",
+        "USART1", "LPUART1", "I2C1", "SPI1", "SAI1", "EXTI"
+      ],
+      "rccOverrides": {}
+    }
+  ]
+}
