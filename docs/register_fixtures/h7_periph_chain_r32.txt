@@ -1,0 +1,55 @@
+﻿      -------------------------------------------------------------------
+                       STM32CubeProgrammer v2.22.0                  
+      -------------------------------------------------------------------
+
+ST-LINK SN  : 004D003B3235511837333439
+ST-LINK FW  : V3J16M9
+Board       : NUCLEO-H723ZG
+Voltage     : 3.27V
+SWD freq    : 8000 KHz
+Connect mode: Hot Plug
+Reset mode  : Software reset
+Device ID   : 0x483
+Revision ID : Rev Z
+Device name : STM32H72x/STM32H73x
+NVM size  : 1 MBytes
+Device type : MCU
+Device CPU  : Cortex-M7
+BL Version  : 0x93
+
+
+Reading 32-bit memory content
+  Size          : 40 Bytes
+  Address:      : 0x58020400
+0x58020400 : FFFAFEBD 00000300 000000C0 00050100
+0x58020410 : 00000310 00000000 00000000 00000000
+0x58020420 : 00000000 00000044
+
+
+
+Reading 32-bit memory content
+  Size          : 40 Bytes
+  Address:      : 0x58020C00
+0x58020C00 : FFFAFFFF 00000000 00000000 00000000
+0x58020C10 : 00000300 00000000 00000000 00000000
+0x58020C20 : 00000000 00000077
+
+
+
+Reading 32-bit memory content
+  Size          : 44 Bytes
+  Address:      : 0x40004800
+0x40004800 : 0000002D 00000000 00000001 00000255
+0x40004810 : 00000000 00000000 00000000 006200D0
+0x40004820 : 00000000 00000000 0000000A
+
+
+
+Reading 32-bit memory content
+  Size          : 44 Bytes
+  Address:      : 0x40005400
+0x40005400 : 00000001 00000000 00008000 00000000
+0x40005410 : 60404E72 00000000 00000001 00000000
+0x40005420 : 00000000 00000000 00000000
+
+
