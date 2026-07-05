@@ -1,6 +1,9 @@
 #include "AppSettings.h"
 
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSettings>
 
 AppSettings::AppSettings() = default;
@@ -230,6 +233,43 @@ void AppSettings::setCubeSdkPath(const QString &path)
 {
     QSettings s;
     s.setValue(kKeyCubeSdkPath, path);
+}
+
+QStringList AppSettings::registerPeripherals(const QString &boardName) const
+{
+    QSettings s;
+    const QByteArray raw = s.value(kKeyRegisterPeripherals).toByteArray();
+    const QJsonObject obj = QJsonDocument::fromJson(raw).object();
+    QStringList out;
+    for (const QJsonValue &v : obj.value(boardName).toArray())
+        out << v.toString();
+    return out;
+}
+
+void AppSettings::setRegisterPeripherals(const QString &boardName,
+                                         const QStringList &peripherals)
+{
+    QSettings s;
+    QJsonObject obj = QJsonDocument::fromJson(
+                          s.value(kKeyRegisterPeripherals).toByteArray()).object();
+    QJsonArray arr;
+    for (const QString &p : peripherals)
+        arr.append(p);
+    obj.insert(boardName, arr);
+    s.setValue(kKeyRegisterPeripherals,
+               QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+QString AppSettings::registerSvdDir() const
+{
+    QSettings s;
+    return s.value(kKeyRegisterSvdDir, QString{}).toString();
+}
+
+void AppSettings::setRegisterSvdDir(const QString &dir)
+{
+    QSettings s;
+    s.setValue(kKeyRegisterSvdDir, dir);
 }
 
 void AppSettings::addCustomBoard(const BoardInfo &board)

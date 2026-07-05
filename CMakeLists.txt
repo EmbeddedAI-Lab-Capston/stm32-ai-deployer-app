@@ -91,6 +91,11 @@ set(PROJECT_SOURCES
     src/modules/registers/ReadPlanBuilder.cpp
     src/modules/registers/RegisterReader.h
     src/modules/registers/RegisterReader.cpp
+    src/modules/registers/RegisterSnapshot.h
+    src/modules/registers/RegisterDecoder.h
+    src/modules/registers/RegisterDecoder.cpp
+    src/modules/registers/RegisterInspector.h
+    src/modules/registers/RegisterInspector.cpp
 
     src/modules/simulation/FactorySimulator.h
     src/modules/simulation/FactorySimulator.cpp

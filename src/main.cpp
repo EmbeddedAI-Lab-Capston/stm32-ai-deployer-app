@@ -13,6 +13,7 @@
 #include "modules/flash/FlashManager.h"
 #include "modules/analysis/AnalysisManager.h"
 #include "modules/simulation/FactorySimulator.h"
+#include "modules/registers/RegisterInspector.h"
 #include "bridge/Backend.h"
 #include "ui/SplashScreen.h"
 
@@ -53,7 +54,11 @@ int main(int argc, char *argv[])
         flash->setCliPath(cliPath);
     }
 
-    auto *backend = new Backend(appState, serial, flash, analysis, &app);
+    // Register Inspector orchestrator (owns SVD catalog + reader). Backend is the
+    // only QML-facing facade, so the inspector is handed to it, not to QML.
+    auto *registers = new RegisterInspector(&app);
+
+    auto *backend = new Backend(appState, serial, flash, analysis, registers, &app);
 
     // Factory Simulation engine (synthetic large-factory data for the demo mode).
     auto *factorySim = new FactorySimulator(&app);

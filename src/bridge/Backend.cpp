@@ -37,6 +37,7 @@
 #include "modules/flash/PipelineRunner.h"
 #include "modules/analysis/AnalysisManager.h"
 #include "modules/board/BoardPresets.h"
+#include "modules/registers/RegisterInspector.h"
 
 namespace
 {
@@ -463,16 +464,18 @@ QString programmerSnForBoard(const QString &cliPath, const BoardInfo &board)
 }
 }
 
-Backend::Backend(AppState        *state,
-                 SerialManager   *serial,
-                 FlashManager    *flash,
-                 AnalysisManager *analysis,
-                 QObject         *parent)
+Backend::Backend(AppState          *state,
+                 SerialManager     *serial,
+                 FlashManager      *flash,
+                 AnalysisManager   *analysis,
+                 RegisterInspector *registers,
+                 QObject           *parent)
     : QObject(parent)
     , m_state(state)
     , m_serial(serial)
     , m_flash(flash)
     , m_analysis(analysis)
+    , m_registers(registers)
 {
     m_simTimer  = new QTimer(this);
     m_simParser = new PacketParser(this);
@@ -506,6 +509,7 @@ Backend::Backend(AppState        *state,
     wireSerial();
     wireFlash();
     wireAnalysis();
+    wireRegisters();
 
     // Pre-populate analysis with sample data so the tables aren't empty on first launch.
     seedAnalysisIfEmpty();
@@ -746,6 +750,10 @@ void Backend::probeStLinkBoard()
 void Backend::probeStLinkBoardForPort(const QString &portName)
 {
     if (m_probeBusy) return;
+    if (m_registers && m_registers->isBusy()) {
+        emit statusMessage(QStringLiteral("Register snapshot suruyor; probe iptal."));
+        return;
+    }
 
     const BoardInfo activeBoard = m_state ? m_state->activeBoard() : BoardInfo{};
     QSerialPortInfo stlink = preferredSerialPortForBoard(activeBoard, portName);
@@ -1513,6 +1521,10 @@ void Backend::flashFirmware(const QString &path, const QString &modelName,
                             bool simulationMode)
 {
     if (!m_flash || m_flashBusy) return;
+    if (m_registers && m_registers->isBusy()) {
+        emit statusMessage(QStringLiteral("Register snapshot suruyor; flash iptal."));
+        return;
+    }
 
     FlashConfig cfg;
     cfg.hexPath        = path;
@@ -1612,6 +1624,10 @@ PipelineConfig Backend::pipelineConfigFromMap(const QVariantMap &config) const
 void Backend::runPipeline(const QVariantMap &config)
 {
     if (m_pipelineBusy) return;
+    if (m_registers && m_registers->isBusy()) {
+        emit statusMessage(QStringLiteral("Register snapshot suruyor; pipeline iptal."));
+        return;
+    }
     m_lastPipelineConfig = pipelineConfigFromMap(config);
     if (m_lastPipelineConfig.modelPath.isEmpty() || !QFileInfo::exists(m_lastPipelineConfig.modelPath)) {
         appendPipelineLine("HATA: Model dosyasÄ± seÃ§ilmedi veya bulunamadÄ±.", "err");
@@ -2839,4 +2855,214 @@ void Backend::requestBoardInfoBurst()
     QTimer::singleShot(100, this, request);
     QTimer::singleShot(700, this, request);
     QTimer::singleShot(1500, this, request);
+}
+
+// ── Register Inspector ──────────────────────────────────────────────────────
+namespace
+{
+QString regHex32(quint32 v)
+{
+    return QStringLiteral("0x") + QStringLiteral("%1").arg(v, 8, 16, QLatin1Char('0')).toUpper();
+}
+QString regHex64(quint64 v)
+{
+    return QStringLiteral("0x") + QStringLiteral("%1").arg(v, 0, 16).toUpper();
+}
+QString regStatusText(RegStatus s)
+{
+    switch (s) {
+    case RegStatus::Ok:                return QStringLiteral("ok");
+    case RegStatus::SkippedSideEffect: return QStringLiteral("side-effect");
+    case RegStatus::SkippedWriteOnly:  return QStringLiteral("write-only");
+    case RegStatus::ClockOff:          return QStringLiteral("clock-off");
+    case RegStatus::Unreadable:        return QStringLiteral("unreadable");
+    }
+    return QStringLiteral("ok");
+}
+QString clockStatusText(ClockStatus c)
+{
+    switch (c) {
+    case ClockStatus::On:      return QStringLiteral("on");
+    case ClockStatus::Off:     return QStringLiteral("off");
+    case ClockStatus::Unknown: return QStringLiteral("unknown");
+    }
+    return QStringLiteral("unknown");
+}
+} // namespace
+
+void Backend::wireRegisters()
+{
+    if (!m_registers)
+        return;
+
+    // Provide the CLI path + SVD dir override to the inspector, then load the
+    // board->SVD catalog (boards.json).
+    AppSettings settings;
+    QString cliPath = settings.programmerCliPath();
+    if (cliPath.isEmpty()) {
+        cliPath = FlashManager::detectCliPath();
+        if (!cliPath.isEmpty())
+            settings.setProgrammerCliPath(cliPath);
+    }
+    if (!cliPath.isEmpty())
+        m_registers->setCliPath(cliPath);
+    const QString svdDir = settings.registerSvdDir();
+    if (!svdDir.isEmpty())
+        m_registers->setSvdDirectory(svdDir);
+    m_registers->loadCatalog();
+
+    connect(m_registers, &RegisterInspector::busyChanged, this, &Backend::registerChanged);
+    connect(m_registers, &RegisterInspector::stageChanged, this, &Backend::registerChanged);
+    connect(m_registers, &RegisterInspector::catalogReady, this,
+            &Backend::registerCatalogReady);
+    connect(m_registers, &RegisterInspector::snapshotReady, this, [this](int slot) {
+        m_registerViewSlot = slot;
+        emit registerModelChanged();
+        emit registerChanged();
+        emit registerSnapshotReady(slot);
+    });
+    connect(m_registers, &RegisterInspector::errorOccurred, this, [this](const QString &m) {
+        emit statusMessage(m);
+        emit registerChanged();
+    });
+}
+
+bool Backend::registerBusy() const { return m_registers && m_registers->isBusy(); }
+
+QString Backend::registerStage() const
+{
+    return m_registers ? m_registers->stage() : QStringLiteral("idle");
+}
+
+QString Backend::registerSupportLevel() const
+{
+    if (!m_registers || !m_state)
+        return QStringLiteral("unsupported");
+    return m_registers->supportLevel(m_state->activeBoard());
+}
+
+void Backend::prepareRegisters()
+{
+    if (m_registers && m_state)
+        m_registers->prepareBoard(m_state->activeBoard());
+}
+
+QStringList Backend::registerPeripheralList() const
+{
+    if (!m_registers || !m_state)
+        return {};
+    return m_registers->allPeripheralNames(m_state->activeBoard());
+}
+
+QStringList Backend::registerSelectedPeripherals() const
+{
+    if (!m_registers || !m_state)
+        return {};
+    const BoardInfo board = m_state->activeBoard();
+    const QStringList saved = AppSettings().registerPeripherals(board.name);
+    return saved.isEmpty() ? m_registers->defaultPeripherals(board) : saved;
+}
+
+void Backend::takeRegisterSnapshot(int slot, const QStringList &peripherals)
+{
+    if (!m_registers || !m_state)
+        return;
+    // Shared ST-Link guard (Bolum 5.3): one client at a time.
+    if (m_flashBusy || m_pipelineBusy || m_probeBusy) {
+        emit statusMessage(QStringLiteral("ST-Link mesgul (flash/probe/pipeline); snapshot iptal."));
+        return;
+    }
+    const BoardInfo board = m_state->activeBoard();
+    AppSettings().setRegisterPeripherals(board.name, peripherals);
+    m_registers->takeSnapshot(slot, board, peripherals);
+}
+
+QVariantMap Backend::registerSnapshotInfo(int slot) const
+{
+    QVariantMap m;
+    const RegisterSnapshot *s = m_registers ? m_registers->snapshot(slot) : nullptr;
+    m[QStringLiteral("valid")] = (s != nullptr);
+    if (!s)
+        return m;
+    m[QStringLiteral("board")]        = s->boardName;
+    m[QStringLiteral("device")]       = s->deviceName;
+    m[QStringLiteral("svd")]          = s->svdFile;
+    m[QStringLiteral("mode")]         = s->connectMode;
+    m[QStringLiteral("support")]      = s->supportLevel;
+    m[QStringLiteral("takenAt")]      = s->takenAt.toString(Qt::ISODate);
+    m[QStringLiteral("changedCount")] = s->changedRegisterCount();
+    m[QStringLiteral("errorCount")]   = int(s->errors.size());
+    m[QStringLiteral("peripheralCount")] = int(s->peripherals.size());
+    return m;
+}
+
+void Backend::setRegisterViewSlot(int slot)
+{
+    if (slot < 0 || slot > 1 || slot == m_registerViewSlot)
+        return;
+    m_registerViewSlot = slot;
+    emit registerModelChanged();
+}
+
+void Backend::clearRegisterSnapshots()
+{
+    if (m_registers)
+        m_registers->clearSnapshots();
+    m_registerViewSlot = 0;
+    emit registerModelChanged();
+    emit registerChanged();
+}
+
+QVariantList Backend::registerModel() const
+{
+    const RegisterSnapshot *s = m_registers ? m_registers->snapshot(m_registerViewSlot) : nullptr;
+    if (!s)
+        return {};
+    return snapshotToVariant(*s);
+}
+
+QVariantList Backend::snapshotToVariant(const RegisterSnapshot &snap) const
+{
+    QVariantList peripherals;
+    for (const DecodedPeripheral &p : snap.peripherals) {
+        QVariantMap pm;
+        pm[QStringLiteral("name")]        = p.name;
+        pm[QStringLiteral("group")]       = p.groupName;
+        pm[QStringLiteral("description")] = p.description;
+        pm[QStringLiteral("baseAddress")] = regHex64(p.baseAddress);
+        pm[QStringLiteral("clock")]       = clockStatusText(p.clock);
+
+        QVariantList regs;
+        for (const DecodedRegister &r : p.registers) {
+            QVariantMap rm;
+            rm[QStringLiteral("name")]        = r.name;
+            rm[QStringLiteral("displayName")] = r.displayName;
+            rm[QStringLiteral("addr")]        = regHex64(r.addr);
+            rm[QStringLiteral("raw")]         = regHex32(r.rawValue);
+            rm[QStringLiteral("reset")]       = regHex32(r.resetValue);
+            rm[QStringLiteral("changed")]     = r.changedFromReset;
+            rm[QStringLiteral("status")]      = regStatusText(r.status);
+            rm[QStringLiteral("description")] = r.description;
+
+            QVariantList fields;
+            for (const DecodedField &f : r.fields) {
+                QVariantMap fm;
+                fm[QStringLiteral("name")]        = f.name;
+                fm[QStringLiteral("value")]       = f.value;
+                fm[QStringLiteral("valueHex")]    = regHex32(f.value);
+                fm[QStringLiteral("enumName")]    = f.enumName;
+                fm[QStringLiteral("reset")]       = f.resetValue;
+                fm[QStringLiteral("changed")]     = f.changed;
+                fm[QStringLiteral("bitOffset")]   = f.bitOffset;
+                fm[QStringLiteral("bitWidth")]    = f.bitWidth;
+                fm[QStringLiteral("description")] = f.description;
+                fields.append(fm);
+            }
+            rm[QStringLiteral("fields")] = fields;
+            regs.append(rm);
+        }
+        pm[QStringLiteral("registers")] = regs;
+        peripherals.append(pm);
+    }
+    return peripherals;
 }

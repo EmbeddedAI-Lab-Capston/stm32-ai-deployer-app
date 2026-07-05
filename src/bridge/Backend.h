@@ -18,6 +18,8 @@ class ToolDetector;
 class PacketParser;
 class SerialSimulator;
 class PipelineRunner;
+class RegisterInspector;
+struct RegisterSnapshot;
 class QProcess;
 
 // ── Backend ─────────────────────────────────────────────────────────────────
@@ -62,12 +64,19 @@ class Backend : public QObject
     Q_PROPERTY(QVariantList sensorRecords      READ sensorRecords      NOTIFY analysisChanged)
     Q_PROPERTY(QVariantList compiledRecords    READ compiledRecords    NOTIFY analysisChanged)
 
+    // Register Inspector
+    Q_PROPERTY(bool    registerBusy         READ registerBusy         NOTIFY registerChanged)
+    Q_PROPERTY(QString registerStage        READ registerStage        NOTIFY registerChanged)
+    Q_PROPERTY(QString registerSupportLevel READ registerSupportLevel NOTIFY registerChanged)
+    Q_PROPERTY(QVariantList registerModel   READ registerModel   NOTIFY registerModelChanged)
+
 public:
-    explicit Backend(AppState        *state,
-                     SerialManager   *serial,
-                     FlashManager    *flash,
-                     AnalysisManager *analysis,
-                     QObject         *parent = nullptr);
+    explicit Backend(AppState          *state,
+                     SerialManager     *serial,
+                     FlashManager      *flash,
+                     AnalysisManager   *analysis,
+                     RegisterInspector *registers,
+                     QObject           *parent = nullptr);
 
     // ── Tools ─────────────────────────────────────────────────────────────
     QVariantList toolPaths() const;
@@ -163,6 +172,25 @@ public:
                                        const QVariantList &columns,
                                        const QVariantList &rows);
 
+    // ── Register Inspector ─────────────────────────────────────────────────
+    bool    registerBusy() const;
+    QString registerStage() const;
+    QString registerSupportLevel() const;   // stable/experimental/unsupported
+    QVariantList registerModel() const;      // decoded tree of the current view slot
+
+    // Load the active board's SVD (async); registerCatalogReady fires when ready.
+    Q_INVOKABLE void prepareRegisters();
+    // All peripheral names for the active board (empty until SVD is parsed).
+    Q_INVOKABLE QStringList registerPeripheralList() const;
+    // Persisted selection (or the board's default preset if none saved).
+    Q_INVOKABLE QStringList registerSelectedPeripherals() const;
+    // Take a snapshot into slot 0(A)/1(B); persists the selection.
+    Q_INVOKABLE void takeRegisterSnapshot(int slot, const QStringList &peripherals);
+    // Metadata for a slot: {valid, board, device, svd, mode, support, takenAt,...}.
+    Q_INVOKABLE QVariantMap registerSnapshotInfo(int slot) const;
+    Q_INVOKABLE void setRegisterViewSlot(int slot);
+    Q_INVOKABLE void clearRegisterSnapshots();
+
 signals:
     void toolPathsChanged();
     void scanningChanged();
@@ -179,6 +207,10 @@ signals:
     void probeFinished(bool success, const QString &message);
     void statusMessage(const QString &text);
     void sensorAnalysisChanged();
+    void registerChanged();
+    void registerModelChanged();
+    void registerCatalogReady(const QString &boardName);
+    void registerSnapshotReady(int slot);
 
 private:
     void appendMonitorLine(const QString &text, const QString &type);
@@ -195,16 +227,20 @@ private:
     void wireSerial();
     void wireFlash();
     void wireAnalysis();
+    void wireRegisters();
+    QVariantList snapshotToVariant(const RegisterSnapshot &snap) const;
 
     // simulation helpers
     void tickSimulation();
     void tickHardwareSimulation();
 
-    AppState        *m_state    = nullptr;
-    SerialManager   *m_serial   = nullptr;
-    FlashManager    *m_flash    = nullptr;
-    AnalysisManager *m_analysis = nullptr;
-    ToolDetector    *m_detector = nullptr;
+    AppState          *m_state    = nullptr;
+    SerialManager     *m_serial   = nullptr;
+    FlashManager      *m_flash    = nullptr;
+    AnalysisManager   *m_analysis = nullptr;
+    ToolDetector      *m_detector = nullptr;
+    RegisterInspector *m_registers = nullptr;
+    int                m_registerViewSlot = 0;   // which slot registerModel shows
 
     // monitor
     QVariantList m_monitorLines;

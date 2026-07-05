@@ -78,6 +78,17 @@ public:
     QString cubeSdkPath() const;
     void    setCubeSdkPath(const QString &path);
 
+    // Register Inspector: last selected peripherals per board (persisted so a
+    // board reopens with the user's last selection). Stored as a JSON object
+    // mapping board name -> array of peripheral names.
+    QStringList registerPeripherals(const QString &boardName) const;
+    void        setRegisterPeripherals(const QString &boardName,
+                                       const QStringList &peripherals);
+
+    // Optional override for the SVD directory; empty = exe-adjacent svd/.
+    QString registerSvdDir() const;
+    void    setRegisterSvdDir(const QString &dir);
+
 private:
     static constexpr auto kKeyCliPath          = "programmer/cli_path";
     static constexpr auto kKeyComPort          = "serial/last_com_port";
@@ -97,4 +108,6 @@ private:
     static constexpr auto kKeyDeployedSensorType = "benchmark/deployed_sensor_type";
     static constexpr auto kKeyCubeSdkPath     = "tools/cube_sdk_path";
     static constexpr auto kArrayCustomBoards   = "boards/custom";
+    static constexpr auto kKeyRegisterPeripherals = "registers/last_peripherals";
+    static constexpr auto kKeyRegisterSvdDir   = "registers/svd_dir";
 };
