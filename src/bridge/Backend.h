@@ -184,6 +184,8 @@ public:
     Q_INVOKABLE QStringList registerPeripheralList() const;
     // Persisted selection (or the board's default preset if none saved).
     Q_INVOKABLE QStringList registerSelectedPeripherals() const;
+    // The board's default preset (from boards.json), regardless of saved state.
+    Q_INVOKABLE QStringList registerDefaultPeripherals() const;
     // Take a snapshot into slot 0(A)/1(B); persists the selection.
     Q_INVOKABLE void takeRegisterSnapshot(int slot, const QStringList &peripherals);
     // Metadata for a slot: {valid, board, device, svd, mode, support, takenAt,...}.

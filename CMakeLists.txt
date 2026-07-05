@@ -163,6 +163,7 @@ qt_add_qml_module(STM32AiDeployer
         qml/components/Terminal.qml
         qml/components/TitleBar.qml
         qml/components/TopTabBar.qml
+        qml/components/RegisterTree.qml
         qml/dialogs/SettingsDialog.qml
         qml/dialogs/AboutDialog.qml
         qml/dialogs/PipelineWizard.qml
@@ -172,6 +173,7 @@ qt_add_qml_module(STM32AiDeployer
         qml/screens/MonitorScreen.qml
         qml/screens/BenchmarkScreen.qml
         qml/screens/AnalysisScreen.qml
+        qml/screens/RegisterScreen.qml
         qml/factory/FactorySimWindow.qml
         qml/factory/FactoryDashboard.qml
         qml/factory/FactoryMap.qml

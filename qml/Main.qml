@@ -58,7 +58,8 @@ ApplicationWindow {
                     { label: "Flash" },
                     { label: "Monitör" },
                     { label: "Benchmark" },
-                    { label: "Analiz" }
+                    { label: "Analiz" },
+                    { label: "Register" }
                 ]
                 onSelected: (index) => stack.currentIndex = index
             }
@@ -84,6 +85,7 @@ ApplicationWindow {
                 MonitorScreen {}
                 BenchmarkScreen {}
                 AnalysisScreen {}
+                RegisterScreen {}
             }
         }
     }

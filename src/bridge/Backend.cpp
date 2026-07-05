@@ -2963,6 +2963,13 @@ QStringList Backend::registerSelectedPeripherals() const
     return saved.isEmpty() ? m_registers->defaultPeripherals(board) : saved;
 }
 
+QStringList Backend::registerDefaultPeripherals() const
+{
+    if (!m_registers || !m_state)
+        return {};
+    return m_registers->defaultPeripherals(m_state->activeBoard());
+}
+
 void Backend::takeRegisterSnapshot(int slot, const QStringList &peripherals)
 {
     if (!m_registers || !m_state)
