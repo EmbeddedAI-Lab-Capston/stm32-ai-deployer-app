@@ -79,6 +79,7 @@ istasyonu" hikâyesine güçlendirir: deploy → izle → **debug et** → anali
 | Halt → oku → devam ("atomik" snapshot) | HOTPLUG canlı okuma MVP için yeterli; halt'lı mod ayrı semantik | Hayır — `ReadPlan`'a mod parametresi eklenebilir |
 | Core register'ları (PC, LR, xPSR, NVIC...) | CLI ile sistem-alanı okuması ayrı doğrulama ister; MVP peripheral odaklı | Kısmen — NVIC/SCB SVD'de var, aynı mekanizmayla ileride açılabilir |
 | Custom (kullanıcı tanımlı) kartlar için SVD | Kullanıcı SVD dosyası göstererek ekleyebilsin — MVP'de sadece dosya-bazlı altyapı hazır, UI'sı yok | Hayır — `boards.json` + SVD klasörü zaten kullanıcı dosyası kabul eder |
+| **Serbest bellek görüntüleyici** (CubeProgrammer "Memory editing" benzeri: kullanıcının girdiği herhangi bir adres+boyutu ham hex olarak gösteren pencere; SVD-decode değil) | Gelecek işi (kullanıcı talebi, 2026-07-05). MVP register-decode odaklı; ham adres okuma değeri var ama ayrı UI ister | Hayır — **mimari zaten hazır:** `RegisterReader` `-r32 <addr> <size>` ile ZATEN herhangi bir adresi okur (SVD'ye bağlı değil). Faz 0'da elle doğrulandı. İleride yeni bir "Memory" alt-sekmesi aynı `RegisterReader`'ı çağırır; SVD katmanı bypass edilir. NOT: RAM/Flash temiz okunur; peripheral bölgelerinde yan-etki/clock-off uyarıları (Bölüm 3.2) burada da geçerli |
 
 ---
 
