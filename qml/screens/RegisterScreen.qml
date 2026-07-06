@@ -13,8 +13,12 @@ Item {
     readonly property bool _busy: _hasBackend ? backend.registerBusy : false
     readonly property string _stage: _hasBackend ? backend.registerStage : "idle"
     readonly property string _support: _hasBackend ? backend.registerSupportLevel : "unsupported"
+    readonly property string _boardName: (typeof appState !== "undefined" && appState && appState.boardName.length > 0)
+                                         ? appState.boardName : "—"
     property int _viewSlot: 0
     property int _snapRev: 0   // bumped when snapshots change, to re-evaluate info bindings
+    property string _errorText: ""
+    property bool _errorVisible: false
 
     // Selection is kept here (source of truth) so search-filtering the list
     // never loses ticks. periModel is just the filtered display.
@@ -83,6 +87,28 @@ Item {
         function onRegisterCatalogReady(boardName) { root.refreshPeripheralList() }
         function onRegisterModelChanged() { root.refreshClockMap(); root._snapRev++ }
         function onRegisterSnapshotReady(slot) { root._viewSlot = slot; root._snapRev++ }
+        // Snapshot/catalog failures (wrong board, CLI missing, read errors) go
+        // through Backend's generic statusMessage signal — surface them here
+        // instead of leaving the tree silently empty with no explanation.
+        function onStatusMessage(text) {
+            root._errorText = text
+            root._errorVisible = true
+            errorHideTimer.restart()
+        }
+    }
+
+    Timer { id: errorHideTimer; interval: 8000; onTriggered: root._errorVisible = false }
+
+    // Re-sync when the active board changes elsewhere (Kartlar screen) so the
+    // peripheral list and support pill always match the board that will
+    // actually be read — the earlier symptom (F4 profile selected while an
+    // H7 is physically connected) failed silently with no indication of the
+    // mismatch.
+    Connections {
+        target: (typeof appState !== "undefined") ? appState : null
+        function onActiveBoardChanged() {
+            if (root._hasBackend) { backend.prepareRegisters(); root.refreshPeripheralList() }
+        }
     }
 
     ListModel { id: periModel }
@@ -99,7 +125,8 @@ Item {
 
             SectionHeader {
                 title: "Register Inspector"
-                subtitle: "Kart çalışırken SWD üzerinden canlı register anlık görüntüsü · reset atılmaz"
+                subtitle: "Aktif kart: " + root._boardName
+                          + " · SWD üzerinden canlı register anlık görüntüsü · reset atılmaz"
                 Layout.fillWidth: true
             }
             StatusPill {
@@ -130,6 +157,34 @@ Item {
                 text: "JSON Dışa Aktar"
                 variant: "ghost"
                 enabled: false   // Faz 5
+            }
+        }
+
+        // ── Error banner (snapshot/catalog failures) ─────────────────────
+        Rectangle {
+            visible: root._errorVisible
+            Layout.fillWidth: true
+            Layout.preferredHeight: 40
+            radius: Theme.radiusMd
+            color: Theme.alpha(Theme.danger, 0.12)
+            border.color: Theme.alpha(Theme.danger, 0.4)
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.spacingMd
+                anchors.rightMargin: Theme.spacingSm
+                spacing: Theme.spacingSm
+                Text { text: "!"; color: Theme.danger; font.pixelSize: Theme.fontMd; font.weight: Font.Bold }
+                Text {
+                    Layout.fillWidth: true
+                    text: root._errorText; color: Theme.text
+                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                    elide: Text.ElideRight
+                }
+                AppButton {
+                    text: "Kapat"; variant: "ghost"
+                    onClicked: root._errorVisible = false
+                }
             }
         }
 
