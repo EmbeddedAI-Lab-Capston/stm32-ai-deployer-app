@@ -6,16 +6,21 @@ import STM32AiDeployer
 // Expandable register tree: peripheral -> register -> bit fields.
 // Consumes the backend.registerModel tree (a list of peripheral maps). The tree
 // is flattened into a single ListModel of typed rows so ListView can virtualise
-// it; expand/collapse rebuilds the flat model. Styling is taken straight from
-// Theme (matching DataTable's row language).
+// it; expand/collapse rebuilds the flat model. Density and status language
+// follow real SFR/peripheral-register debug tools (STM32CubeIDE SFR view,
+// Keil System Viewer): tight rows, monospace-first, color carries status
+// instead of pill badges — legibility without eating vertical space.
 Rectangle {
     id: root
 
-    // The decoded snapshot tree: [{ name, group, description, clock, registers:[
-    //   { name, addr, raw, reset, changed, status, description, fields:[...] } ] }]
+    // The decoded snapshot tree: [{ name, group, clock, registers:[
+    //   { name, addr, raw, reset, changed, status, fields:[...] } ] }]
     property var model: []
-    // Diff mode dims unchanged rows; kept for Faz 5 (ignored for now).
+    // "Sadece değişenleri göster" — hides registers unchanged from reset.
     property bool changedOnly: false
+    // Filters by register/field name across the whole tree (not peripheral
+    // name — that's the left panel's job). Matching peripherals force-open.
+    property string filterText: ""
 
     radius: Theme.radiusMd
     color: Theme.surface
@@ -23,11 +28,11 @@ Rectangle {
     clip: true
 
     // Column widths shared by header and rows so they line up.
-    readonly property int wChevron: 24
-    readonly property int wAddr: 138
-    readonly property int wValue: 128
-    readonly property int wReset: 128
-    readonly property int wStatus: 118
+    readonly property int wChevron: 20
+    readonly property int wAddr: 112
+    readonly property int wValue: 108
+    readonly property int wReset: 108
+    readonly property int wStatus: 82
 
     // Expansion state, keyed by unique id; reassigned to trigger rebuild.
     property var _expP: ({})
@@ -40,37 +45,76 @@ Rectangle {
         var m = root._expR; m[key] = !m[key]; root._expR = Object.assign({}, m); rebuild()
     }
 
+    // Invisible TextEdit used purely as a clipboard sink (QML has no direct
+    // clipboard API); select-all + copy is the standard workaround.
+    TextEdit { id: clipSink; visible: false; text: "" }
+    function copyToClipboard(text) {
+        clipSink.text = text
+        clipSink.selectAll()
+        clipSink.copy()
+    }
+
     onModelChanged: rebuild()
+    onChangedOnlyChanged: rebuild()
+    onFilterTextChanged: rebuild()
+
+    function _matches(text, needle) {
+        return needle.length === 0 || String(text).toLowerCase().indexOf(needle) !== -1
+    }
 
     function rebuild() {
         flat.clear()
         var peris = root.model || []
+        var needle = (root.filterText || "").trim().toLowerCase()
+        var searching = needle.length > 0
+        var filtering = searching || root.changedOnly   // either forces full expansion
+
         for (var i = 0; i < peris.length; ++i) {
             var p = peris[i]
+            var regs = p.registers || []
+
+            // Decide which registers survive changedOnly + search, up front,
+            // so an all-filtered-out peripheral can be skipped entirely
+            // instead of showing an empty header (no dead-end groups).
+            var visibleRegs = []
+            for (var j = 0; j < regs.length; ++j) {
+                var r = regs[j]
+                if (root.changedOnly && !(r.status === "ok" && r.changed)) continue
+                if (searching) {
+                    var regMatch = root._matches(r.name, needle)
+                    var fieldMatch = false
+                    if (!regMatch) {
+                        var fs = r.fields || []
+                        for (var k = 0; k < fs.length; ++k)
+                            if (root._matches(fs[k].name, needle)) { fieldMatch = true; break }
+                    }
+                    if (!regMatch && !fieldMatch) continue
+                }
+                visibleRegs.push(r)
+            }
+            if (filtering && visibleRegs.length === 0) continue
+
             var pKey = p.name
-            var pOpen = root._expP[pKey] === true
-            flat.append({ rowType: "peripheral", pName: p.name, pGroup: p.group || "",
-                          pDesc: p.description || "", pClock: p.clock || "unknown",
-                          pCount: (p.registers ? p.registers.length : 0), pOpen: pOpen,
+            var pOpen = filtering ? true : (root._expP[pKey] === true)
+            flat.append({ rowType: "peripheral", pName: p.name, pClock: p.clock || "unknown",
+                          pCount: regs.length, pShown: visibleRegs.length, pOpen: pOpen,
                           key: pKey })
             if (!pOpen) continue
 
-            var regs = p.registers || []
-            for (var j = 0; j < regs.length; ++j) {
-                var r = regs[j]
-                if (root.changedOnly && !r.changed && r.status === "ok") continue
-                var rKey = pKey + "/" + r.addr
-                var hasFields = r.fields && r.fields.length > 0 && r.status === "ok"
-                var rOpen = hasFields && root._expR[rKey] === true
-                flat.append({ rowType: "register", rName: r.name, rAddr: r.addr,
-                              rRaw: r.raw, rReset: r.reset, rChanged: r.changed === true,
-                              rStatus: r.status, rHasFields: hasFields, rOpen: rOpen,
-                              rFieldCount: (r.fields ? r.fields.length : 0), key: rKey })
+            for (var j2 = 0; j2 < visibleRegs.length; ++j2) {
+                var r2 = visibleRegs[j2]
+                var rKey = pKey + "/" + r2.addr
+                var hasFields = r2.fields && r2.fields.length > 0 && r2.status === "ok"
+                var rOpen = hasFields && (filtering ? true : root._expR[rKey] === true)
+                flat.append({ rowType: "register", rName: r2.name, rAddr: r2.addr,
+                              rRaw: r2.raw, rReset: r2.reset, rChanged: r2.changed === true,
+                              rStatus: r2.status, rHasFields: hasFields, rOpen: rOpen,
+                              key: rKey })
                 if (!rOpen) continue
 
-                var fields = r.fields || []
-                for (var k = 0; k < fields.length; ++k) {
-                    var f = fields[k]
+                var fields = r2.fields || []
+                for (var k2 = 0; k2 < fields.length; ++k2) {
+                    var f = fields[k2]
                     var bits = f.bitWidth > 1
                         ? ("[" + (f.bitOffset + f.bitWidth - 1) + ":" + f.bitOffset + "]")
                         : ("[" + f.bitOffset + "]")
@@ -92,7 +136,7 @@ Rectangle {
         return status
     }
     function statusColor(status, changed) {
-        if (status === "ok") return changed ? Theme.cyan : Theme.textMuted
+        if (status === "ok") return changed ? Theme.cyan : Theme.textFaint
         if (status === "clock-off") return Theme.warning
         if (status === "side-effect") return Theme.purple
         if (status === "unreadable") return Theme.danger
@@ -111,33 +155,43 @@ Rectangle {
         // ── Header row ──────────────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 38
+            Layout.preferredHeight: 28
             color: Theme.surfaceRaised
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: Theme.spacingMd
-                anchors.rightMargin: Theme.spacingMd
-                spacing: Theme.spacingMd
-                function hcol(t) { return t }
+                anchors.leftMargin: Theme.spacingSm
+                anchors.rightMargin: Theme.spacingSm
+                spacing: Theme.spacingSm
                 Item { Layout.preferredWidth: root.wChevron }
                 Text { text: "Register"; Layout.fillWidth: true; color: Theme.primary
-                       font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                       font.family: Theme.fontFamily; font.pixelSize: 10
                        font.weight: Font.Bold; font.capitalization: Font.AllUppercase }
                 Text { text: "Adres"; Layout.preferredWidth: root.wAddr; horizontalAlignment: Text.AlignRight
-                       color: Theme.primary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                       color: Theme.primary; font.family: Theme.fontFamily; font.pixelSize: 10
                        font.weight: Font.Bold; font.capitalization: Font.AllUppercase }
                 Text { text: "Değer"; Layout.preferredWidth: root.wValue; horizontalAlignment: Text.AlignRight
-                       color: Theme.primary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                       color: Theme.primary; font.family: Theme.fontFamily; font.pixelSize: 10
                        font.weight: Font.Bold; font.capitalization: Font.AllUppercase }
                 Text { text: "Reset"; Layout.preferredWidth: root.wReset; horizontalAlignment: Text.AlignRight
-                       color: Theme.primary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                       color: Theme.primary; font.family: Theme.fontFamily; font.pixelSize: 10
                        font.weight: Font.Bold; font.capitalization: Font.AllUppercase }
                 Text { text: "Durum"; Layout.preferredWidth: root.wStatus; horizontalAlignment: Text.AlignRight
-                       color: Theme.primary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                       color: Theme.primary; font.family: Theme.fontFamily; font.pixelSize: 10
                        font.weight: Font.Bold; font.capitalization: Font.AllUppercase }
             }
         }
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+
+        // ── Empty state (search/filter produced nothing) ─────────────────
+        Text {
+            visible: flat.count === 0 && (root.model || []).length > 0
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.spacingLg
+            horizontalAlignment: Text.AlignHCenter
+            text: root.filterText.length > 0 ? "Eşleşen register/field yok."
+                : "Seçili peripheral'larda değişen register yok."
+            color: Theme.textFaint; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+        }
 
         // ── Body ────────────────────────────────────────────────────────
         ListView {
@@ -147,7 +201,7 @@ Rectangle {
             model: flat
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar { width: 9; policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: ScrollBar { width: 8; policy: ScrollBar.AsNeeded }
 
             delegate: Loader {
                 width: list.width
@@ -163,45 +217,40 @@ Rectangle {
         id: periComp
         Rectangle {
             width: list.width
-            height: 42
+            height: 30
             color: pmouse.containsMouse ? Theme.surfaceHover : Theme.bgElevated
-            opacity: rowData.pClock === "off" ? 0.62 : 1.0
+            opacity: rowData.pClock === "off" ? 0.6 : 1.0
             Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Theme.border }
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: Theme.spacingMd
-                anchors.rightMargin: Theme.spacingMd
+                anchors.leftMargin: Theme.spacingSm
+                anchors.rightMargin: Theme.spacingSm
                 spacing: Theme.spacingSm
 
                 Text {
                     Layout.preferredWidth: root.wChevron
-                    text: "▶"; color: Theme.textMuted; font.pixelSize: 11
+                    text: "▶"; color: Theme.textMuted; font.pixelSize: 10
                     rotation: rowData.pOpen ? 90 : 0
                     Behavior on rotation { NumberAnimation { duration: Theme.animFast } }
                 }
-                Text { text: rowData.pName; color: Theme.text; font.family: Theme.fontFamily
+                Text { text: rowData.pName; color: Theme.text; font.family: Theme.monoFamily
                        font.pixelSize: Theme.fontSm; font.weight: Font.Bold }
-                Text { text: rowData.pDesc; color: Theme.textFaint; font.family: Theme.fontFamily
-                       font.pixelSize: Theme.fontXs; elide: Text.ElideRight; Layout.fillWidth: true }
-                // clock badge
-                Rectangle {
-                    visible: rowData.pClock !== "unknown"
-                    Layout.preferredHeight: 20
-                    Layout.preferredWidth: clkRow.implicitWidth + Theme.spacingSm * 2
-                    radius: 10
-                    color: Theme.alpha(rowData.pClock === "on" ? Theme.success : Theme.textMuted, 0.12)
-                    RowLayout {
-                        id: clkRow; anchors.centerIn: parent; spacing: 5
-                        Rectangle { width: 6; height: 6; radius: 3
-                            color: rowData.pClock === "on" ? Theme.success : Theme.textMuted }
-                        Text { text: rowData.pClock === "on" ? "on" : "clock off"
-                               color: rowData.pClock === "on" ? Theme.success : Theme.textMuted
-                               font.family: Theme.fontFamily; font.pixelSize: 10; font.weight: Font.DemiBold }
-                    }
+                Item { Layout.fillWidth: true }
+                Text {
+                    visible: rowData.pClock === "on" || rowData.pClock === "off"
+                    text: rowData.pClock === "on" ? "clock on" : "clock off"
+                    color: rowData.pClock === "on" ? Theme.success : Theme.textMuted
+                    font.family: Theme.fontFamily; font.pixelSize: 10; font.weight: Font.DemiBold
                 }
-                Text { text: rowData.pCount + " reg"; color: Theme.textMuted; font.family: Theme.fontFamily
-                       font.pixelSize: Theme.fontXs; font.weight: Font.DemiBold }
+                Text {
+                    text: rowData.pShown !== undefined && rowData.pShown !== rowData.pCount
+                          ? (rowData.pShown + "/" + rowData.pCount)
+                          : String(rowData.pCount)
+                    color: Theme.textFaint; font.family: Theme.monoFamily
+                    font.pixelSize: 10; Layout.preferredWidth: 44
+                    horizontalAlignment: Text.AlignRight
+                }
             }
             MouseArea { id: pmouse; anchors.fill: parent; hoverEnabled: true
                         onClicked: root._togglePeripheral(rowData.key) }
@@ -212,8 +261,9 @@ Rectangle {
     Component {
         id: regComp
         Rectangle {
+            id: regRow
             width: list.width
-            height: 40
+            height: 26
             property bool isChanged: rowData.rStatus === "ok" && rowData.rChanged
             property bool isSkip: rowData.rStatus !== "ok"
             color: rmouse.containsMouse ? Theme.surfaceHover
@@ -222,18 +272,20 @@ Rectangle {
                         color: Theme.alpha(Theme.border, 0.6) }
             // changed accent stripe
             Rectangle { visible: isChanged; anchors.left: parent.left; anchors.top: parent.top
-                        anchors.bottom: parent.bottom; width: 3; color: Theme.cyan }
+                        anchors.bottom: parent.bottom; width: 2; color: Theme.cyan }
+
+            HoverHandler { id: rowHover }
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: Theme.spacingMd
-                anchors.rightMargin: Theme.spacingMd
-                spacing: Theme.spacingMd
+                anchors.leftMargin: Theme.spacingSm
+                anchors.rightMargin: Theme.spacingSm
+                spacing: Theme.spacingSm
 
                 Text {
                     Layout.preferredWidth: root.wChevron
                     text: rowData.rHasFields ? "▶" : ""
-                    color: Theme.textMuted; font.pixelSize: 10
+                    color: Theme.textMuted; font.pixelSize: 9
                     rotation: rowData.rOpen ? 90 : 0
                     Behavior on rotation { NumberAnimation { duration: Theme.animFast } }
                 }
@@ -241,34 +293,42 @@ Rectangle {
                        color: isSkip ? Theme.textMuted : Theme.text
                        font.family: Theme.monoFamily; font.pixelSize: Theme.fontSm
                        font.weight: isSkip ? Font.Normal : Font.DemiBold }
-                Text { text: rowData.rAddr; Layout.preferredWidth: root.wAddr
-                       horizontalAlignment: Text.AlignRight; color: Theme.textMuted
-                       font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs }
-                Text { text: rowData.rStatus === "ok" ? rowData.rRaw : "—"
-                       Layout.preferredWidth: root.wValue; horizontalAlignment: Text.AlignRight
-                       color: isChanged ? Theme.cyan : (isSkip ? Theme.textFaint : Theme.text)
-                       font.family: Theme.monoFamily; font.pixelSize: Theme.fontSm
-                       font.weight: isChanged ? Font.Bold : Font.Normal }
+
+                RowLayout {
+                    Layout.preferredWidth: root.wAddr
+                    spacing: 3
+                    Item { Layout.fillWidth: true }
+                    Text { text: rowData.rAddr; color: Theme.textMuted
+                           font.family: Theme.monoFamily; font.pixelSize: 11 }
+                    Text { text: "⧉"; color: Theme.textFaint; font.pixelSize: 11
+                           visible: rowHover.hovered
+                           MouseArea { anchors.fill: parent; anchors.margins: -4
+                                       cursorShape: Qt.PointingHandCursor
+                                       onClicked: root.copyToClipboard(rowData.rAddr) } }
+                }
+                RowLayout {
+                    Layout.preferredWidth: root.wValue
+                    spacing: 3
+                    Item { Layout.fillWidth: true }
+                    Text { text: rowData.rStatus === "ok" ? rowData.rRaw : "—"
+                           color: isChanged ? Theme.cyan : (isSkip ? Theme.textFaint : Theme.text)
+                           font.family: Theme.monoFamily; font.pixelSize: Theme.fontSm
+                           font.weight: isChanged ? Font.Bold : Font.Normal }
+                    Text { text: "⧉"; color: Theme.textFaint; font.pixelSize: 11
+                           visible: rowHover.hovered && rowData.rStatus === "ok"
+                           MouseArea { anchors.fill: parent; anchors.margins: -4
+                                       cursorShape: Qt.PointingHandCursor
+                                       onClicked: root.copyToClipboard(rowData.rRaw) } }
+                }
                 Text { text: rowData.rReset; Layout.preferredWidth: root.wReset
                        horizontalAlignment: Text.AlignRight; color: Theme.textFaint
-                       font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs }
-                // status badge
-                Item {
-                    Layout.preferredWidth: root.wStatus
-                    Layout.fillHeight: true
-                    Rectangle {
-                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                        height: 20; width: badgeText.implicitWidth + Theme.spacingSm * 2; radius: 10
-                        readonly property color c: root.statusColor(rowData.rStatus, rowData.rChanged)
-                        color: Theme.alpha(c, 0.14)
-                        border.color: rowData.rStatus === "ok" && !rowData.rChanged
-                                      ? "transparent" : Theme.alpha(c, 0.34)
-                        Text { id: badgeText; anchors.centerIn: parent
-                               text: root.statusText(rowData.rStatus, rowData.rChanged)
-                               color: parent.c; font.family: Theme.fontFamily
-                               font.pixelSize: 10; font.weight: Font.DemiBold }
-                    }
-                }
+                       font.family: Theme.monoFamily; font.pixelSize: 11 }
+                Text { text: root.statusText(rowData.rStatus, rowData.rChanged)
+                       Layout.preferredWidth: root.wStatus; horizontalAlignment: Text.AlignRight
+                       color: root.statusColor(rowData.rStatus, rowData.rChanged)
+                       font.family: Theme.fontFamily; font.pixelSize: 11
+                       font.weight: isChanged ? Font.Bold : Font.Normal
+                       visible: rowData.rStatus !== "ok" || rowData.rChanged }
             }
             MouseArea { id: rmouse; anchors.fill: parent; hoverEnabled: true
                         enabled: rowData.rHasFields
@@ -282,26 +342,39 @@ Rectangle {
         id: fieldComp
         Rectangle {
             width: list.width
-            height: 30
+            height: 22
             color: Theme.alpha(Theme.bg, 0.5)
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: Theme.spacingMd + root.wChevron
-                anchors.rightMargin: Theme.spacingMd
-                spacing: Theme.spacingMd
-                Text { text: rowData.fBits; Layout.preferredWidth: 78; color: Theme.textFaint
-                       font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs }
-                Text { text: rowData.fName; Layout.preferredWidth: 150
+                anchors.leftMargin: Theme.spacingSm + root.wChevron
+                anchors.rightMargin: Theme.spacingSm
+                spacing: Theme.spacingSm
+                Text { text: rowData.fBits; Layout.preferredWidth: 64; color: Theme.textFaint
+                       font.family: Theme.monoFamily; font.pixelSize: 11 }
+                Text { text: rowData.fName; Layout.preferredWidth: 130
                        color: rowData.fChanged ? Theme.text : Theme.textMuted
-                       font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
+                       font.family: Theme.monoFamily; font.pixelSize: 11
                        font.weight: Font.DemiBold }
                 Text { text: rowData.fVal + (rowData.fEnum.length > 0 ? "  " + rowData.fEnum : "")
-                       Layout.preferredWidth: 150
+                       Layout.preferredWidth: 140
                        color: rowData.fChanged ? Theme.cyan : Theme.textMuted
-                       font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
+                       font.family: Theme.monoFamily; font.pixelSize: 11
                        font.weight: rowData.fChanged ? Font.Bold : Font.Normal }
-                Text { text: rowData.fDesc; Layout.fillWidth: true; color: Theme.textFaint
-                       font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs; elide: Text.ElideRight }
+                // Item wrapper + anchors.fill (rather than elide directly on a
+                // Layout.fillWidth Text) — avoids a width/implicitWidth binding
+                // loop that otherwise lets long descriptions wrap and bleed
+                // into the next row despite elide being set.
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Text {
+                        anchors.fill: parent
+                        verticalAlignment: Text.AlignVCenter
+                        text: rowData.fDesc; color: Theme.textFaint
+                        font.family: Theme.fontFamily; font.pixelSize: 11
+                        elide: Text.ElideRight; wrapMode: Text.NoWrap
+                    }
+                }
             }
         }
     }

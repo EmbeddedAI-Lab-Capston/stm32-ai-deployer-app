@@ -139,11 +139,13 @@ Item {
             Layout.fillHeight: true
             spacing: Theme.spacingMd
 
-            // LEFT: peripheral selection
+            // LEFT: peripheral selection (narrow — this is a one-time setup
+            // step per debug session, not something worth permanent screen
+            // real estate once a snapshot is on screen)
             Card {
                 title: "Peripheral Seçimi"
-                subtitle: root.selectedCount() + " / " + root._allPeris.length + " seçili · RCC daima okunur"
-                Layout.preferredWidth: 320
+                subtitle: root.selectedCount() + " / " + root._allPeris.length + " seçili"
+                Layout.preferredWidth: 220
                 Layout.fillHeight: true
 
                 ColumnLayout {
@@ -197,7 +199,7 @@ Item {
 
                         delegate: Rectangle {
                             width: periList.width
-                            height: 34
+                            height: 28
                             radius: Theme.radiusSm
                             color: prowM.containsMouse ? Theme.surfaceHover : "transparent"
                             readonly property bool checked: root._selSet[model.name] === true
@@ -222,20 +224,14 @@ Item {
                                 }
                                 Text { text: model.name; Layout.fillWidth: true
                                        color: parent.parent.checked ? Theme.text : Theme.textMuted
-                                       font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                                       font.family: Theme.monoFamily; font.pixelSize: Theme.fontSm
                                        font.weight: parent.parent.checked ? Font.DemiBold : Font.Normal }
-                                // clock badge (after a snapshot)
-                                Rectangle {
+                                // clock status (after a snapshot) — plain colored text, no pill
+                                Text {
                                     visible: parent.parent.clock === "on" || parent.parent.clock === "off"
-                                    Layout.preferredHeight: 18
-                                    Layout.preferredWidth: clkT.implicitWidth + Theme.spacingSm
-                                    radius: 9
-                                    readonly property bool on: parent.parent.clock === "on"
-                                    color: Theme.alpha(on ? Theme.success : Theme.textMuted, 0.12)
-                                    Text { id: clkT; anchors.centerIn: parent
-                                           text: parent.on ? "on" : "off"
-                                           color: parent.on ? Theme.success : Theme.textMuted
-                                           font.family: Theme.fontFamily; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                    text: parent.parent.clock === "on" ? "on" : "off"
+                                    color: parent.parent.clock === "on" ? Theme.success : Theme.textFaint
+                                    font.family: Theme.fontFamily; font.pixelSize: 10; font.weight: Font.DemiBold
                                 }
                             }
                             MouseArea {
@@ -306,6 +302,72 @@ Item {
                         }
                     }
 
+                    // Search-in-tree (register/field name, not peripheral name —
+                    // that's the left panel) + changed-only noise filter.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.spacingSm
+
+                        TextField {
+                            id: treeSearchField
+                            Layout.preferredWidth: 200
+                            placeholderText: "Register/field ara… (CR1, UE)"
+                            color: Theme.text
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontXs
+                            leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                            background: Rectangle {
+                                radius: Theme.radiusSm; color: Theme.surfaceRaised
+                                border.color: treeSearchField.activeFocus ? Theme.primary : Theme.border
+                                implicitHeight: 30
+                            }
+                            onTextChanged: tree.filterText = text
+                        }
+
+                        Rectangle {
+                            Layout.preferredHeight: 30
+                            Layout.preferredWidth: changedRow.implicitWidth + Theme.spacingMd
+                            radius: Theme.radiusSm
+                            color: changedOnlyM.containsMouse ? Theme.surfaceHover : "transparent"
+                            border.color: Theme.border
+                            RowLayout {
+                                id: changedRow
+                                anchors.centerIn: parent
+                                spacing: 6
+                                Rectangle {
+                                    Layout.preferredWidth: 14; Layout.preferredHeight: 14
+                                    radius: 3
+                                    color: tree.changedOnly ? Theme.primary : "transparent"
+                                    border.color: tree.changedOnly ? Theme.primary : Theme.borderStrong
+                                    border.width: 1.5
+                                    Text { anchors.centerIn: parent; visible: tree.changedOnly
+                                           text: "✓"; color: "#fff"; font.pixelSize: 9 }
+                                }
+                                Text { text: "Sadece değişenler"; color: Theme.textMuted
+                                       font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                                       font.weight: Font.DemiBold }
+                            }
+                            MouseArea { id: changedOnlyM; anchors.fill: parent; hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: tree.changedOnly = !tree.changedOnly }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // Compact legend — a single info glyph instead of a
+                        // permanent row, so it doesn't cost vertical space.
+                        Text {
+                            text: "?"
+                            color: Theme.textFaint
+                            font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm; font.weight: Font.Bold
+                            ToolTip.visible: legendHover.hovered
+                            ToolTip.delay: 200
+                            ToolTip.text: "● reset'ten farklı (cyan)\n● yan etki, okunmaz (mor)\n"
+                                        + "● clock kapalı (sarı)\n● write-only (gri)\n● okunamadı (kırmızı)"
+                            HoverHandler { id: legendHover }
+                        }
+                    }
+
                     RegisterTree {
                         id: tree
                         Layout.fillWidth: true
@@ -325,26 +387,6 @@ Item {
                     }
                 }
             }
-        }
-
-        // ── Bottom strip: legend ─────────────────────────────────────────
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Theme.spacingMd
-            Repeater {
-                model: [ { c: Theme.cyan, t: "reset'ten farklı" },
-                         { c: Theme.purple, t: "yan etki (okunmaz)" },
-                         { c: Theme.warning, t: "clock kapalı" },
-                         { c: Theme.textMuted, t: "write-only" },
-                         { c: Theme.danger, t: "okunamadı" } ]
-                delegate: RowLayout {
-                    spacing: 6
-                    Rectangle { width: 9; height: 9; radius: 2; color: modelData.c }
-                    Text { text: modelData.t; color: Theme.textFaint
-                           font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
-                }
-            }
-            Item { Layout.fillWidth: true }
         }
     }
 }
