@@ -6,6 +6,10 @@
 #include <QIcon>
 #include <QFile>
 #include <QTimer>
+#include <QDateTime>
+#include <QTextStream>
+#include <QDir>
+#include <QMutex>
 
 #include "core/AppState.h"
 #include "core/AppSettings.h"
@@ -17,8 +21,35 @@
 #include "bridge/Backend.h"
 #include "ui/SplashScreen.h"
 
+// Persistent trace log next to the executable: every qDebug()/qWarning()/QML
+// console.log() call lands here, timestamped, appended across runs. Lets you
+// inspect what actually happened (including QML-side console.log tracing)
+// without needing QT_FORCE_STDERR_LOGGING + a fresh capture each time — just
+// read app_trace.log. Not gated behind a build flag; the write cost is
+// negligible and having it always on is the point.
+static void fileTraceHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+{
+    static QMutex mutex;
+    QMutexLocker locker(&mutex);
+    static QFile logFile(QDir(QCoreApplication::applicationDirPath()).filePath("app_trace.log"));
+    if (!logFile.isOpen())
+        logFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+    const char *level = "DEBUG";
+    switch (type) {
+    case QtWarningMsg:  level = "WARN";  break;
+    case QtCriticalMsg: level = "CRIT";  break;
+    case QtFatalMsg:    level = "FATAL"; break;
+    default: break;
+    }
+    QTextStream ts(&logFile);
+    ts << QDateTime::currentDateTime().toString("HH:mm:ss.zzz") << " [" << level << "] " << msg << "\n";
+    ts.flush();
+    Q_UNUSED(context);
+}
+
 int main(int argc, char *argv[])
 {
+    qInstallMessageHandler(fileTraceHandler);
     QApplication app(argc, argv);
     app.setApplicationName("STM32 AI Deployer");
     app.setApplicationVersion("1.0.0");

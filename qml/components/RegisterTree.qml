@@ -62,8 +62,19 @@ Rectangle {
         return needle.length === 0 || String(text).toLowerCase().indexOf(needle) !== -1
     }
 
+    // Flattened rows, assigned to the ListView's model in one atomic swap.
+    // NOTE: this used to be a ListModel mutated via clear()+append() on every
+    // rebuild. clear() briefly makes every currently-visible delegate see a
+    // null model row; a nested binding like `rowData.pClock` throws mid-clear
+    // and QML does not always recover that binding once append() repopulates
+    // the model, leaving the row permanently blank (confirmed via
+    // app_trace.log: "Cannot read property 'pClock' of null" fired exactly
+    // once per rebuild, right when the intermittent blank-row bug occurred).
+    // Building a plain array and assigning it whole avoids the empty
+    // intermediate state entirely.
+    property var _rows: []
     function rebuild() {
-        flat.clear()
+        var rows = []
         var peris = root.model || []
         var needle = (root.filterText || "").trim().toLowerCase()
         var searching = needle.length > 0
@@ -96,9 +107,9 @@ Rectangle {
 
             var pKey = p.name
             var pOpen = filtering ? true : (root._expP[pKey] === true)
-            flat.append({ rowType: "peripheral", pName: p.name, pClock: p.clock || "unknown",
-                          pCount: regs.length, pShown: visibleRegs.length, pOpen: pOpen,
-                          key: pKey })
+            rows.push({ rowType: "peripheral", pName: p.name, pClock: p.clock || "unknown",
+                        pCount: regs.length, pShown: visibleRegs.length, pOpen: pOpen,
+                        key: pKey })
             if (!pOpen) continue
 
             for (var j2 = 0; j2 < visibleRegs.length; ++j2) {
@@ -106,10 +117,10 @@ Rectangle {
                 var rKey = pKey + "/" + r2.addr
                 var hasFields = r2.fields && r2.fields.length > 0 && r2.status === "ok"
                 var rOpen = hasFields && (filtering ? true : root._expR[rKey] === true)
-                flat.append({ rowType: "register", rName: r2.name, rAddr: r2.addr,
-                              rRaw: r2.raw, rReset: r2.reset, rChanged: r2.changed === true,
-                              rStatus: r2.status, rHasFields: hasFields, rOpen: rOpen,
-                              key: rKey })
+                rows.push({ rowType: "register", rName: r2.name, rAddr: r2.addr,
+                            rRaw: r2.raw, rReset: r2.reset, rChanged: r2.changed === true,
+                            rStatus: r2.status, rHasFields: hasFields, rOpen: rOpen,
+                            key: rKey })
                 if (!rOpen) continue
 
                 var fields = r2.fields || []
@@ -118,13 +129,14 @@ Rectangle {
                     var bits = f.bitWidth > 1
                         ? ("[" + (f.bitOffset + f.bitWidth - 1) + ":" + f.bitOffset + "]")
                         : ("[" + f.bitOffset + "]")
-                    flat.append({ rowType: "field", fBits: bits, fName: f.name,
-                                  fVal: String(f.value), fEnum: f.enumName || "",
-                                  fChanged: f.changed === true, fDesc: f.description || "",
-                                  key: rKey + "." + f.name })
+                    rows.push({ rowType: "field", fBits: bits, fName: f.name,
+                                fVal: String(f.value), fEnum: f.enumName || "",
+                                fChanged: f.changed === true, fDesc: f.description || "",
+                                key: rKey + "." + f.name })
                 }
             }
         }
+        root._rows = rows   // single atomic assignment — no empty intermediate state
     }
 
     function statusText(status, changed) {
@@ -142,11 +154,6 @@ Rectangle {
         if (status === "unreadable") return Theme.danger
         return Theme.textMuted
     }
-
-    // dynamicRoles is required: peripheral/register/field rows each append a
-    // different set of property names, and ListModel otherwise fixes its roles
-    // from the first appended row, silently dropping later-introduced keys.
-    ListModel { id: flat; dynamicRoles: true }
 
     ColumnLayout {
         anchors.fill: parent
@@ -184,7 +191,7 @@ Rectangle {
 
         // ── Empty state (search/filter produced nothing) ─────────────────
         Text {
-            visible: flat.count === 0 && (root.model || []).length > 0
+            visible: root._rows.length === 0 && (root.model || []).length > 0
             Layout.fillWidth: true
             Layout.topMargin: Theme.spacingLg
             horizontalAlignment: Text.AlignHCenter
@@ -198,7 +205,7 @@ Rectangle {
             id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
-            model: flat
+            model: root._rows
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { width: 8; policy: ScrollBar.AsNeeded }
@@ -215,11 +222,16 @@ Rectangle {
             // enough that the performance cost is not noticeable.
             reuseItems: false
 
+            // modelData (the raw array element), not the "model" role-object
+            // context — for a plain-array-backed view, model.xxx role access
+            // has shown transient nulls during whole-array reassignment;
+            // modelData is the array element directly and doesn't depend on
+            // that role-flattening machinery.
             delegate: Loader {
                 width: list.width
-                sourceComponent: model.rowType === "peripheral" ? periComp
-                               : model.rowType === "register" ? regComp : fieldComp
-                property var rowData: model
+                sourceComponent: modelData.rowType === "peripheral" ? periComp
+                               : modelData.rowType === "register" ? regComp : fieldComp
+                property var rowData: modelData
             }
         }
     }
