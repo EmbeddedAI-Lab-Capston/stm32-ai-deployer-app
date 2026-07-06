@@ -203,6 +203,18 @@ Rectangle {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { width: 8; policy: ScrollBar.AsNeeded }
 
+            // Delegate item reuse (Qt 6 ListView's default) requires the
+            // delegate to use `required property` for every model role so
+            // pooled items get refreshed correctly on reuse. This delegate
+            // instead exposes the whole row via a plain `property var rowData:
+            // model` on a wrapper Loader — with reuse enabled that binding can
+            // keep a stale "model" reference when a pooled item is recycled
+            // for a different row, rendering blank name/address/value cells
+            // intermittently. Disabling reuse forces a fresh delegate (and a
+            // fresh rowData binding) for every row; tree sizes here are small
+            // enough that the performance cost is not noticeable.
+            reuseItems: false
+
             delegate: Loader {
                 width: list.width
                 sourceComponent: model.rowType === "peripheral" ? periComp
