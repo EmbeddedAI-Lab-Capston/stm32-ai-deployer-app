@@ -99,7 +99,10 @@ Rectangle {
         return Theme.textMuted
     }
 
-    ListModel { id: flat }
+    // dynamicRoles is required: peripheral/register/field rows each append a
+    // different set of property names, and ListModel otherwise fixes its roles
+    // from the first appended row, silently dropping later-introduced keys.
+    ListModel { id: flat; dynamicRoles: true }
 
     ColumnLayout {
         anchors.fill: parent
