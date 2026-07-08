@@ -8,7 +8,7 @@
 // Runtime structures for taking a register snapshot (see
 // docs/register_inspector_plan.md Bolum 4.2). ReadPlanBuilder produces a
 // ReadPlan (what to read) plus a skip list (what was deliberately left out and
-// why); RegisterReader executes the plan and fills a RegisterReadResult.
+// why); IRegisterReader executes the plan and fills a RegisterReadResult.
 
 // Why a register/range was not read.
 enum class SkipReason

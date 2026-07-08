@@ -1,13 +1,12 @@
 #pragma once
-#include "RegisterReadModel.h"
+#include "IRegisterReader.h"
 
 #include <QMetaType>
-#include <QObject>
 #include <QStringList>
 
 class CliRunner;
 
-// ── RegisterReader ─────────────────────────────────────────────────────────
+// ── CliRegisterReader ──────────────────────────────────────────────────────
 // Executes a ReadPlan against STM32_Programmer_CLI and turns the raw hex dump
 // into addr->value. Reuses CliRunner (the same async QProcess wrapper
 // FlashManager uses) and HexDumpParser. Tolerant of block failures: a range the
@@ -16,24 +15,19 @@ class CliRunner;
 //
 // Concurrency: this class does not itself serialize against flash/probe/N6-reset
 // — that shared ST-Link guard lives in Backend (Bolum 5.3, Faz 3).
-class RegisterReader : public QObject
+class CliRegisterReader : public IRegisterReader
 {
     Q_OBJECT
 public:
-    explicit RegisterReader(QObject *parent = nullptr);
+    explicit CliRegisterReader(QObject *parent = nullptr);
 
-    void setCliPath(const QString &path);
-    void setStlinkSn(const QString &sn);           // empty = let CLI pick
-    void setConnectMode(const QString &mode);      // "HOTPLUG" (default) | "UR"
+    void setCliPath(const QString &path);   // CLI-specific; not part of IRegisterReader
+    void setStlinkSn(const QString &sn) override;
+    void setConnectMode(const QString &mode) override;
 
-    bool isBusy() const { return m_busy; }
+    bool isBusy() const override { return m_busy; }
 
-    // Execute a plan (chained -r32 in a single CLI call). Emits readFinished.
-    void read(const ReadPlan &plan);
-
-signals:
-    void readFinished(const RegisterReadResult &result);
-    void readFailed(const QString &message);       // could not even launch CLI
+    void read(const ReadPlan &plan) override;
 
 private:
     void onCliFinished(bool success, int exitCode);

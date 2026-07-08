@@ -1,20 +1,22 @@
 #include "RegisterInspector.h"
-#include "RegisterReader.h"
+#include "CliRegisterReader.h"
 
 #include <QDateTime>
 #include <algorithm>
 
 RegisterInspector::RegisterInspector(QObject *parent)
     : QObject(parent)
-    , m_reader(new RegisterReader(this))
+    , m_cliReader(new CliRegisterReader(this))
 {
+    m_reader = m_cliReader;   // IRegisterReader view of the same object
+
     connect(&m_catalog, &SvdCatalog::deviceReady, this, &RegisterInspector::onDeviceReady);
     connect(&m_catalog, &SvdCatalog::parseError, this, &RegisterInspector::onCatalogError);
-    connect(m_reader, &RegisterReader::readFinished, this, &RegisterInspector::onReadFinished);
-    connect(m_reader, &RegisterReader::readFailed, this, &RegisterInspector::onReadFailed);
+    connect(m_reader, &IRegisterReader::readFinished, this, &RegisterInspector::onReadFinished);
+    connect(m_reader, &IRegisterReader::readFailed, this, &RegisterInspector::onReadFailed);
 }
 
-void RegisterInspector::setCliPath(const QString &path) { m_reader->setCliPath(path); }
+void RegisterInspector::setCliPath(const QString &path) { m_cliReader->setCliPath(path); }
 void RegisterInspector::setSvdDirectory(const QString &dir) { m_catalog.setSvdDirectory(dir); }
 
 bool RegisterInspector::loadCatalog()
@@ -22,6 +24,15 @@ bool RegisterInspector::loadCatalog()
     const bool ok = m_catalog.loadBoardsJson();
     if (!ok)
         m_lastError = m_catalog.errorString();
+    return ok;
+}
+
+bool RegisterInspector::loadRules()
+{
+    const QString path = m_catalog.svdDirectory() + QStringLiteral("/rules.json");
+    const bool ok = m_rules.loadRules(path);
+    if (!ok)
+        m_lastError = m_rules.errorString();
     return ok;
 }
 
@@ -225,6 +236,30 @@ const RegisterSnapshot *RegisterInspector::snapshot(int slot) const
     if (slot < 0 || slot > 1 || !m_slotFilled[slot])
         return nullptr;
     return &m_slots[slot];
+}
+
+bool RegisterInspector::diffAvailable() const
+{
+    return m_slotFilled[0] && m_slotFilled[1];
+}
+
+SnapshotDiff RegisterInspector::computeDiff() const
+{
+    if (!diffAvailable()) {
+        SnapshotDiff empty;
+        empty.comparable = false;
+        empty.incomparableReason = QStringLiteral("İki snapshot da (A ve B) alınmalı");
+        return empty;
+    }
+    return m_differ.diff(m_slots[0], m_slots[1]);
+}
+
+QList<RuleViolation> RegisterInspector::ruleViolations(int slot) const
+{
+    const RegisterSnapshot *s = snapshot(slot);
+    if (!s)
+        return {};
+    return m_rules.evaluate(s->peripherals);
 }
 
 void RegisterInspector::clearSnapshots()

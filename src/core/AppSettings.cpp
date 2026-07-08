@@ -272,6 +272,42 @@ void AppSettings::setRegisterSvdDir(const QString &dir)
     s.setValue(kKeyRegisterSvdDir, dir);
 }
 
+QString AppSettings::llmBaseUrl() const
+{
+    QSettings s;
+    return s.value(kKeyLlmBaseUrl, QString{}).toString();
+}
+
+void AppSettings::setLlmBaseUrl(const QString &url)
+{
+    QSettings s;
+    s.setValue(kKeyLlmBaseUrl, url);
+}
+
+QString AppSettings::llmApiKey() const
+{
+    QSettings s;
+    return s.value(kKeyLlmApiKey, QString{}).toString();
+}
+
+void AppSettings::setLlmApiKey(const QString &key)
+{
+    QSettings s;
+    s.setValue(kKeyLlmApiKey, key);
+}
+
+QString AppSettings::llmModel() const
+{
+    QSettings s;
+    return s.value(kKeyLlmModel, QString{}).toString();
+}
+
+void AppSettings::setLlmModel(const QString &model)
+{
+    QSettings s;
+    s.setValue(kKeyLlmModel, model);
+}
+
 void AppSettings::addCustomBoard(const BoardInfo &board)
 {
     if (board.name.trimmed().isEmpty())

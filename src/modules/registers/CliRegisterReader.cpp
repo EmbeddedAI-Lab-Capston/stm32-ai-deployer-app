@@ -1,9 +1,9 @@
-#include "RegisterReader.h"
+#include "CliRegisterReader.h"
 #include "HexDumpParser.h"
 #include "modules/flash/CliRunner.h"
 
-RegisterReader::RegisterReader(QObject *parent)
-    : QObject(parent)
+CliRegisterReader::CliRegisterReader(QObject *parent)
+    : IRegisterReader(parent)
     , m_cli(new CliRunner(this))
 {
     qRegisterMetaType<RegisterReadResult>();
@@ -12,21 +12,21 @@ RegisterReader::RegisterReader(QObject *parent)
             [this](const QString &line) { m_output << line; });
     connect(m_cli, &CliRunner::errorLine, this,
             [this](const QString &line) { m_output << line; });
-    connect(m_cli, &CliRunner::finished, this, &RegisterReader::onCliFinished);
+    connect(m_cli, &CliRunner::finished, this, &CliRegisterReader::onCliFinished);
 }
 
-void RegisterReader::setCliPath(const QString &path) { m_cli->setCliPath(path); }
-void RegisterReader::setStlinkSn(const QString &sn)  { m_stlinkSn = sn; }
-void RegisterReader::setConnectMode(const QString &mode)
+void CliRegisterReader::setCliPath(const QString &path) { m_cli->setCliPath(path); }
+void CliRegisterReader::setStlinkSn(const QString &sn)  { m_stlinkSn = sn; }
+void CliRegisterReader::setConnectMode(const QString &mode)
 {
     if (!mode.isEmpty())
         m_connectMode = mode;
 }
 
-void RegisterReader::read(const ReadPlan &plan)
+void CliRegisterReader::read(const ReadPlan &plan)
 {
     if (m_busy) {
-        emit readFailed(QStringLiteral("RegisterReader is busy"));
+        emit readFailed(QStringLiteral("CliRegisterReader is busy"));
         return;
     }
     if (m_cli->cliPath().isEmpty()) {
@@ -60,7 +60,7 @@ void RegisterReader::read(const ReadPlan &plan)
     m_cli->run(args);
 }
 
-void RegisterReader::onCliFinished(bool success, int exitCode)
+void CliRegisterReader::onCliFinished(bool success, int exitCode)
 {
     m_busy = false;
 

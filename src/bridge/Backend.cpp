@@ -38,6 +38,7 @@
 #include "modules/analysis/AnalysisManager.h"
 #include "modules/board/BoardPresets.h"
 #include "modules/registers/RegisterInspector.h"
+#include "modules/registers/RegisterAdvisor.h"
 
 namespace
 {
@@ -469,6 +470,7 @@ Backend::Backend(AppState          *state,
                  FlashManager      *flash,
                  AnalysisManager   *analysis,
                  RegisterInspector *registers,
+                 RegisterAdvisor   *advisor,
                  QObject           *parent)
     : QObject(parent)
     , m_state(state)
@@ -476,6 +478,7 @@ Backend::Backend(AppState          *state,
     , m_flash(flash)
     , m_analysis(analysis)
     , m_registers(registers)
+    , m_advisor(advisor)
 {
     m_simTimer  = new QTimer(this);
     m_simParser = new PacketParser(this);
@@ -2910,6 +2913,7 @@ void Backend::wireRegisters()
     if (!svdDir.isEmpty())
         m_registers->setSvdDirectory(svdDir);
     m_registers->loadCatalog();
+    m_registers->loadRules();   // svd/rules.json — failure just means no rule checks, not fatal
 
     connect(m_registers, &RegisterInspector::busyChanged, this, &Backend::registerChanged);
     connect(m_registers, &RegisterInspector::stageChanged, this, &Backend::registerChanged);
@@ -2925,6 +2929,14 @@ void Backend::wireRegisters()
         emit statusMessage(m);
         emit registerChanged();
     });
+
+    if (m_advisor) {
+        m_advisor->setBaseUrl(settings.llmBaseUrl());
+        m_advisor->setApiKey(settings.llmApiKey());
+        m_advisor->setModel(settings.llmModel());
+        connect(m_advisor, &RegisterAdvisor::diagnosisReady, this, &Backend::registerDiagnosisReady);
+        connect(m_advisor, &RegisterAdvisor::diagnosisFailed, this, &Backend::registerDiagnosisFailed);
+    }
 }
 
 bool Backend::registerBusy() const { return m_registers && m_registers->isBusy(); }
@@ -3072,4 +3084,249 @@ QVariantList Backend::snapshotToVariant(const RegisterSnapshot &snap) const
         peripherals.append(pm);
     }
     return peripherals;
+}
+
+bool Backend::registerDiffAvailable() const
+{
+    return m_registers && m_registers->diffAvailable();
+}
+
+QVariantMap Backend::registerDiff() const
+{
+    QVariantMap out;
+    if (!m_registers) {
+        out[QStringLiteral("comparable")] = false;
+        out[QStringLiteral("incomparableReason")] = QStringLiteral("Register Inspector hazır değil");
+        return out;
+    }
+    return diffToVariant(m_registers->computeDiff());
+}
+
+QVariantMap Backend::diffToVariant(const SnapshotDiff &diff) const
+{
+    QVariantMap out;
+    out[QStringLiteral("comparable")]          = diff.comparable;
+    out[QStringLiteral("incomparableReason")]  = diff.incomparableReason;
+    out[QStringLiteral("changedRegisterCount")] = int(diff.changedRegisters.size());
+    out[QStringLiteral("changedFieldCount")]    = diff.changedFieldCount();
+    out[QStringLiteral("takenAtA")] = diff.takenAtA.toString(Qt::ISODate);
+    out[QStringLiteral("takenAtB")] = diff.takenAtB.toString(Qt::ISODate);
+
+    QVariantList regs;
+    for (const RegisterDiff &rd : diff.changedRegisters) {
+        QVariantMap rm;
+        rm[QStringLiteral("peripheral")] = rd.peripheralName;
+        rm[QStringLiteral("register")]   = rd.registerName;
+        rm[QStringLiteral("addr")]       = regHex64(rd.addr);
+        rm[QStringLiteral("statusA")]    = regStatusText(rd.statusA);
+        rm[QStringLiteral("statusB")]    = regStatusText(rd.statusB);
+        rm[QStringLiteral("rawA")]       = regHex32(rd.rawA);
+        rm[QStringLiteral("rawB")]       = regHex32(rd.rawB);
+
+        QVariantList fields;
+        for (const FieldDiff &fd : rd.changedFields) {
+            QVariantMap fm;
+            fm[QStringLiteral("name")]        = fd.name;
+            fm[QStringLiteral("description")] = fd.description;
+            fm[QStringLiteral("bitOffset")]   = fd.bitOffset;
+            fm[QStringLiteral("bitWidth")]    = fd.bitWidth;
+            fm[QStringLiteral("valueA")]      = fd.valueA;
+            fm[QStringLiteral("valueB")]      = fd.valueB;
+            fm[QStringLiteral("enumNameA")]   = fd.enumNameA;
+            fm[QStringLiteral("enumNameB")]   = fd.enumNameB;
+            fields.append(fm);
+        }
+        rm[QStringLiteral("changedFields")] = fields;
+        regs.append(rm);
+    }
+    out[QStringLiteral("changedRegisters")] = regs;
+    return out;
+}
+
+QVariantList Backend::registerRuleViolations(int slot) const
+{
+    QVariantList out;
+    if (!m_registers)
+        return out;
+    for (const RuleViolation &v : m_registers->ruleViolations(slot)) {
+        QVariantMap m;
+        m[QStringLiteral("ruleId")]     = v.ruleId;
+        m[QStringLiteral("severity")]   = v.severity;
+        m[QStringLiteral("peripheral")] = v.peripheralName;
+        m[QStringLiteral("register")]   = v.registerName;
+        m[QStringLiteral("field")]      = v.fieldName;
+        m[QStringLiteral("message")]    = v.message;
+        out.append(m);
+    }
+    return out;
+}
+
+bool Backend::llmConfigured() const { return m_advisor && m_advisor->isConfigured(); }
+bool Backend::llmBusy() const { return m_advisor && m_advisor->isBusy(); }
+
+QVariantMap Backend::llmSettings() const
+{
+    AppSettings s;
+    QVariantMap m;
+    m[QStringLiteral("baseUrl")] = s.llmBaseUrl();
+    m[QStringLiteral("apiKey")]  = s.llmApiKey();
+    m[QStringLiteral("model")]   = s.llmModel();
+    return m;
+}
+
+void Backend::setLlmSettings(const QString &baseUrl, const QString &apiKey, const QString &model)
+{
+    AppSettings s;
+    s.setLlmBaseUrl(baseUrl);
+    s.setLlmApiKey(apiKey);
+    s.setLlmModel(model);
+    if (m_advisor) {
+        m_advisor->setBaseUrl(baseUrl);
+        m_advisor->setApiKey(apiKey);
+        m_advisor->setModel(model);
+    }
+    emit registerChanged();
+}
+
+void Backend::requestRegisterDiagnosis()
+{
+    if (!m_advisor) {
+        emit registerDiagnosisFailed(QStringLiteral("LLM katmanı kullanılamıyor"));
+        return;
+    }
+    const RegisterSnapshot *snap = m_registers ? m_registers->snapshot(m_registerViewSlot) : nullptr;
+    if (!snap) {
+        emit registerDiagnosisFailed(QStringLiteral("Önce bir snapshot alınmalı"));
+        return;
+    }
+    const SnapshotDiff diff = (m_registers && m_registers->diffAvailable())
+                                   ? m_registers->computeDiff() : SnapshotDiff{};
+    const QList<RuleViolation> violations = m_registers->ruleViolations(m_registerViewSlot);
+    m_advisor->requestDiagnosis(*snap, diff, violations);
+}
+
+bool Backend::exportRegisterSnapshotJson(const QString &path)
+{
+    if (!m_registers) {
+        emit statusMessage(QStringLiteral("Register Inspector hazır değil"));
+        return false;
+    }
+    const RegisterSnapshot *snap = m_registers->snapshot(m_registerViewSlot);
+    if (!snap) {
+        emit statusMessage(QStringLiteral("Dışa aktarılacak bir anlık görüntü yok"));
+        return false;
+    }
+
+    QJsonObject root;
+    root[QStringLiteral("schemaVersion")] = 1;
+    root[QStringLiteral("exportedAt")] = QDateTime::currentDateTime().toString(Qt::ISODate);
+
+    QJsonObject board;
+    board[QStringLiteral("name")]         = snap->boardName;
+    board[QStringLiteral("device")]       = snap->deviceName;
+    board[QStringLiteral("svdFile")]      = snap->svdFile;
+    board[QStringLiteral("supportLevel")] = snap->supportLevel;
+    root[QStringLiteral("board")] = board;
+
+    QJsonObject snapshot;
+    snapshot[QStringLiteral("slot")]        = (m_registerViewSlot == 0 ? "A" : "B");
+    snapshot[QStringLiteral("takenAt")]     = snap->takenAt.toString(Qt::ISODate);
+    snapshot[QStringLiteral("connectMode")] = snap->connectMode;
+
+    QJsonArray peripherals;
+    for (const DecodedPeripheral &p : snap->peripherals) {
+        QJsonObject pj;
+        pj[QStringLiteral("name")]        = p.name;
+        pj[QStringLiteral("description")] = p.description;
+        pj[QStringLiteral("clock")]       = clockStatusText(p.clock);
+
+        QJsonArray regs;
+        for (const DecodedRegister &r : p.registers) {
+            QJsonObject rj;
+            rj[QStringLiteral("name")]        = r.name;
+            rj[QStringLiteral("addr")]        = regHex64(r.addr);
+            rj[QStringLiteral("description")] = r.description;
+            rj[QStringLiteral("raw")]         = regHex32(r.rawValue);
+            rj[QStringLiteral("reset")]       = regHex32(r.resetValue);
+            rj[QStringLiteral("changed")]     = r.changedFromReset;
+            rj[QStringLiteral("status")]      = regStatusText(r.status);
+
+            QJsonArray fields;
+            for (const DecodedField &f : r.fields) {
+                QJsonObject fj;
+                fj[QStringLiteral("name")]        = f.name;
+                fj[QStringLiteral("description")] = f.description;
+                fj[QStringLiteral("bitOffset")]   = f.bitOffset;
+                fj[QStringLiteral("bitWidth")]    = f.bitWidth;
+                fj[QStringLiteral("value")]       = double(f.value);
+                fj[QStringLiteral("resetValue")]  = double(f.resetValue);
+                fj[QStringLiteral("enumName")]    = f.enumName;
+                fj[QStringLiteral("changed")]     = f.changed;
+                fields.append(fj);
+            }
+            rj[QStringLiteral("fields")] = fields;
+            regs.append(rj);
+        }
+        pj[QStringLiteral("registers")] = regs;
+        peripherals.append(pj);
+    }
+    snapshot[QStringLiteral("peripherals")] = peripherals;
+    root[QStringLiteral("snapshot")] = snapshot;
+
+    QJsonObject diffObj;
+    const bool diffPresent = m_registers->diffAvailable();
+    diffObj[QStringLiteral("present")] = diffPresent;
+    if (diffPresent) {
+        const SnapshotDiff diff = m_registers->computeDiff();
+        diffObj[QStringLiteral("takenAtA")] = diff.takenAtA.toString(Qt::ISODate);
+        diffObj[QStringLiteral("takenAtB")] = diff.takenAtB.toString(Qt::ISODate);
+        QJsonArray changedRegs;
+        for (const RegisterDiff &rd : diff.changedRegisters) {
+            QJsonObject rdj;
+            rdj[QStringLiteral("peripheral")] = rd.peripheralName;
+            rdj[QStringLiteral("register")]   = rd.registerName;
+            rdj[QStringLiteral("addr")]       = regHex64(rd.addr);
+            rdj[QStringLiteral("statusA")]    = regStatusText(rd.statusA);
+            rdj[QStringLiteral("statusB")]    = regStatusText(rd.statusB);
+            QJsonArray fields;
+            for (const FieldDiff &fd : rd.changedFields) {
+                QJsonObject fdj;
+                fdj[QStringLiteral("name")]        = fd.name;
+                fdj[QStringLiteral("description")] = fd.description;
+                fdj[QStringLiteral("before")] = fd.enumNameA.isEmpty()
+                    ? QJsonValue(double(fd.valueA)) : QJsonValue(fd.enumNameA);
+                fdj[QStringLiteral("after")] = fd.enumNameB.isEmpty()
+                    ? QJsonValue(double(fd.valueB)) : QJsonValue(fd.enumNameB);
+                fields.append(fdj);
+            }
+            rdj[QStringLiteral("changedFields")] = fields;
+            changedRegs.append(rdj);
+        }
+        diffObj[QStringLiteral("changedRegisters")] = changedRegs;
+    } else {
+        diffObj[QStringLiteral("changedRegisters")] = QJsonArray();
+    }
+    root[QStringLiteral("diff")] = diffObj;
+
+    QJsonArray violations;
+    for (const RuleViolation &v : m_registers->ruleViolations(m_registerViewSlot)) {
+        QJsonObject vj;
+        vj[QStringLiteral("ruleId")]     = v.ruleId;
+        vj[QStringLiteral("severity")]   = v.severity;
+        vj[QStringLiteral("peripheral")] = v.peripheralName;
+        vj[QStringLiteral("register")]   = v.registerName;
+        vj[QStringLiteral("field")]      = v.fieldName;
+        vj[QStringLiteral("message")]    = v.message;
+        violations.append(vj);
+    }
+    root[QStringLiteral("ruleViolations")] = violations;
+
+    const QString outPath = normalizedLocalPath(path, ".json");
+    QFile file(outPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        emit statusMessage(QStringLiteral("JSON yazılamadı: ") + file.errorString());
+        return false;
+    }
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    return true;
 }

@@ -18,6 +18,7 @@
 #include "modules/analysis/AnalysisManager.h"
 #include "modules/simulation/FactorySimulator.h"
 #include "modules/registers/RegisterInspector.h"
+#include "modules/registers/RegisterAdvisor.h"
 #include "bridge/Backend.h"
 #include "ui/SplashScreen.h"
 
@@ -88,8 +89,11 @@ int main(int argc, char *argv[])
     // Register Inspector orchestrator (owns SVD catalog + reader). Backend is the
     // only QML-facing facade, so the inspector is handed to it, not to QML.
     auto *registers = new RegisterInspector(&app);
+    // Optional LLM diagnosis layer (Bolum 1c) — inert until Ayarlar provides a
+    // base URL + API key; every other register feature works without it.
+    auto *advisor = new RegisterAdvisor(&app);
 
-    auto *backend = new Backend(appState, serial, flash, analysis, registers, &app);
+    auto *backend = new Backend(appState, serial, flash, analysis, registers, advisor, &app);
 
     // Factory Simulation engine (synthetic large-factory data for the demo mode).
     auto *factorySim = new FactorySimulator(&app);

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import STM32AiDeployer
 
 // Register Inspector screen: live SWD register snapshot of the active board.
@@ -151,12 +152,34 @@ Item {
             AppButton {
                 text: "Diff"
                 variant: "secondary"
-                enabled: false   // Faz 5
+                enabled: {
+                    root._snapRev   // dependency: re-evaluate when snapshots change
+                    return root._hasBackend && backend.registerDiffAvailable()
+                }
+                onClicked: {
+                    var d = backend.registerDiff()
+                    diffSummaryText.text = !d.comparable
+                        ? ("Karşılaştırılamıyor: " + d.incomparableReason)
+                        : (d.changedRegisterCount + " register, " + d.changedFieldCount
+                           + " field değişmiş (A: " + d.takenAtA + " · B: " + d.takenAtB + ").\n\n"
+                           + "Tam görsel diff tablosu ayrı bir geçişte gelecek — şimdilik "
+                           + "\"JSON Dışa Aktar\" ile A/B farkının tamamını (field bazlı, "
+                           + "before/after) bir dosyaya alabilirsin.")
+                    diffSummaryPopup.open()
+                }
             }
             AppButton {
                 text: "JSON Dışa Aktar"
                 variant: "ghost"
-                enabled: false   // Faz 5
+                enabled: {
+                    root._snapRev
+                    return !root._busy && root._hasBackend
+                           && backend.registerSnapshotInfo(root._viewSlot).valid
+                }
+                onClicked: {
+                    exportDialog.currentFile = "register_snapshot_" + root._viewSlot + ".json"
+                    exportDialog.open()
+                }
             }
         }
 
@@ -442,6 +465,72 @@ Item {
                     }
                 }
             }
+        }
+    }
+
+    FileDialog {
+        id: exportDialog
+        title: "Register snapshot JSON olarak kaydet"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["JSON dosyası (*.json)", "Tüm dosyalar (*)"]
+        onAccepted: {
+            var path = String(selectedFile).replace("file:///", "")
+            var ok = root._hasBackend && backend.exportRegisterSnapshotJson(path)
+            exportResultText.text = ok
+                ? ("Kaydedildi:\n" + path)
+                : "Kaydetme başarısız."
+            exportResultTitle.text = ok ? "Kaydedildi" : "Kaydetme başarısız"
+            exportResultTitle.color = ok ? Theme.success : Theme.danger
+            exportResultPopup.open()
+        }
+    }
+
+    Popup {
+        id: exportResultPopup
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: 420
+        padding: Theme.spacingLg
+        background: Rectangle { color: Theme.surface; radius: Theme.radiusLg; border.color: Theme.border }
+        contentItem: ColumnLayout {
+            spacing: Theme.spacingMd
+            Text {
+                id: exportResultTitle
+                font.family: Theme.fontFamily; font.pixelSize: Theme.fontMd; font.weight: Font.DemiBold
+            }
+            Text {
+                id: exportResultText
+                Layout.fillWidth: true
+                color: Theme.textMuted
+                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                wrapMode: Text.WrapAnywhere
+            }
+            AppButton { Layout.alignment: Qt.AlignRight; text: "Tamam"; onClicked: exportResultPopup.close() }
+        }
+    }
+
+    Popup {
+        id: diffSummaryPopup
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: 460
+        padding: Theme.spacingLg
+        background: Rectangle { color: Theme.surface; radius: Theme.radiusLg; border.color: Theme.border }
+        contentItem: ColumnLayout {
+            spacing: Theme.spacingMd
+            Text {
+                text: "Diff Özeti (A ↔ B)"
+                color: Theme.text
+                font.family: Theme.fontFamily; font.pixelSize: Theme.fontMd; font.weight: Font.DemiBold
+            }
+            Text {
+                id: diffSummaryText
+                Layout.fillWidth: true
+                color: Theme.textMuted
+                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                wrapMode: Text.WordWrap
+            }
+            AppButton { Layout.alignment: Qt.AlignRight; text: "Tamam"; onClicked: diffSummaryPopup.close() }
         }
     }
 }

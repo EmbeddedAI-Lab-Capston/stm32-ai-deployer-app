@@ -12,6 +12,14 @@ Popup {
     padding: 0
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+    onOpened: {
+        if (typeof backend === "undefined" || !backend) return
+        var s = backend.llmSettings()
+        llmUrlField.text = s.baseUrl || ""
+        llmKeyField.text = s.apiKey || ""
+        llmModelField.text = s.model || ""
+    }
+
     Overlay.modal: Rectangle { color: Theme.alpha("#000000", 0.55) }
 
     background: Rectangle {
@@ -133,6 +141,70 @@ Popup {
             }
         }
 
+        // ── LLM tanılama (opsiyonel, Register Inspector) ────────────────────
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.margins: Theme.spacingLg
+            spacing: Theme.spacingSm
+
+            Text {
+                text: "LLM Tanılama (opsiyonel)"
+                color: Theme.text
+                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm; font.weight: Font.DemiBold
+            }
+            Text {
+                text: "Register Inspector'da diff/kural ihlallerinden hipotez üretmek için; boş bırakılırsa özellik kapalı kalır, aracın geri kalanı etkilenmez."
+                color: Theme.textFaint; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                wrapMode: Text.WordWrap; Layout.fillWidth: true
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacingSm
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Text { text: "Base URL"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
+                    TextField {
+                        id: llmUrlField
+                        Layout.fillWidth: true
+                        placeholderText: "https://api.openai.com/v1"
+                        color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                        background: Rectangle { radius: Theme.radiusSm; color: Theme.surfaceRaised; border.color: Theme.border }
+                        leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                    }
+                }
+                ColumnLayout {
+                    Layout.preferredWidth: 160
+                    spacing: 2
+                    Text { text: "Model"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
+                    TextField {
+                        id: llmModelField
+                        Layout.fillWidth: true
+                        placeholderText: "gpt-4o-mini"
+                        color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                        background: Rectangle { radius: Theme.radiusSm; color: Theme.surfaceRaised; border.color: Theme.border }
+                        leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                    }
+                }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
+                Text { text: "API Key"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs }
+                TextField {
+                    id: llmKeyField
+                    Layout.fillWidth: true
+                    echoMode: TextInput.Password
+                    placeholderText: "sk-…"
+                    color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
+                    background: Rectangle { radius: Theme.radiusSm; color: Theme.surfaceRaised; border.color: Theme.border }
+                    leftPadding: Theme.spacingSm; rightPadding: Theme.spacingSm
+                }
+            }
+        }
+
         // ── Footer ────────────────────────────────────────────────────────
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
 
@@ -150,7 +222,14 @@ Popup {
             }
             Item { Layout.fillWidth: true }
             AppButton { text: "Kapat"; variant: "ghost"; onClicked: root.close() }
-            AppButton { text: "Kaydet"; onClicked: root.close() }
+            AppButton {
+                text: "Kaydet"
+                onClicked: {
+                    if (typeof backend !== "undefined" && backend)
+                        backend.setLlmSettings(llmUrlField.text, llmKeyField.text, llmModelField.text)
+                    root.close()
+                }
+            }
         }
     }
 

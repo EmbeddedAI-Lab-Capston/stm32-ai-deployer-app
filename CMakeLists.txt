@@ -19,6 +19,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     QuickControls2
     QuickWidgets
     Concurrent
+    Network
 )
 
 if(COMMAND qt_policy)
@@ -89,11 +90,20 @@ set(PROJECT_SOURCES
     src/modules/registers/HexDumpParser.cpp
     src/modules/registers/ReadPlanBuilder.h
     src/modules/registers/ReadPlanBuilder.cpp
-    src/modules/registers/RegisterReader.h
-    src/modules/registers/RegisterReader.cpp
+    src/modules/registers/IRegisterReader.h
+    src/modules/registers/CliRegisterReader.h
+    src/modules/registers/CliRegisterReader.cpp
     src/modules/registers/RegisterSnapshot.h
     src/modules/registers/RegisterDecoder.h
     src/modules/registers/RegisterDecoder.cpp
+    src/modules/registers/RegisterDiff.h
+    src/modules/registers/SnapshotDiffer.h
+    src/modules/registers/SnapshotDiffer.cpp
+    src/modules/registers/RegisterRuleModel.h
+    src/modules/registers/RuleEngine.h
+    src/modules/registers/RuleEngine.cpp
+    src/modules/registers/RegisterAdvisor.h
+    src/modules/registers/RegisterAdvisor.cpp
     src/modules/registers/RegisterInspector.h
     src/modules/registers/RegisterInspector.cpp
 
@@ -196,6 +206,7 @@ target_link_libraries(STM32AiDeployer PRIVATE
     Qt6::QuickControls2
     Qt6::QuickWidgets
     Qt6::Concurrent
+    Qt6::Network
 )
 
 target_include_directories(STM32AiDeployer PRIVATE

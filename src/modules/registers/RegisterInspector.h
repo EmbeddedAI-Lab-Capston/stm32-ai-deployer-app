@@ -2,6 +2,10 @@
 #include "RegisterSnapshot.h"
 #include "ReadPlanBuilder.h"
 #include "RegisterDecoder.h"
+#include "RegisterDiff.h"
+#include "SnapshotDiffer.h"
+#include "RegisterRuleModel.h"
+#include "RuleEngine.h"
 #include "SvdCatalog.h"
 #include "modules/board/BoardPresets.h"
 
@@ -11,11 +15,12 @@
 #include <QString>
 #include <QStringList>
 
-class RegisterReader;
+class IRegisterReader;
+class CliRegisterReader;
 
 // ── RegisterInspector ──────────────────────────────────────────────────────
 // Orchestrator/manager for the Register feature (plan Bolum 5.1). Owns the
-// SvdCatalog + RegisterReader and drives the snapshot state machine:
+// SvdCatalog + IRegisterReader and drives the snapshot state machine:
 //   idle -> load-svd -> read-rcc -> read-registers -> decode -> ready
 // Holds two snapshot slots (A/B). Created in main.cpp and handed to Backend;
 // QML only ever talks to Backend (facade rule).
@@ -28,6 +33,7 @@ public:
     void setCliPath(const QString &path);
     void setSvdDirectory(const QString &dir);   // optional; default exe/svd
     bool loadCatalog();                          // read boards.json
+    bool loadRules();                            // read rules.json (same dir as SVDs)
     QString lastError() const { return m_lastError; }
 
     // Kick off (async) parse of a board's SVD. Emits catalogReady(board) when the
@@ -44,6 +50,15 @@ public:
 
     const RegisterSnapshot *snapshot(int slot) const;
     void clearSnapshots();
+
+    // A/B field-level diff (plan Bolum 1a). Both slots must be filled and
+    // from the same board/SVD; otherwise SnapshotDiff.comparable is false.
+    bool         diffAvailable() const;
+    SnapshotDiff computeDiff() const;
+
+    // Deterministic (non-LLM) consistency checks against a decoded slot
+    // (plan Bolum 1b). Empty if the slot is empty or no rules matched.
+    QList<RuleViolation> ruleViolations(int slot) const;
 
     bool    isBusy() const { return m_busy; }
     QString stage() const { return m_stage; }
@@ -69,9 +84,12 @@ private:
     void setStage(const QString &stage);
 
     SvdCatalog       m_catalog;
-    RegisterReader  *m_reader = nullptr;
+    IRegisterReader  *m_reader = nullptr;      // used for all orchestration
+    CliRegisterReader *m_cliReader = nullptr;  // same object; kept for setCliPath() only
     ReadPlanBuilder  m_builder;
     RegisterDecoder  m_decoder;
+    SnapshotDiffer   m_differ;
+    RuleEngine       m_rules;
 
     RegisterSnapshot m_slots[2];
     bool             m_slotFilled[2] = { false, false };

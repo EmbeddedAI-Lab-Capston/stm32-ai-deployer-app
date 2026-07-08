@@ -1,0 +1,54 @@
+{
+  "_comment": "Data-driven consistency rules for Register Inspector's rule engine (docs/register_inspector_plan.md Bolum 1b). Field/register names are matched against SVD names, so a rule only fires for peripherals that actually have that exact register/field — no per-family code branches. All names below were verified against the shipped STM32F407.svd and STM32H723.svd (see docs/register_inspector_findings.md-style verification in the Bolum 1 implementation notes).",
+  "_scopeNote": "MVP is deliberately limited to within-peripheral field/register relationships. Cross-peripheral rules (e.g. 'DMA stream enabled but the requesting peripheral's DMA-request bit is off', or GPIO alternate-function-vs-peripheral-usage consistency) are NOT included: STM32 DMA stream registers are per-stream (S0CR..S7CR on F4/H7-style DMA), and a single exact-name rule would silently only ever check stream 0 — misleading rather than useful. This needs pattern/wildcard register-name matching, which the engine does not support yet. Left as documented future work.",
+  "rules": [
+    {
+      "id": "usart_enabled_no_baud",
+      "severity": "warning",
+      "groupContains": "USART",
+      "message": "{peripheral}: {ifField}=1 ama {thenRegister}=0 (baud rate ayarlanmamış olabilir)",
+      "condition": {
+        "type": "fieldNonZeroImpliesRegisterNonZero",
+        "ifRegisterName": "CR1",
+        "ifFieldName": "UE",
+        "thenRegisterName": "BRR"
+      }
+    },
+    {
+      "id": "timer_enabled_no_reload",
+      "severity": "warning",
+      "groupContains": "TIM",
+      "message": "{peripheral}: {ifField}=1 (sayaç çalışıyor) ama {thenRegister}=0 (auto-reload sıfır — sayaç anında taşabilir)",
+      "condition": {
+        "type": "fieldNonZeroImpliesRegisterNonZero",
+        "ifRegisterName": "CR1",
+        "ifFieldName": "CEN",
+        "thenRegisterName": "ARR"
+      }
+    },
+    {
+      "id": "i2c_enabled_no_timing_v2",
+      "severity": "warning",
+      "groupContains": "I2C",
+      "message": "{peripheral}: {ifField}=1 ama {thenRegister}=0 (I2Cv2 zamanlama ayarlanmamış olabilir)",
+      "condition": {
+        "type": "fieldNonZeroImpliesRegisterNonZero",
+        "ifRegisterName": "CR1",
+        "ifFieldName": "PE",
+        "thenRegisterName": "TIMINGR"
+      }
+    },
+    {
+      "id": "i2c_enabled_no_timing_v1",
+      "severity": "warning",
+      "groupContains": "I2C",
+      "message": "{peripheral}: {ifField}=1 ama {thenRegister}=0 (I2Cv1 clock control ayarlanmamış olabilir)",
+      "condition": {
+        "type": "fieldNonZeroImpliesRegisterNonZero",
+        "ifRegisterName": "CR1",
+        "ifFieldName": "PE",
+        "thenRegisterName": "CCR"
+      }
+    }
+  ]
+}

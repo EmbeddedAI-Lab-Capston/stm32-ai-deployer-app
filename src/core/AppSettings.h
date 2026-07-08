@@ -89,6 +89,18 @@ public:
     QString registerSvdDir() const;
     void    setRegisterSvdDir(const QString &dir);
 
+    // Optional LLM diagnosis layer (Register Inspector Bolum 1c). Provider-
+    // agnostic: any OpenAI-compatible chat/completions endpoint. Empty
+    // baseUrl/apiKey means the feature is off — RegisterAdvisor treats that
+    // as "not configured", not an error. Stored as plain QSettings text,
+    // same as every other credential-free setting in this app; no encryption.
+    QString llmBaseUrl() const;
+    void    setLlmBaseUrl(const QString &url);
+    QString llmApiKey() const;
+    void    setLlmApiKey(const QString &key);
+    QString llmModel() const;
+    void    setLlmModel(const QString &model);
+
 private:
     static constexpr auto kKeyCliPath          = "programmer/cli_path";
     static constexpr auto kKeyComPort          = "serial/last_com_port";
@@ -110,4 +122,7 @@ private:
     static constexpr auto kArrayCustomBoards   = "boards/custom";
     static constexpr auto kKeyRegisterPeripherals = "registers/last_peripherals";
     static constexpr auto kKeyRegisterSvdDir   = "registers/svd_dir";
+    static constexpr auto kKeyLlmBaseUrl       = "llm/base_url";
+    static constexpr auto kKeyLlmApiKey        = "llm/api_key";
+    static constexpr auto kKeyLlmModel         = "llm/model";
 };

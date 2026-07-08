@@ -19,7 +19,9 @@ class PacketParser;
 class SerialSimulator;
 class PipelineRunner;
 class RegisterInspector;
+class RegisterAdvisor;
 struct RegisterSnapshot;
+struct SnapshotDiff;
 class QProcess;
 
 // ── Backend ─────────────────────────────────────────────────────────────────
@@ -76,6 +78,7 @@ public:
                      FlashManager      *flash,
                      AnalysisManager   *analysis,
                      RegisterInspector *registers,
+                     RegisterAdvisor   *advisor,
                      QObject           *parent = nullptr);
 
     // ── Tools ─────────────────────────────────────────────────────────────
@@ -193,6 +196,37 @@ public:
     Q_INVOKABLE void setRegisterViewSlot(int slot);
     Q_INVOKABLE void clearRegisterSnapshots();
 
+    // ── Register diff (Bolum 1a) ─────────────────────────────────────────
+    // True once both Snapshot A and B are filled (regardless of whether they
+    // actually differ) — used to enable the "Diff" button.
+    Q_INVOKABLE bool registerDiffAvailable() const;
+    // {comparable, incomparableReason, changedRegisterCount, changedFieldCount,
+    //  changedRegisters:[{peripheral,register,addr,statusA,statusB,rawA,rawB,
+    //    changedFields:[{name,description,bitOffset,bitWidth,valueA,valueB,enumNameA,enumNameB}]}]}
+    Q_INVOKABLE QVariantMap registerDiff() const;
+
+    // ── Register rule engine (Bolum 1b) ──────────────────────────────────
+    // Deterministic (non-LLM) consistency checks against a decoded slot.
+    // [{ruleId,severity,peripheral,register,field,message}]
+    Q_INVOKABLE QVariantList registerRuleViolations(int slot) const;
+
+    // ── Optional LLM diagnosis (Bolum 1c) ────────────────────────────────
+    // False whenever base URL or API key is unset — UI should hide/disable
+    // the diagnosis panel in that case rather than let the user hit "failed".
+    Q_INVOKABLE bool llmConfigured() const;
+    Q_INVOKABLE bool llmBusy() const;
+    Q_INVOKABLE QVariantMap llmSettings() const;   // {baseUrl, apiKey, model}
+    Q_INVOKABLE void setLlmSettings(const QString &baseUrl, const QString &apiKey,
+                                    const QString &model);
+    // Sends the current diff (if both slots filled) + rule violations for the
+    // active view slot. Result arrives via registerDiagnosisReady/Failed.
+    Q_INVOKABLE void requestRegisterDiagnosis();
+
+    // ── JSON export (Bolum 1d) ───────────────────────────────────────────
+    // Exports the active view slot, plus diff + rule violations when both
+    // slots are available. See docs/register_export_schema.md.
+    Q_INVOKABLE bool exportRegisterSnapshotJson(const QString &path);
+
 signals:
     void toolPathsChanged();
     void scanningChanged();
@@ -213,6 +247,8 @@ signals:
     void registerModelChanged();
     void registerCatalogReady(const QString &boardName);
     void registerSnapshotReady(int slot);
+    void registerDiagnosisReady(const QVariantList &hypotheses);
+    void registerDiagnosisFailed(const QString &message);
 
 private:
     void appendMonitorLine(const QString &text, const QString &type);
@@ -231,6 +267,7 @@ private:
     void wireAnalysis();
     void wireRegisters();
     QVariantList snapshotToVariant(const RegisterSnapshot &snap) const;
+    QVariantMap  diffToVariant(const SnapshotDiff &diff) const;
 
     // simulation helpers
     void tickSimulation();
@@ -242,6 +279,7 @@ private:
     AnalysisManager   *m_analysis = nullptr;
     ToolDetector      *m_detector = nullptr;
     RegisterInspector *m_registers = nullptr;
+    RegisterAdvisor   *m_advisor = nullptr;
     int                m_registerViewSlot = 0;   // which slot registerModel shows
 
     // monitor
