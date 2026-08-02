@@ -13,7 +13,14 @@
         "DMA1", "DMA2", "USART1", "USART2", "USART3",
         "I2C1", "SPI1", "EXTI"
       ],
-      "rccOverrides": {}
+      "rccOverrides": {},
+      "debug": {
+        "gdb": {
+          "support": "stable",
+          "notes": "",
+          "verifiedOn": ""
+        }
+      }
     },
     {
       "match": { "names": ["STM32H7", "NUCLEO-H7", "NUCLEO-H723ZG"], "deviceIds": ["0x483"] },
@@ -26,7 +33,14 @@
         "DMA1", "DMA2", "DMAMUX1", "USART1", "USART2", "USART3", "LPUART1",
         "I2C1", "SPI1", "SAI1", "EXTI"
       ],
-      "rccOverrides": {}
+      "rccOverrides": {},
+      "debug": {
+        "gdb": {
+          "support": "stable",
+          "notes": "ST-Link VCP (UART/COM port) durur SWD oturumu acikken (ST-Link FW V3J16M9); hedef cekirdek etkilenmez (DHCSR S_HALT=0, S_RETIRE_ST=1 boyunca dogrulandi) - bu ST-Link probe kaynagi paylasimi, cekirdek durmasi degil. UART, link kapanir kapanmaz aninda devam eder. Ayrica: gdbserver sureci duzgun kapandiktan (tasklist ile dogrulandi) sonra bile STM32_Programmer_CLI bir sureligine DEV_USB_COMM_ERR verebilir; fiziksel USB replug ile aninda duzelir - ST-Link firmware/surucu tuhafligi, kod tarafinda kaynak sizintisi degil.",
+          "verifiedOn": "2026-08-02 NUCLEO-H723ZG ST-Link SN 004D003B3235511837333439 FW V3J16M9"
+        }
+      }
     },
     {
       "match": { "names": ["STM32N6", "NUCLEO-N657X0-Q", "STM32N657"], "deviceIds": [] },
@@ -40,7 +54,14 @@
         "RCC", "GPIOA", "GPIOB", "GPDMA", "HPDMA",
         "USART1", "LPUART1", "I2C1", "SPI1", "SAI1", "EXTI"
       ],
-      "rccOverrides": {}
+      "rccOverrides": {},
+      "debug": {
+        "gdb": {
+          "support": "experimental",
+          "notes": "TrustZone/RIF: guvenli RAM bolgeleri non-secure DAP'tan okunamaz; okuma hatasi olarak yuzeye cikar, sessiz sifir DONMEZ. LRUN boot sonrasi -g attach dogrulanmadi.",
+          "verifiedOn": ""
+        }
+      }
     }
   ]
 }

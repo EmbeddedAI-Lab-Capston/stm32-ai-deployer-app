@@ -20,6 +20,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     QuickWidgets
     Concurrent
     Network
+    Test
 )
 
 if(COMMAND qt_policy)
@@ -106,6 +107,16 @@ set(PROJECT_SOURCES
     src/modules/registers/RegisterAdvisor.cpp
     src/modules/registers/RegisterInspector.h
     src/modules/registers/RegisterInspector.cpp
+
+    src/modules/debug/DebugLinkTypes.h
+    src/modules/debug/GdbRspCodec.h
+    src/modules/debug/GdbRspCodec.cpp
+    src/modules/debug/GdbServerProcess.h
+    src/modules/debug/GdbServerProcess.cpp
+    src/modules/debug/DebugLinkWorker.h
+    src/modules/debug/DebugLinkWorker.cpp
+    src/modules/debug/DebugLink.h
+    src/modules/debug/DebugLink.cpp
 
     src/modules/simulation/FactorySimulator.h
     src/modules/simulation/FactorySimulator.cpp
@@ -237,6 +248,14 @@ add_custom_command(TARGET STM32AiDeployer POST_BUILD
         "$<TARGET_FILE_DIR:STM32AiDeployer>/svd"
     COMMENT "Copying SVD register definitions to build directory"
 )
+
+# Unit tests for the pure classes (no Qt event loop / socket / process
+# dependency) — separate target, does not slow down or affect the app build.
+option(STM32AID_BUILD_TESTS "Build unit tests" ON)
+if(STM32AID_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 # Deploy Qt runtime DLLs + QML plugins next to the executable so the app runs
 # standalone (windeployqt is required for the QtQuick/Controls/Dialogs plugins).

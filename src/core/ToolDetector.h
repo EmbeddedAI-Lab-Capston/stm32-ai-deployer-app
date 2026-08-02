@@ -32,6 +32,14 @@ public:
     static QString detectStm32Programmer();
     static QString detectXCubeAI();
 
+    // ST-LINK_gdbserver.exe (Degisken Izleyici / faster Register Inspector backend)
+    static QString detectGdbServer();
+    // arm-none-eabi-nm.exe (Degisken Izleyici symbol layer)
+    static QString detectArmNm();
+    // Directory (not the exe itself) STM32_Programmer_CLI.exe lives in — this
+    // is what ST-LINK_gdbserver.exe's -cp argument expects.
+    static QString detectCubeProgrammerBinDir();
+
     // Run the executable with args, capture first line of output. Returns
     // empty string on failure or timeout.
     static QString queryVersion(const QString &path,

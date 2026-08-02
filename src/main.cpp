@@ -13,12 +13,14 @@
 
 #include "core/AppState.h"
 #include "core/AppSettings.h"
+#include "core/ToolDetector.h"
 #include "modules/serial/SerialManager.h"
 #include "modules/flash/FlashManager.h"
 #include "modules/analysis/AnalysisManager.h"
 #include "modules/simulation/FactorySimulator.h"
 #include "modules/registers/RegisterInspector.h"
 #include "modules/registers/RegisterAdvisor.h"
+#include "modules/debug/DebugLink.h"
 #include "bridge/Backend.h"
 #include "ui/SplashScreen.h"
 
@@ -97,6 +99,37 @@ int main(int argc, char *argv[])
 
     // Factory Simulation engine (synthetic large-factory data for the demo mode).
     auto *factorySim = new FactorySimulator(&app);
+
+    // Shared ST-Link debug connection (GDB Remote Serial Protocol over
+    // ST-LINK_gdbserver.exe). One instance for the whole app — Register
+    // Inspector's GDB backend (Faz 2) and the Variable Watcher (Faz 4) both
+    // retain()/release() this same link instead of opening their own
+    // (docs/variable_watcher_plan.md Bolum 2.1, 4.6).
+    auto *debugLink = new DebugLink(&app);
+    {
+        AppSettings settings;
+
+        QString gdbServerPath = settings.gdbServerPath();
+        if (gdbServerPath.isEmpty() || !QFile::exists(gdbServerPath)) {
+            gdbServerPath = ToolDetector::detectGdbServer();
+            if (!gdbServerPath.isEmpty())
+                settings.setGdbServerPath(gdbServerPath);
+        }
+
+        QString cubeProgrammerBinDir = settings.cubeProgrammerBinDir();
+        if (cubeProgrammerBinDir.isEmpty() || !QDir(cubeProgrammerBinDir).exists()) {
+            cubeProgrammerBinDir = ToolDetector::detectCubeProgrammerBinDir();
+            if (!cubeProgrammerBinDir.isEmpty())
+                settings.setCubeProgrammerBinDir(cubeProgrammerBinDir);
+        }
+
+        debugLink->setPaths(gdbServerPath, cubeProgrammerBinDir);
+    }
+
+    // Process cleanup at exit is unconditional — shutdownNow() ignores the
+    // reference count so a leaked retain() can never strand a gdbserver
+    // process holding the ST-Link (plan Bolum 4.4 point 5, 4.6).
+    QObject::connect(&app, &QApplication::aboutToQuit, debugLink, &DebugLink::shutdownNow);
 
     // ── QML engine ─────────────────────────────────────────────────────────
     // The QML window is the primary window; closing the transient splash must

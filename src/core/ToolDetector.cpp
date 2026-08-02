@@ -39,10 +39,13 @@ void ToolDetector::detectAll()
         };
 
         const QList<Spec> specs = {
-            { "arm-none-eabi-gcc",    "tools/gcc_path",           &detectGcc           },
-            { "make",                 "tools/make_path",           &detectMake          },
-            { "STM32_Programmer_CLI", "programmer/cli_path",       &detectStm32Programmer },
-            { "stedgeai (X-CUBE-AI)", "tools/xcubeai_cli_path",   &detectXCubeAI       },
+            { "arm-none-eabi-gcc",     "tools/gcc_path",              &detectGcc                  },
+            { "make",                  "tools/make_path",             &detectMake                 },
+            { "STM32_Programmer_CLI",  "programmer/cli_path",         &detectStm32Programmer      },
+            { "stedgeai (X-CUBE-AI)",  "tools/xcubeai_cli_path",      &detectXCubeAI              },
+            { "ST-LINK_gdbserver",     "tools/gdbserver_path",        &detectGdbServer            },
+            { "arm-none-eabi-nm",      "tools/arm_nm_path",           &detectArmNm                },
+            { "STM32CubeProgrammer bin dir", "tools/cubeprogrammer_bin_dir", &detectCubeProgrammerBinDir },
         };
 
         for (const Spec &spec : specs) {
@@ -188,6 +191,59 @@ QString ToolDetector::detectXCubeAI()
             if (fileExists(p)) return p;
         }
     }
+
+    return QString();
+}
+
+QString ToolDetector::detectGdbServer()
+{
+    // 1. Available on PATH?
+    {
+        QProcess test;
+        test.start("ST-LINK_gdbserver", {"--version"});
+        if (test.waitForFinished(2000) && test.exitCode() == 0)
+            return QStringLiteral("ST-LINK_gdbserver");
+    }
+
+    // 2. STM32CubeIDE plugin directory
+    //    com.st.stm32cube.ide.mcu.externaltools.stlink-gdb-server.win32_*/tools/bin/
+    const QString found = findInCubeIDE("ST-LINK_gdbserver.exe");
+    return found;
+}
+
+QString ToolDetector::detectArmNm()
+{
+    // 1. Available on PATH?
+    {
+        QProcess test;
+        test.start("arm-none-eabi-nm", {"--version"});
+        if (test.waitForFinished(2000) && test.exitCode() == 0)
+            return QStringLiteral("arm-none-eabi-nm");
+    }
+
+    // 2. STM32CubeIDE plugin directory
+    //    com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*.win32_*/tools/bin/
+    const QString found = findInCubeIDE("arm-none-eabi-nm.exe");
+    return found;
+}
+
+QString ToolDetector::detectCubeProgrammerBinDir()
+{
+    // Search independently of detectStm32Programmer(): gdbserver's -cp wants
+    // a directory, and on some machines the CLI only lives inside the
+    // STM32CubeIDE plugin tree (com.st.stm32cube.ide.mcu.externaltools
+    // .cubeprogrammer.win32_*/tools/bin/), never on PATH or under
+    // "Program Files".
+    const QString cliInPlugin = findInCubeIDE("STM32_Programmer_CLI.exe");
+    if (!cliInPlugin.isEmpty())
+        return QFileInfo(cliInPlugin).absolutePath();
+
+    const QStringList candidates = {
+        "C:/Program Files/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin",
+        "C:/Program Files (x86)/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin",
+    };
+    for (const QString &dir : candidates)
+        if (QDir(dir).exists()) return dir;
 
     return QString();
 }

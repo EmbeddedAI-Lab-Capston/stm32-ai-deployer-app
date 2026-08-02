@@ -66,6 +66,11 @@ bool SvdCatalog::loadBoardsJson()
         for (auto it = rcc.begin(); it != rcc.end(); ++it)
             m.rccOverrides.insert(it.key(), it.value().toString());
 
+        const QJsonObject gdb = o.value(QStringLiteral("debug")).toObject()
+                                  .value(QStringLiteral("gdb")).toObject();
+        m.gdbSupport = gdb.value(QStringLiteral("support")).toString();
+        m.gdbNotes   = gdb.value(QStringLiteral("notes")).toString();
+
         if (m.isValid())
             m_mappings.append(m);
     }

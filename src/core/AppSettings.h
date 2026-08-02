@@ -101,6 +101,23 @@ public:
     QString llmModel() const;
     void    setLlmModel(const QString &model);
 
+    // ST-LINK_gdbserver.exe full path (Degisken Izleyici / Register Inspector
+    // GDB backend, docs/variable_watcher_plan.md Bolum 4.7)
+    QString gdbServerPath() const;
+    void    setGdbServerPath(const QString &path);
+
+    // arm-none-eabi-nm.exe full path (Degisken Izleyici symbol layer)
+    QString armNmPath() const;
+    void    setArmNmPath(const QString &path);
+
+    // Directory containing STM32_Programmer_CLI.exe — passed as gdbserver's -cp
+    QString cubeProgrammerBinDir() const;
+    void    setCubeProgrammerBinDir(const QString &dir);
+
+    // gdbserver TCP port; 0 = pick an ephemeral free port automatically
+    int  watchGdbPort() const;
+    void setWatchGdbPort(int port);
+
 private:
     static constexpr auto kKeyCliPath          = "programmer/cli_path";
     static constexpr auto kKeyComPort          = "serial/last_com_port";
@@ -125,4 +142,8 @@ private:
     static constexpr auto kKeyLlmBaseUrl       = "llm/base_url";
     static constexpr auto kKeyLlmApiKey        = "llm/api_key";
     static constexpr auto kKeyLlmModel         = "llm/model";
+    static constexpr auto kKeyGdbServerPath    = "tools/gdbserver_path";
+    static constexpr auto kKeyArmNmPath        = "tools/arm_nm_path";
+    static constexpr auto kKeyCubeProgrammerBinDir = "tools/cubeprogrammer_bin_dir";
+    static constexpr auto kKeyWatchGdbPort     = "watch/gdb_port";
 };

@@ -22,6 +22,12 @@ struct SvdBoardMapping
     QStringList defaultPeripherals;
     QHash<QString, QString> rccOverrides;
 
+    // debug.gdb block (docs/variable_watcher_plan.md Bolum 4.7) — GDB
+    // Remote Serial Protocol backend support for this board family.
+    // "stable" | "experimental" | "unsupported"; empty until Faz 1 checked it.
+    QString gdbSupport;
+    QString gdbNotes;
+
     bool isValid() const { return !svdFile.isEmpty(); }
     bool isExperimental() const { return access == QStringLiteral("experimental"); }
 };

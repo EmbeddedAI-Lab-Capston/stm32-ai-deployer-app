@@ -308,6 +308,54 @@ void AppSettings::setLlmModel(const QString &model)
     s.setValue(kKeyLlmModel, model);
 }
 
+QString AppSettings::gdbServerPath() const
+{
+    QSettings s;
+    return s.value(kKeyGdbServerPath, QString{}).toString();
+}
+
+void AppSettings::setGdbServerPath(const QString &path)
+{
+    QSettings s;
+    s.setValue(kKeyGdbServerPath, path);
+}
+
+QString AppSettings::armNmPath() const
+{
+    QSettings s;
+    return s.value(kKeyArmNmPath, QString{}).toString();
+}
+
+void AppSettings::setArmNmPath(const QString &path)
+{
+    QSettings s;
+    s.setValue(kKeyArmNmPath, path);
+}
+
+QString AppSettings::cubeProgrammerBinDir() const
+{
+    QSettings s;
+    return s.value(kKeyCubeProgrammerBinDir, QString{}).toString();
+}
+
+void AppSettings::setCubeProgrammerBinDir(const QString &dir)
+{
+    QSettings s;
+    s.setValue(kKeyCubeProgrammerBinDir, dir);
+}
+
+int AppSettings::watchGdbPort() const
+{
+    QSettings s;
+    return s.value(kKeyWatchGdbPort, 0).toInt();
+}
+
+void AppSettings::setWatchGdbPort(int port)
+{
+    QSettings s;
+    s.setValue(kKeyWatchGdbPort, port);
+}
+
 void AppSettings::addCustomBoard(const BoardInfo &board)
 {
     if (board.name.trimmed().isEmpty())
