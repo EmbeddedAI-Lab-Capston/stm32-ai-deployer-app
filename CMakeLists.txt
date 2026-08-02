@@ -120,6 +120,17 @@ set(PROJECT_SOURCES
     src/modules/debug/DebugLink.h
     src/modules/debug/DebugLink.cpp
 
+    src/modules/watcher/SymbolModel.h
+    src/modules/watcher/NmSymbolParser.h
+    src/modules/watcher/NmSymbolParser.cpp
+    src/modules/watcher/ElfSymbolSource.h
+    src/modules/watcher/ElfSymbolSource.cpp
+    src/modules/watcher/ElfTargetMatcher.h
+    src/modules/watcher/ElfTargetMatcher.cpp
+    src/modules/watcher/WatchModel.h
+    src/modules/watcher/ValueCodec.h
+    src/modules/watcher/ValueCodec.cpp
+
     src/modules/simulation/FactorySimulator.h
     src/modules/simulation/FactorySimulator.cpp
 

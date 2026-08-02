@@ -8,9 +8,26 @@ set(TEST_SOURCES
 
     TestGdbRspCodec.h
     TestGdbRspCodec.cpp
+    TestNmSymbolParser.h
+    TestNmSymbolParser.cpp
+    TestValueCodec.h
+    TestValueCodec.cpp
+    TestWatchModel.h
+    TestWatchModel.cpp
+    TestElfTargetMatcher.h
+    TestElfTargetMatcher.cpp
 
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.h
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.cpp
+
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/SymbolModel.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/NmSymbolParser.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/NmSymbolParser.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchModel.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/ValueCodec.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/ValueCodec.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/ElfTargetMatcher.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/ElfTargetMatcher.cpp
 )
 
 qt_add_executable(STM32AiDeployerTests ${TEST_SOURCES})

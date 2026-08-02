@@ -295,7 +295,86 @@ birebir aynı mantık.
 
 ---
 
-## 11. Ertelenmiş doğrulamalar — "kart gelince" listesi
+## 11. Faz 3 — Sembol katmanı (`NmSymbolParser`, `ElfSymbolSource`, `ElfTargetMatcher`, `ValueCodec`)
+
+### 11.0 Fixture kaynağı
+
+`tests/fixtures/nm_h7.txt`, planın istediği gibi **gerçek** bir H7 ELF'inden
+üretildi — bu depodaki pipeline henüz bir .elf üretmemişti (önceki bir
+oturumda üretilmiş çıktı diskte bulunamadı), bu yüzden makinede bulunan
+harici bir STM32CubeIDE H7 projesinin (`KWS_Basinc_H7/Debug/KWS_Basinc_H7.elf`,
+aynı model adı "anomaly_cnn_int8" ve "BME280" sensörüyle, muhtemelen bu
+aracın erken bir deneyi) derlenmiş çıktısı kullanıldı. 561 sembol, gerçek
+`arm-none-eabi-nm -S --defined-only` çıktısı, hiç elle düzenlenmedi.
+
+### 11.1 Birim testler (donanımsız) ✅
+
+32 test fonksiyonu (4 suite: `TestNmSymbolParser`, `TestValueCodec`,
+`TestWatchModel`, `TestElfTargetMatcher`), hepsi yeşil (`ctest` → 100% passed).
+Plan Bölüm 6.3 tablosundaki her satır birebir karşılandı: 4/3 alanlı satır
+ayrıştırma, `_Min_Stack_Size` (Absolute, `addressIsValue=true`, değer=2048),
+`_estack` (RAM aralığında, Absolute DEĞİL), `Reset_Handler` gerçek fixture'da
+**gerçekten `W` (weak) tipinde** çıktı — plandaki "Weak sembol" test senaryosu
+uydurma değil, gerçek veriden geldi. Bozuk satır atlama, `ValueCodec::decode`
+(U32 LE, I16 negatif, F32, sınır-dışı), `ValueCodec::format` (`"8.200 ms"`
+birebir), `WatchStats` (1000 değerde referans two-pass hesaba karşı ≤1e-9
+fark), `ElfTargetMatcher`'ın 4 senaryosu (eşleşen/Thumb biti/SP-tutar-vec-tutmaz/sembol-yok).
+
+### 11.2 Yarı-canlı — gerçek ELF'ten sembol yükleme ✅
+
+`ElfSymbolSource` gerçek `arm-none-eabi-nm.exe`'yi çağırarak
+`KWS_Basinc_H7.elf`'i yükledi (561 sembol). `_estack`, `_end`, `_ebss`,
+`_sbss` bulundu; `_Min_Stack_Size`/`_Min_Heap_Size` `addressIsValue=true`
+işaretiyle geldi (izleme listesine adres olarak eklenemez hale gelmiş
+olacak — plan Bölüm 6.1'in gerektirdiği tam davranış).
+
+### 11.3 Canlı VTOR okuma + ELF eşleşme testi ⚠️✅ (kısmi — gerekçeli)
+
+H7'de gerçek `DebugLink` üzerinden VTOR (`0xE000ED08`) ve ardından 8 baytlık
+vektör tablosu okundu: **`VTOR=0x08000000`, `initialSP=0x20020000`,
+`resetVec=0x08005ee5`**.
+
+**Beklenmeyen ama açıklayıcı bulgu:** `initialSP=0x20020000`, makinede bulunan
+iki harici H7 ELF'inin (`KWS_Basinc_H7`, `KWS_Ses_H7`, ikisi de
+`_estack=0x24050000` — AXI SRAM) **hiçbiriyle eşleşmedi** → her ikisi de
+doğru şekilde **Mismatch** olarak işaretlendi. Ama `0x20020000` değeri
+**bu aracın kendi** `templates/base/STM32H7/STM32H723ZGTx_FLASH.ld`
+dosyasındaki `RAM ORIGIN=0x20000000, LENGTH=128K` → `_estack =
+0x20000000+0x20000 = 0x20020000` ile **birebir örtüşüyor**. Yani karttaki
+firmware harici CubeIDE projelerinden değil, **bu aracın kendi pipeline'ından**
+(muhtemelen önceki bir oturumda) flashlanmış — dolaylı ama net bir kanıt.
+
+**Sonuç:** İki farklı gerçek ELF, canlı okunan hedef vektör tablosuna karşı
+**doğru şekilde Mismatch** verdi (`spMatches=false`, `resetMatches=false`
+ikisinde de) — planın "en kötü hata modu" senaryosuna karşı asıl korumanın
+(sessizce yanlış gösterme yerine görünür uyarı) çalıştığının canlı kanıtı.
+**Live "Match" senaryosu gösterilmedi:** gerçekten eşleşen ELF'i üretmek bu
+aracın kendi pipeline'ını (tflite→stedgeai→gcc→flash) yeniden çalıştırıp
+kartı yeniden flaşlamayı gerektiriyordu; kullanıcıyla onaylanıp **bilinçli
+olarak ertelendi** — Match dal mantığı zaten `TestElfTargetMatcher::
+matchingSpAndResetVectorYieldsMatch` ile gerçekçi değerlerle birim test
+edilmiş durumda, ve Mismatch dalı (aynı karşılaştırma kodu, aynı canlı okuma
+yolu) iki bağımsız gerçek ELF ile doğrulandı. Faz 5/7 (pipeline'ın kendi
+`.elf`'ini üretip commit edeceği `watch/demo/` çalışması) sırasında gerçek
+bir Match örneği doğal olarak ortaya çıkacak.
+
+### 11.4 Faz 3 kabul kriterleri özeti
+
+| Kriter | Sonuç |
+|---|---|
+| Birim testler (gerçek fixture) yeşil | ✅ 32/32 |
+| `_Min_Stack_Size`/`_Min_Heap_Size` izlenemez (adres değil değer) | ✅ |
+| Yarı-canlı: gerçek ELF'ten `_estack`/`_end`/`_ebss`/`_sbss` bulundu | ✅ |
+| Canlı: doğru ELF → yeşil (Match) | ⏸️ ertelendi (gerekçeli, yukarıda) |
+| Canlı: kasten farklı ELF → sarı (Mismatch) | ✅ (iki farklı ELF ile) |
+| Canlı: link kapalıyken → gri (Unknown) | ⏸️ Faz 4 UI'sı olmadan gösterilemez; "eksik sembol → Unknown" birim testiyle "uydurma karşılaştırma yok" ilkesi zaten kanıtlı |
+
+**Faz 3 tamamlandı** (iki UI-bağımlı canlı senaryo, gerekçesiyle birlikte
+Faz 4/9'a not düşülerek ertelendi — kod tarafında hiçbir açık yok).
+
+---
+
+## 12. Ertelenmiş doğrulamalar — "kart gelince" listesi
 
 Plan Bölüm 12.5 ile aynı; kart elde olmadığı için Faz 1'de koşulamadı.
 

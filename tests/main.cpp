@@ -1,6 +1,10 @@
 #include <QTest>
 
 #include "TestGdbRspCodec.h"
+#include "TestNmSymbolParser.h"
+#include "TestValueCodec.h"
+#include "TestWatchModel.h"
+#include "TestElfTargetMatcher.h"
 
 // Runs every suite with QTest::qExec and ORs the exit statuses, so a failure
 // in one suite doesn't stop the others from reporting (docs/variable_watcher_plan.md
@@ -9,6 +13,10 @@
 int main(int argc, char **argv)
 {
     int status = 0;
-    { TestGdbRspCodec t; status |= QTest::qExec(&t, argc, argv); }
+    { TestGdbRspCodec t;      status |= QTest::qExec(&t, argc, argv); }
+    { TestNmSymbolParser t;   status |= QTest::qExec(&t, argc, argv); }
+    { TestValueCodec t;       status |= QTest::qExec(&t, argc, argv); }
+    { TestWatchModel t;       status |= QTest::qExec(&t, argc, argv); }
+    { TestElfTargetMatcher t; status |= QTest::qExec(&t, argc, argv); }
     return status;
 }
