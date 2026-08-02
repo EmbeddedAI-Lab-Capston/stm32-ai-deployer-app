@@ -233,6 +233,31 @@ emit errorReceived(QJsonObject);
 
 ---
 
+## Register Inspector — Kalıcı Mimari Kararları
+
+> Bu bölüm bir karar kaydıdır (ADR benzeri) — Register Inspector üzerinde
+> çalışan her oturumda geçerlidir, unutulmamalı/çiğnenmemelidir.
+
+- LLM teşhis katmanına ASLA tam snapshot dump'ı (20k+ satır / tüm
+  register/field) gönderme. LLM girdisi daima damıtılmış olacak: (1) diff
+  sonucu (sadece değişen field'lar, decode+enum), (2) kural motoru
+  ihlalleri, (3) yalnızca ilgili/seçili peripheral subset'i. Sebep: token
+  maliyeti + alakasız register'ların teşhis doğruluğunu bozması.
+- Tam JSON export (arşiv/downstream) AYRI bir çıktıdır ve tam kalır; LLM
+  girdisiyle karıştırılmaz. İki ayrı fonksiyon.
+- LLM'den hex değil, field+enum seviyesinde ÖNERİ istenir; çıktı "hipotez",
+  "fix" değil.
+- Okuma katmanı `IRegisterReader` arayüzü arkasında; mevcut CLI
+  implementasyonu (`CliRegisterReader`) onun bir gerçeklemesi. Native
+  (probe-rs/pyOCD) arka uç ileride eklenebilir olmalı.
+- "Reset'ten farklı" = tek snapshot, SVD reset değeriyle kıyas. "A → B
+  farkı" = iki snapshot arası diff. Farklı kavramlar, isimleri/UI etiketleri
+  karıştırılmaz.
+- Araç gözlemci: register YAZMA yok, canlı polling yok, snapshot modeli
+  korunur.
+
+---
+
 ## Veritabanı Şeması (SQLite) — GERÇEK ŞEMA
 
 `AnalysisManager` **tek, esnek bir tablo** kullanır — aşağıdaki normalize 4

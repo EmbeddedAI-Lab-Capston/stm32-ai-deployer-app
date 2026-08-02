@@ -174,6 +174,7 @@ qt_add_qml_module(STM32AiDeployer
         qml/components/TitleBar.qml
         qml/components/TopTabBar.qml
         qml/components/RegisterTree.qml
+        qml/components/RegisterDiffView.qml
         qml/dialogs/SettingsDialog.qml
         qml/dialogs/AboutDialog.qml
         qml/dialogs/PipelineWizard.qml

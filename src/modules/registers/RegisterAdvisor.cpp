@@ -7,6 +7,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QRegularExpression>
+#include <QSet>
 #include <QUrl>
 
 namespace {
@@ -34,6 +35,31 @@ RegisterAdvisor::RegisterAdvisor(QObject *parent)
 {
 }
 
+QJsonArray RegisterAdvisor::relatedFieldsJson(const RegisterSnapshot &snap, const QString &peripheralName,
+                                              const QString &registerName) const
+{
+    QJsonArray out;
+    for (const DecodedPeripheral &p : snap.peripherals) {
+        if (p.name.compare(peripheralName, Qt::CaseInsensitive) != 0)
+            continue;
+        for (const DecodedRegister &r : p.registers) {
+            if (r.name.compare(registerName, Qt::CaseInsensitive) != 0 || r.status != RegStatus::Ok)
+                continue;
+            for (const DecodedField &f : r.fields) {
+                QJsonObject fo;
+                fo[QStringLiteral("name")] = f.name;
+                // Symbolic only — never raw hex — same contract as the diff fields below.
+                fo[QStringLiteral("value")] = f.enumName.isEmpty()
+                    ? QJsonValue(double(f.value)) : QJsonValue(f.enumName);
+                fo[QStringLiteral("description")] = f.description;
+                out.append(fo);
+            }
+            return out;
+        }
+    }
+    return out;   // register not found / not readable — empty subset, never a guess
+}
+
 QString RegisterAdvisor::buildPrompt(const RegisterSnapshot &snap, const SnapshotDiff &diff,
                                      const QList<RuleViolation> &violations) const
 {
@@ -41,6 +67,11 @@ QString RegisterAdvisor::buildPrompt(const RegisterSnapshot &snap, const Snapsho
     ctx[QStringLiteral("board")]  = snap.boardName;
     ctx[QStringLiteral("device")] = snap.deviceName;
 
+    // "İlgili subset": for each violation, the actual decoded fields of the
+    // register it points at — not the whole peripheral, not the whole
+    // snapshot (CLAUDE.md: never a full dump to the LLM). Same
+    // peripheral+register is only resolved once even if several rules flag it.
+    QSet<QString> resolvedRegisters;
     QJsonArray violationsJson;
     for (const RuleViolation &v : violations) {
         QJsonObject o;
@@ -49,6 +80,14 @@ QString RegisterAdvisor::buildPrompt(const RegisterSnapshot &snap, const Snapsho
         o[QStringLiteral("register")]   = v.registerName;
         o[QStringLiteral("field")]      = v.fieldName;
         o[QStringLiteral("message")]    = v.message;
+
+        const QString key = v.peripheralName + QLatin1Char('/') + v.registerName;
+        if (!resolvedRegisters.contains(key)) {
+            resolvedRegisters.insert(key);
+            const QJsonArray context = relatedFieldsJson(snap, v.peripheralName, v.registerName);
+            if (!context.isEmpty())
+                o[QStringLiteral("context")] = context;
+        }
         violationsJson.append(o);
     }
     ctx[QStringLiteral("ruleViolations")] = violationsJson;

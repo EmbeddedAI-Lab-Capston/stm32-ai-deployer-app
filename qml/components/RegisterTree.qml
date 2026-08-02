@@ -196,7 +196,7 @@ Rectangle {
             Layout.topMargin: Theme.spacingLg
             horizontalAlignment: Text.AlignHCenter
             text: root.filterText.length > 0 ? "Eşleşen register/field yok."
-                : "Seçili peripheral'larda değişen register yok."
+                : "Seçili peripheral'larda reset'ten farklı register yok."
             color: Theme.textFaint; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
         }
 

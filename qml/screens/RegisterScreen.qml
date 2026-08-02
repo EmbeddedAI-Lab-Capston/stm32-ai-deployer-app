@@ -161,10 +161,8 @@ Item {
                     diffSummaryText.text = !d.comparable
                         ? ("Karşılaştırılamıyor: " + d.incomparableReason)
                         : (d.changedRegisterCount + " register, " + d.changedFieldCount
-                           + " field değişmiş (A: " + d.takenAtA + " · B: " + d.takenAtB + ").\n\n"
-                           + "Tam görsel diff tablosu ayrı bir geçişte gelecek — şimdilik "
-                           + "\"JSON Dışa Aktar\" ile A/B farkının tamamını (field bazlı, "
-                           + "before/after) bir dosyaya alabilirsin.")
+                           + " field değişmiş (A: " + d.takenAtA + " · B: " + d.takenAtB + ").")
+                    diffTable.diff = d
                     diffSummaryPopup.open()
                 }
             }
@@ -421,7 +419,7 @@ Item {
                                     Text { anchors.centerIn: parent; visible: tree.changedOnly
                                            text: "✓"; color: "#fff"; font.pixelSize: 9 }
                                 }
-                                Text { text: "Sadece değişenler"; color: Theme.textMuted
+                                Text { text: "Reset'ten farklı"; color: Theme.textMuted
                                        font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
                                        font.weight: Font.DemiBold }
                             }
@@ -513,13 +511,14 @@ Item {
         id: diffSummaryPopup
         modal: true
         anchors.centerIn: Overlay.overlay
-        width: 460
+        width: 760
+        height: 560
         padding: Theme.spacingLg
         background: Rectangle { color: Theme.surface; radius: Theme.radiusLg; border.color: Theme.border }
         contentItem: ColumnLayout {
             spacing: Theme.spacingMd
             Text {
-                text: "Diff Özeti (A ↔ B)"
+                text: "A → B farkı"
                 color: Theme.text
                 font.family: Theme.fontFamily; font.pixelSize: Theme.fontMd; font.weight: Font.DemiBold
             }
@@ -529,6 +528,11 @@ Item {
                 color: Theme.textMuted
                 font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                 wrapMode: Text.WordWrap
+            }
+            RegisterDiffView {
+                id: diffTable
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
             AppButton { Layout.alignment: Qt.AlignRight; text: "Tamam"; onClicked: diffSummaryPopup.close() }
         }

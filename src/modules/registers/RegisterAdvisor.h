@@ -3,6 +3,7 @@
 #include "RegisterRuleModel.h"
 #include "RegisterSnapshot.h"
 
+#include <QJsonArray>
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -44,6 +45,11 @@ signals:
 private:
     QString buildPrompt(const RegisterSnapshot &snap, const SnapshotDiff &diff,
                         const QList<RuleViolation> &violations) const;
+    // Compact field list for one register (name/value-or-enum/description) —
+    // the "ilgili subset" CLAUDE.md requires alongside diff+violations. Never
+    // the full snapshot: only the specific register a violation points at.
+    QJsonArray relatedFieldsJson(const RegisterSnapshot &snap, const QString &peripheralName,
+                                 const QString &registerName) const;
     void onReplyFinished(QNetworkReply *reply);
     QVariantList parseResponseContent(const QString &content) const;
 
