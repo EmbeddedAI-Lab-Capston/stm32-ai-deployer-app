@@ -18,6 +18,7 @@ Popup {
         llmUrlField.text = s.baseUrl || ""
         llmKeyField.text = s.apiKey || ""
         llmModelField.text = s.model || ""
+        readBackendField.currentIndex = backend.registerReadBackend() === "gdb" ? 1 : 0
     }
 
     Overlay.modal: Rectangle { color: Theme.alpha("#000000", 0.55) }
@@ -137,6 +138,36 @@ Popup {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // ── Register Inspector okuma arka ucu (Faz 2) ────────────────────────
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.margins: Theme.spacingLg
+            spacing: Theme.spacingSm
+
+            Text {
+                text: "Register Inspector Okuma Arka Ucu"
+                color: Theme.text
+                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm; font.weight: Font.DemiBold
+            }
+            Text {
+                text: "\"gdb\" secilse bile her snapshot'ta yeniden dogrulanir; gdbserver yolu yoksa veya baglanti basarisiz olursa sessizce CLI'ye duser (bir kerelik uyariyla). Varsayilan kalici olarak \"cli\"dir."
+                color: Theme.textFaint; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                wrapMode: Text.WordWrap; Layout.fillWidth: true
+            }
+
+            ComboField {
+                id: readBackendField
+                label: "Arka uc"
+                options: ["cli (varsayilan)", "gdb (opt-in, deneysel hiz)"]
+                Layout.preferredWidth: 320
+                onActivated: (idx) => {
+                    if (typeof backend !== "undefined" && backend)
+                        backend.setRegisterReadBackend(idx === 1 ? "gdb" : "cli")
                 }
             }
         }

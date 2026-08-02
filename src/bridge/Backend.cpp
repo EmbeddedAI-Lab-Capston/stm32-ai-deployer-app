@@ -39,6 +39,7 @@
 #include "modules/board/BoardPresets.h"
 #include "modules/registers/RegisterInspector.h"
 #include "modules/registers/RegisterAdvisor.h"
+#include "modules/debug/DebugLink.h"
 
 namespace
 {
@@ -471,6 +472,7 @@ Backend::Backend(AppState          *state,
                  AnalysisManager   *analysis,
                  RegisterInspector *registers,
                  RegisterAdvisor   *advisor,
+                 DebugLink         *debugLink,
                  QObject           *parent)
     : QObject(parent)
     , m_state(state)
@@ -479,6 +481,7 @@ Backend::Backend(AppState          *state,
     , m_analysis(analysis)
     , m_registers(registers)
     , m_advisor(advisor)
+    , m_debugLink(debugLink)
 {
     m_simTimer  = new QTimer(this);
     m_simParser = new PacketParser(this);
@@ -535,6 +538,9 @@ QVariantList Backend::toolPaths() const
     list << entry("stedgeai (X-CUBE-AI)", "tools/xcubeai_cli_path", s.xcubeAICliPath());
     list << entry("arm-none-eabi-gcc",    "tools/gcc_path",         s.gccPath());
     list << entry("make",                 "tools/make_path",        s.makePath());
+    list << entry("ST-LINK_gdbserver",    "tools/gdbserver_path",   s.gdbServerPath());
+    list << entry("arm-none-eabi-nm",     "tools/arm_nm_path",      s.armNmPath());
+    list << entry("STM32CubeProgrammer bin dir", "tools/cubeprogrammer_bin_dir", s.cubeProgrammerBinDir());
     return list;
 }
 
@@ -545,8 +551,19 @@ void Backend::setToolPath(const QString &key, const QString &path)
     else if (key == "tools/xcubeai_cli_path") s.setXCubeAICliPath(path);
     else if (key == "tools/gcc_path")         s.setGccPath(path);
     else if (key == "tools/make_path")        s.setMakePath(path);
+    else if (key == "tools/gdbserver_path")   s.setGdbServerPath(path);
+    else if (key == "tools/arm_nm_path")      s.setArmNmPath(path);
+    else if (key == "tools/cubeprogrammer_bin_dir")
+        // The file picker returns a .exe; gdbserver's -cp wants its directory.
+        s.setCubeProgrammerBinDir(QFileInfo(path).absolutePath());
     if (m_flash && key == "programmer/cli_path")
         m_flash->setCliPath(path);
+    // DebugLink was configured once at startup (main.cpp) — a path picked
+    // here must reach it too, or the NEXT gdbserver launch would silently
+    // keep using the stale path (it only affects a not-yet-running process;
+    // an already-open session is unaffected until it closes and reopens).
+    if (m_debugLink && (key == "tools/gdbserver_path" || key == "tools/cubeprogrammer_bin_dir"))
+        m_debugLink->setPaths(s.gdbServerPath(), s.cubeProgrammerBinDir());
     emit toolPathsChanged();
 }
 
@@ -2914,6 +2931,7 @@ void Backend::wireRegisters()
         m_registers->setSvdDirectory(svdDir);
     m_registers->loadCatalog();
     m_registers->loadRules();   // svd/rules.json — failure just means no rule checks, not fatal
+    m_registers->setReaderBackend(settings.registerReadBackend());   // "cli" by default (Faz 2)
 
     connect(m_registers, &RegisterInspector::busyChanged, this, &Backend::registerChanged);
     connect(m_registers, &RegisterInspector::stageChanged, this, &Backend::registerChanged);
@@ -3030,6 +3048,18 @@ void Backend::clearRegisterSnapshots()
     m_registerViewSlot = 0;
     emit registerModelChanged();
     emit registerChanged();
+}
+
+QString Backend::registerReadBackend() const
+{
+    return AppSettings().registerReadBackend();
+}
+
+void Backend::setRegisterReadBackend(const QString &backend)
+{
+    AppSettings().setRegisterReadBackend(backend);
+    if (m_registers)
+        m_registers->setReaderBackend(backend);
 }
 
 QVariantList Backend::registerModel() const

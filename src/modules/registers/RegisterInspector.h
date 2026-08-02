@@ -17,6 +17,8 @@
 
 class IRegisterReader;
 class CliRegisterReader;
+class GdbServerReader;
+class DebugLink;
 
 // ── RegisterInspector ──────────────────────────────────────────────────────
 // Orchestrator/manager for the Register feature (plan Bolum 5.1). Owns the
@@ -32,6 +34,13 @@ public:
 
     void setCliPath(const QString &path);
     void setSvdDirectory(const QString &dir);   // optional; default exe/svd
+
+    // GDB read backend (Faz 2, docs/variable_watcher_plan.md Bolum 5.1).
+    // "cli" | "gdb" is a PREFERENCE, not a guarantee — resolveActiveReader()
+    // re-checks it every snapshot and falls back to "cli" if the gdbserver
+    // path is unknown or the link fails to open. Default stays "cli".
+    void setReaderBackend(const QString &backend);
+    void setDebugLink(DebugLink *link);   // creates the GdbServerReader lazily
     bool loadCatalog();                          // read boards.json
     bool loadRules();                            // read rules.json (same dir as SVDs)
     QString lastError() const { return m_lastError; }
@@ -79,6 +88,8 @@ private:
     void onReadFailed(const QString &message);
 
     void beginSnapshot();                 // device is ready: start RCC read
+    void resolveActiveReader();           // picks m_reader per plan Bolum 5.1 chain (a-d)
+    void warnGdbFallbackOnce(const QString &message);
     void finishWithError(const QString &message);
     void setBusy(bool busy);
     void setStage(const QString &stage);
@@ -86,6 +97,11 @@ private:
     SvdCatalog       m_catalog;
     IRegisterReader  *m_reader = nullptr;      // used for all orchestration
     CliRegisterReader *m_cliReader = nullptr;  // same object; kept for setCliPath() only
+    GdbServerReader   *m_gdbReader = nullptr;  // lazily created in setDebugLink()
+    DebugLink         *m_debugLink = nullptr;
+    QString            m_readerBackendPref = QStringLiteral("cli");   // "cli" | "gdb", user preference
+    bool               m_usingGdb = false;      // resolved backend for the IN-PROGRESS/last snapshot
+    bool               m_gdbFallbackWarned = false;   // once per app run, not per snapshot
     ReadPlanBuilder  m_builder;
     RegisterDecoder  m_decoder;
     SnapshotDiffer   m_differ;

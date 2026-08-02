@@ -23,6 +23,7 @@ class RegisterAdvisor;
 struct RegisterSnapshot;
 struct SnapshotDiff;
 class QProcess;
+class DebugLink;
 
 // ── Backend ─────────────────────────────────────────────────────────────────
 // Single QML-facing facade. Forwards to existing managers and adapts data
@@ -79,6 +80,7 @@ public:
                      AnalysisManager   *analysis,
                      RegisterInspector *registers,
                      RegisterAdvisor   *advisor,
+                     DebugLink         *debugLink,
                      QObject           *parent = nullptr);
 
     // ── Tools ─────────────────────────────────────────────────────────────
@@ -196,6 +198,13 @@ public:
     Q_INVOKABLE void setRegisterViewSlot(int slot);
     Q_INVOKABLE void clearRegisterSnapshots();
 
+    // ── Register read backend (Faz 2) ────────────────────────────────────
+    // "cli" | "gdb" — a PREFERENCE; RegisterInspector re-verifies it every
+    // snapshot and silently falls back to "cli" if unavailable. Default is
+    // permanently "cli" (docs/variable_watcher_plan.md Bolum 5.2).
+    Q_INVOKABLE QString registerReadBackend() const;
+    Q_INVOKABLE void    setRegisterReadBackend(const QString &backend);
+
     // ── Register diff (Bolum 1a) ─────────────────────────────────────────
     // True once both Snapshot A and B are filled (regardless of whether they
     // actually differ) — used to enable the "Diff" button.
@@ -280,6 +289,7 @@ private:
     ToolDetector      *m_detector = nullptr;
     RegisterInspector *m_registers = nullptr;
     RegisterAdvisor   *m_advisor = nullptr;
+    DebugLink         *m_debugLink = nullptr;
     int                m_registerViewSlot = 0;   // which slot registerModel shows
 
     // monitor

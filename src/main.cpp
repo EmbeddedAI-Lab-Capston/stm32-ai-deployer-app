@@ -95,16 +95,13 @@ int main(int argc, char *argv[])
     // base URL + API key; every other register feature works without it.
     auto *advisor = new RegisterAdvisor(&app);
 
-    auto *backend = new Backend(appState, serial, flash, analysis, registers, advisor, &app);
-
-    // Factory Simulation engine (synthetic large-factory data for the demo mode).
-    auto *factorySim = new FactorySimulator(&app);
-
     // Shared ST-Link debug connection (GDB Remote Serial Protocol over
     // ST-LINK_gdbserver.exe). One instance for the whole app — Register
     // Inspector's GDB backend (Faz 2) and the Variable Watcher (Faz 4) both
     // retain()/release() this same link instead of opening their own
-    // (docs/variable_watcher_plan.md Bolum 2.1, 4.6).
+    // (docs/variable_watcher_plan.md Bolum 2.1, 4.6). Constructed before
+    // Backend so Backend can hold a reference too (needed to push a path
+    // picked in Ayarlar mid-session — see Backend::setToolPath()).
     auto *debugLink = new DebugLink(&app);
     {
         AppSettings settings;
@@ -125,6 +122,16 @@ int main(int argc, char *argv[])
 
         debugLink->setPaths(gdbServerPath, cubeProgrammerBinDir);
     }
+
+    // Register Inspector's GDB backend (Faz 2) shares this same link — see
+    // RegisterInspector::resolveActiveReader() for how it decides whether to
+    // actually use it per snapshot.
+    registers->setDebugLink(debugLink);
+
+    auto *backend = new Backend(appState, serial, flash, analysis, registers, advisor, debugLink, &app);
+
+    // Factory Simulation engine (synthetic large-factory data for the demo mode).
+    auto *factorySim = new FactorySimulator(&app);
 
     // Process cleanup at exit is unconditional — shutdownNow() ignores the
     // reference count so a leaked retain() can never strand a gdbserver

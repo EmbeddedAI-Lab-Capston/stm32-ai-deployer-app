@@ -94,6 +94,8 @@ set(PROJECT_SOURCES
     src/modules/registers/IRegisterReader.h
     src/modules/registers/CliRegisterReader.h
     src/modules/registers/CliRegisterReader.cpp
+    src/modules/registers/GdbServerReader.h
+    src/modules/registers/GdbServerReader.cpp
     src/modules/registers/RegisterSnapshot.h
     src/modules/registers/RegisterDecoder.h
     src/modules/registers/RegisterDecoder.cpp

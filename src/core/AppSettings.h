@@ -118,6 +118,12 @@ public:
     int  watchGdbPort() const;
     void setWatchGdbPort(int port);
 
+    // Register Inspector read backend preference: "cli" | "gdb". Default is
+    // PERMANENTLY "cli" — "gdb" is opt-in only, never the shipped default
+    // (docs/variable_watcher_plan.md Bolum 5.2).
+    QString registerReadBackend() const;
+    void    setRegisterReadBackend(const QString &backend);
+
 private:
     static constexpr auto kKeyCliPath          = "programmer/cli_path";
     static constexpr auto kKeyComPort          = "serial/last_com_port";
@@ -146,4 +152,5 @@ private:
     static constexpr auto kKeyArmNmPath        = "tools/arm_nm_path";
     static constexpr auto kKeyCubeProgrammerBinDir = "tools/cubeprogrammer_bin_dir";
     static constexpr auto kKeyWatchGdbPort     = "watch/gdb_port";
+    static constexpr auto kKeyRegisterReadBackend = "registers/read_backend";
 };

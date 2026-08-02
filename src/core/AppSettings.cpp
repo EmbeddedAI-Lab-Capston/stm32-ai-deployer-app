@@ -356,6 +356,18 @@ void AppSettings::setWatchGdbPort(int port)
     s.setValue(kKeyWatchGdbPort, port);
 }
 
+QString AppSettings::registerReadBackend() const
+{
+    QSettings s;
+    return s.value(kKeyRegisterReadBackend, QStringLiteral("cli")).toString();
+}
+
+void AppSettings::setRegisterReadBackend(const QString &backend)
+{
+    QSettings s;
+    s.setValue(kKeyRegisterReadBackend, backend);
+}
+
 void AppSettings::addCustomBoard(const BoardInfo &board)
 {
     if (board.name.trimmed().isEmpty())

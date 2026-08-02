@@ -1,5 +1,8 @@
 #include "RegisterInspector.h"
 #include "CliRegisterReader.h"
+#include "GdbServerReader.h"
+#include "modules/debug/DebugLink.h"
+#include "core/AppSettings.h"
 
 #include <QDateTime>
 #include <algorithm>
@@ -18,6 +21,21 @@ RegisterInspector::RegisterInspector(QObject *parent)
 
 void RegisterInspector::setCliPath(const QString &path) { m_cliReader->setCliPath(path); }
 void RegisterInspector::setSvdDirectory(const QString &dir) { m_catalog.setSvdDirectory(dir); }
+
+void RegisterInspector::setReaderBackend(const QString &backend)
+{
+    m_readerBackendPref = backend;
+}
+
+void RegisterInspector::setDebugLink(DebugLink *link)
+{
+    m_debugLink = link;
+    if (link && !m_gdbReader) {
+        m_gdbReader = new GdbServerReader(link, this);
+        connect(m_gdbReader, &IRegisterReader::readFinished, this, &RegisterInspector::onReadFinished);
+        connect(m_gdbReader, &IRegisterReader::readFailed, this, &RegisterInspector::onReadFailed);
+    }
+}
 
 bool RegisterInspector::loadCatalog()
 {
@@ -155,6 +173,9 @@ void RegisterInspector::beginSnapshot()
         finishWithError(QStringLiteral("SVD not available after load"));
         return;
     }
+
+    resolveActiveReader();
+
     m_reader->setStlinkSn(m_pendingBoard.stlinkSn);
     m_reader->setConnectMode(m_pendingMapping.connectMode.isEmpty()
                                  ? QStringLiteral("HOTPLUG")
@@ -163,6 +184,45 @@ void RegisterInspector::beginSnapshot()
     m_phase = Phase::ReadRcc;
     setStage(QStringLiteral("read-rcc"));
     m_reader->read(m_builder.buildRccPlan(*dev));
+}
+
+void RegisterInspector::resolveActiveReader()
+{
+    // Preference resolution chain (plan Bolum 5.1) — re-evaluated on every
+    // snapshot, never cached, so "gdb" is always opt-in-but-verified rather
+    // than a blind trust of a stale setting.
+    //
+    // (a) preference isn't "gdb" at all -> CLI, no questions asked.
+    if (m_readerBackendPref != QStringLiteral("gdb")) {
+        m_reader   = m_cliReader;
+        m_usingGdb = false;
+        return;
+    }
+
+    // (b) gdbserver path unknown, or no DebugLink wired up -> CLI + one-time warning.
+    // Reads AppSettings directly (rather than threading a bool through
+    // Backend) so a path picked in Settings mid-session takes effect on the
+    // very next snapshot, matching "her snapshot'ta" in the plan.
+    if (!m_debugLink || !m_gdbReader || AppSettings().gdbServerPath().isEmpty()) {
+        m_reader   = m_cliReader;
+        m_usingGdb = false;
+        warnGdbFallbackOnce(QStringLiteral("gdbserver yolu bulunamadi, CLI arka ucuna dusuldu"));
+        return;
+    }
+
+    // (c) is handled reactively in onReadFailed(): if the very first (RCC)
+    // read of a fresh attempt fails while m_usingGdb is true, nothing has
+    // been read yet, so it silently retries the whole snapshot via CLI.
+    // (d) otherwise.
+    m_reader   = m_gdbReader;
+    m_usingGdb = true;
+}
+
+void RegisterInspector::warnGdbFallbackOnce(const QString &message)
+{
+    if (m_gdbFallbackWarned) return;
+    m_gdbFallbackWarned = true;
+    emit errorOccurred(message);   // Backend maps this straight to statusMessage — not a fatal error
 }
 
 void RegisterInspector::onReadFinished(const RegisterReadResult &result)
@@ -206,8 +266,13 @@ void RegisterInspector::onReadFinished(const RegisterReadResult &result)
         snap.boardName    = m_pendingBoard.name;
         snap.deviceName   = dev->name;
         snap.svdFile      = m_pendingSvdFile;
-        snap.connectMode  = m_pendingMapping.connectMode.isEmpty()
-                                ? QStringLiteral("HOTPLUG") : m_pendingMapping.connectMode;
+        // "GDB-ATTACH" is a distinct value, never silently reported as
+        // HOTPLUG/UR — a gdb-attach session doesn't have a connect mode and
+        // the UI must not claim otherwise (plan Bolum 5.1).
+        snap.connectMode  = m_usingGdb
+                                ? QStringLiteral("GDB-ATTACH")
+                                : (m_pendingMapping.connectMode.isEmpty()
+                                       ? QStringLiteral("HOTPLUG") : m_pendingMapping.connectMode);
         snap.supportLevel = m_pendingMapping.access.isEmpty()
                                 ? QStringLiteral("stable") : m_pendingMapping.access;
         snap.peripherals  = m_decoder.decode(*dev, m_pendingSelected, combined,
@@ -227,8 +292,33 @@ void RegisterInspector::onReadFinished(const RegisterReadResult &result)
 
 void RegisterInspector::onReadFailed(const QString &message)
 {
-    if (m_busy)
-        finishWithError(message);
+    if (!m_busy)
+        return;
+
+    // Plan Bolum 5.1 condition (c): the GDB backend failed on the very FIRST
+    // read of a fresh attempt (RCC phase) — nothing has reached the user yet,
+    // so falling back to CLI and restarting the snapshot is always safe.
+    // Broadened slightly beyond "only a retain() failure" to any failure this
+    // early: the plan's own framing is "hiz kazanci konfordur, dogruluk
+    // degil" — degrading silently is strictly better than surfacing an error
+    // for what is ultimately a speed optimisation. A LATER-phase failure
+    // (ReadBlocks) is a genuine error and is not retried.
+    if (m_usingGdb && m_phase == Phase::ReadRcc) {
+        const SvdDevice *dev = m_catalog.cachedDevice(m_pendingSvdFile);
+        if (dev) {
+            warnGdbFallbackOnce(QStringLiteral("GDB arka ucu kullanilamadi (%1), CLI'ye dusuldu").arg(message));
+            m_reader   = m_cliReader;
+            m_usingGdb = false;
+            m_reader->setStlinkSn(m_pendingBoard.stlinkSn);
+            m_reader->setConnectMode(m_pendingMapping.connectMode.isEmpty()
+                                         ? QStringLiteral("HOTPLUG") : m_pendingMapping.connectMode);
+            setStage(QStringLiteral("read-rcc"));
+            m_reader->read(m_builder.buildRccPlan(*dev));
+            return;
+        }
+    }
+
+    finishWithError(message);
 }
 
 const RegisterSnapshot *RegisterInspector::snapshot(int slot) const
