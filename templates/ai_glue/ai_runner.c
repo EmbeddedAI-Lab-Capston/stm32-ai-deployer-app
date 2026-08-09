@@ -27,6 +27,19 @@ static ai_handle  s_network    = AI_HANDLE_NULL;
 static ai_buffer *s_in_buffer   = NULL;
 static ai_buffer *s_out_buffer  = NULL;
 
+/* Watch-observable AI state ─────────────────────────────────────────────
+ * NOTE: these are file-scope and volatile on purpose. Locals live on the
+ * stack and have no stable symbol address, so the host-side Variable
+ * Watcher cannot observe them. volatile keeps the stores from being
+ * optimised away at -Os. Cost: a few hundred bytes of .bss.
+ */
+static volatile uint32_t g_ai_last_inference_us = 0;
+static volatile uint32_t g_ai_infer_count       = 0;
+static volatile uint8_t  g_ai_last_class        = 0;
+static volatile uint8_t  g_ai_last_confidence   = 0;
+static ai_i8             g_ai_input[AI_NETWORK_IN_1_SIZE];
+static ai_i8             g_ai_output[AI_NETWORK_OUT_1_SIZE];
+
 /* DWT cycle counter helpers */
 #ifndef DWT_CYCCNT
 #define DWT_CYCCNT (*((volatile uint32_t *)0xE0001004))
@@ -121,17 +134,14 @@ void AI_Runner_Init(void)
 uint32_t AI_Runner_Infer(const float *input, AI_InferenceResult *result)
 {
 #if defined(AI_NETWORK_IN_1_FORMAT) && (AI_NETWORK_IN_1_FORMAT == AI_BUFFER_FORMAT_S8)
-    ai_i8 q_input[AI_NETWORK_IN_1_SIZE] = {0};
-    prepare_s8_input(input, q_input);
-    s_in_buffer[0].data = AI_HANDLE_PTR(q_input);
+    prepare_s8_input(input, g_ai_input);
+    s_in_buffer[0].data = AI_HANDLE_PTR(g_ai_input);
 #else
     /* Point input buffer to caller's data */
     s_in_buffer[0].data = AI_HANDLE_PTR(input);
 #endif
 
-    /* Allocate output on stack */
-    ai_i8 output_data[AI_NETWORK_OUT_1_SIZE] = {0};
-    s_out_buffer[0].data = AI_HANDLE_PTR(output_data);
+    s_out_buffer[0].data = AI_HANDLE_PTR(g_ai_output);
 
     uint32_t t0 = DWT_CYCCNT;
     ai_network_run(s_network, s_in_buffer, s_out_buffer);
@@ -139,10 +149,10 @@ uint32_t AI_Runner_Infer(const float *input, AI_InferenceResult *result)
 
     /* Argmax */
     uint8_t best = 0;
-    ai_i8   best_val = output_data[0];
+    ai_i8   best_val = g_ai_output[0];
     for (int i = 1; i < AI_OUTPUT_CLASSES; i++) {
-        if (output_data[i] > best_val) {
-            best_val = output_data[i];
+        if (g_ai_output[i] > best_val) {
+            best_val = g_ai_output[i];
             best     = (uint8_t)i;
         }
     }
@@ -159,6 +169,11 @@ uint32_t AI_Runner_Infer(const float *input, AI_InferenceResult *result)
     } else {
         snprintf(result->label, sizeof(result->label), "class_%u", (unsigned)best);
     }
+
+    g_ai_last_inference_us = elapsed_us;
+    g_ai_infer_count++;
+    g_ai_last_class        = best;
+    g_ai_last_confidence   = (uint8_t)confidence;
 
     return elapsed_us;
 }

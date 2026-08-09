@@ -457,3 +457,90 @@ olarak ortaya çıkacak.
 **Faz 4 tamamlandı** (bir gerçek UI hatası bulunup düzeltildi; temel canlı
 boru hattı H7'de doğrulandı; yüksek-hız sürdürülebilirlik testi gerekçeli
 olarak ertelendi).
+
+---
+
+## 14. Faz 5 — Firmware: static terfi + stack boyama
+
+### 14.0 Değişiklikler
+
+- `templates/ai_glue/ai_runner.c`: `q_input`/`output_data` yerel (stack)
+  dizileri, dosya-kapsamlı `static ai_i8 g_ai_input[...]` /
+  `g_ai_output[...]`'a taşındı. `AI_Runner_Infer()` sonunda
+  `g_ai_last_inference_us`, `g_ai_infer_count` (++), `g_ai_last_class`,
+  `g_ai_last_confidence` dolduruluyor — hepsi `static volatile`.
+- `templates/ai_glue/stack_paint.c/.h` (yeni): `StackPaint_Init()`,
+  `_sstack`'ten mevcut `SP - STACK_PAINT_MARGIN`'e kadar `0xA5A5A5A5`
+  deseniyle boyuyor; boş/ters aralıkta (`end <= start`) sessizce hiçbir şey
+  yapmıyor.
+- Üç `templates/base/STM32*/STM32*_FLASH.ld`: F4 ve H7'ye `_sstack = _estack
+  - _Min_Stack_Size;` eklendi (N6'da zaten vardı) — üç kartta da artık aynı
+    sembol seti, `stack_paint.c` şartlı/yedek mantık gerektirmiyor.
+- Üç `templates/base/STM32*/Src/main.c`: `StackPaint_Init()`, `HAL_Init()`
+  hemen sonrasında (ilk derin çağrıdan önce) çağrılıyor.
+- Üç `templates/base/STM32*/Makefile`: `Src/stack_paint.c` derleme listesine
+  eklendi. (`templates/ai_glue/*.c/*.h` zaten `PipelineRunner::stepPrepare()`
+  tarafından dizin taraması ile kopyalanıyor — C++ tarafında ayrıca bir dosya
+  listesi güncellemesi gerekmedi.)
+
+### 14.1 Test yöntemi — gerçek donanım/pipeline'sız, derleyici-temelli doğrulama
+
+Kullanıcı bilgisayardan uzaktaydı (ekran görüntüsü / canlı test yok isteği).
+Bu yüzden doğrulama tamamen **gerçek `arm-none-eabi-gcc` ile, gerçek H7
+CMSIS/HAL başlıklarına karşı, hedef derleyici bayraklarıyla** (Makefile'daki
+`-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard -DSTM32H723xx`
+birebir) yapıldı — ekran/tıklama otomasyonu hiç kullanılmadı:
+
+1. **`stack_paint.c` — gerçek derleme:** Şablonun kendi `Inc/main.h`,
+   `ai_config.h`, `stm32h7xx_hal_conf.h` dosyaları + yerel diskteki gerçek
+   `STM32Cube_FW_H7_V1.12.1` CMSIS/HAL başlıklarıyla, **sıfır hata/uyarı**
+   (`-Wall`) derlendi. `nm` çıktısı: `_sstack` **`U`** (tanımsız — linker'dan
+   beklendiği gibi), `StackPaint_Init`/`StackPaint_Pattern` **`T`** (doğru
+   tanımlı). GCC, döngüyü otomatik olarak `memset`'e optimize etti (desen
+   4 baytın tekrarı olduğu için) — beklenen, zararsız bir derleyici
+   optimizasyonu.
+2. **`ai_runner.c` diff'i — izole derleme (sahte X-CUBE-AI başlığı ile):**
+   Gerçek bir eğitilmiş model olmadan `network.h` üretilemediği için, test
+   mühendisliğinde yaygın bir teknikle (üçüncü taraf bağımlılığı sahte/stub
+   ile izole etme) minimal bir `network.h` stub'ı yazıldı (`ai_i8`,
+   `ai_buffer`, `ai_handle`, `ai_network_*` fonksiyonları, ilgili makrolar).
+   Gerçek dosya bu stub'a karşı **`-Wall -Wextra` ile sıfır hata/uyarı**
+   derlendi. `nm -S --defined-only` çıktısı 6 yeni sembolün tümünü doğru
+   boyut ve bölümde (`.bss`, `b`) gösterdi:
+   `g_ai_last_inference_us`(4B), `g_ai_infer_count`(4B),
+   `g_ai_last_class`(1B), `g_ai_last_confidence`(1B), `g_ai_input`(16B-stub),
+   `g_ai_output`(4B-stub) — plan Bölüm 8.3 madde 2'nin ("nm çıktısında
+   görünür ve RAM adreslerinde") yapısal kanıtı, gerçek boyutlar yalnızca
+   gerçek modelin `AI_NETWORK_IN/OUT_1_SIZE` değerlerine bağlı olduğundan
+   stub boyutlarıyla.
+3. Mevcut Qt birim test paketi (`ctest --test-dir build`) bu değişikliklerden
+   sonra da **yeşil** (Faz 5 hiçbir C++ dosyasına dokunmadı, regresyon
+   beklenmiyordu — doğrulandı).
+
+### 14.2 Ertelenen doğrulamalar (gerekçeli)
+
+Plan Bölüm 8.3'ün 1, 3, 4, 5, 6 numaralı maddeleri (pipeline'ı gerçek bir
+modelle yeniden çalıştırıp H7'yi reflaş etmeyi, ardından İzleyici'de canlı
+`g_ai_infer_count` artışını ve UART `inf_us` ile ±%5 uyumu izlemeyi
+gerektiriyor) bu oturumda **çalıştırılmadı** — kullanıcı bilgisayardan
+uzaktaydı ve Faz 3'te de aynı gerekçeyle ("Gerek yok, mevcut kanıt yeterli")
+benzer bir canlı-reflaş adımı ertelenmişti. Statik/derleyici kanıtı (Bölüm
+14.1) kodun doğruluğu için yeterli; canlı sayı artışı ve stack boyama
+deseni okuması, kullanıcı bir sonraki gerçek model pipeline'ı çalıştırıp
+flaşladığında doğal olarak doğrulanabilir.
+
+### 14.3 Faz 5 kabul kriterleri özeti
+
+| Kriter | Sonuç |
+|---|---|
+| `g_ai_*` statikleri dosya-kapsamlı, `nm`'de görünür boyut/bölümde | ✅ (stub ile yapısal olarak kanıtlandı) |
+| `stack_paint.c` gerçek H7 başlıklarına karşı sıfır hata/uyarı derlenir | ✅ |
+| Üç kartta da `_sstack` linker sembolü tutarlı şekilde var | ✅ (F4/H7'ye eklendi, N6'da zaten vardı) |
+| `StackPaint_Init()` üç `main.c`'de de `HAL_Init()` sonrası çağrılıyor | ✅ |
+| Üç `Makefile`'da `Src/stack_paint.c` derleme listesinde | ✅ |
+| Mevcut Qt birim testleri regresyonsuz | ✅ |
+| Canlı H7: `g_ai_infer_count` artışı + `inf_us` ±%5 UART uyumu + boyama deseni okuma | ⏸️ ertelendi (gerekçeli, yukarıda) |
+| Firmware boyut artışı < 1 KB | ⏸️ gerçek model olmadan ölçülemez |
+
+**Faz 5 tamamlandı** (firmware kodu yazıldı, gerçek çapraz-derleyiciyle
+doğrulandı; canlı reflaş gerektiren adımlar gerekçeli olarak ertelendi).

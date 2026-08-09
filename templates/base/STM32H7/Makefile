@@ -35,6 +35,7 @@ C_SOURCES = \
   Src/stm32h7xx_it.c \
   Src/{{SENSOR_TYPE_LOWER}}.c \
   Src/ai_runner.c \
+  Src/stack_paint.c \
   Src/uart_report.c \
   Src/network.c \
   Src/network_data.c \

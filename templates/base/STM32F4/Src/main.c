@@ -5,6 +5,7 @@
 #include "main.h"
 #include "ai_config.h"
 #include "ai_runner.h"
+#include "stack_paint.h"
 #include "uart_report.h"
 #include "{{SENSOR_TYPE_LOWER}}.h"
 
@@ -33,6 +34,7 @@ static uint8_t s_rx_byte = 0;
 int main(void)
 {
     HAL_Init();
+    StackPaint_Init();
     SystemClock_Config();
     MX_GPIO_Init();
     MX_USART2_UART_Init();

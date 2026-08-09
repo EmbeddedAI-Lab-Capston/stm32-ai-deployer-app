@@ -5,6 +5,7 @@
 #include "main.h"
 #include "ai_config.h"
 #include "ai_runner.h"
+#include "stack_paint.h"
 #include "uart_report.h"
 #include "{{SENSOR_TYPE_LOWER}}.h"
 
@@ -47,6 +48,7 @@ int main(void)
     SCB_EnableDCache();
 
     HAL_Init();
+    StackPaint_Init();
     SystemClock_Config();
     MX_GPIO_Init();
     MX_LPUART1_UART_Init();
