@@ -142,6 +142,12 @@ set(PROJECT_SOURCES
     src/modules/watcher/VariableWatcher.cpp
     src/modules/watcher/TraceEventLog.h
     src/modules/watcher/TraceEventLog.cpp
+    src/modules/watcher/TraceRecorder.h
+    src/modules/watcher/TraceRecorder.cpp
+    src/modules/watcher/TracePlayer.h
+    src/modules/watcher/TracePlayer.cpp
+    src/modules/watcher/WatchProfile.h
+    src/modules/watcher/WatchProfile.cpp
 
     src/quick/TracePlot.h
     src/quick/TracePlot.cpp
@@ -232,6 +238,8 @@ qt_add_qml_module(STM32AiDeployer
         qml/components/watch/WatchToolbar.qml
         qml/components/watch/TracePlotView.qml
         qml/components/watch/WatchEventLane.qml
+        qml/components/watch/WatchRecordingBar.qml
+        qml/components/watch/WatchPlaybackBanner.qml
         qml/factory/FactorySimWindow.qml
         qml/factory/FactoryDashboard.qml
         qml/factory/FactoryMap.qml
@@ -286,6 +294,17 @@ add_custom_command(TARGET STM32AiDeployer POST_BUILD
         "${CMAKE_SOURCE_DIR}/svd"
         "$<TARGET_FILE_DIR:STM32AiDeployer>/svd"
     COMMENT "Copying SVD register definitions to build directory"
+)
+
+# Copy the watch/ directory (demo trace recording for the Faz 7 "safe mode"
+# playback — works without a physical ST-Link) next to the executable.
+# Backend::demoTracePath() finds it via applicationDirPath() + "/watch"
+# (same pattern as templates/ and svd/).
+add_custom_command(TARGET STM32AiDeployer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/watch"
+        "$<TARGET_FILE_DIR:STM32AiDeployer>/watch"
+    COMMENT "Copying watch/ demo trace to build directory"
 )
 
 # Unit tests for the pure classes (no Qt event loop / socket / process

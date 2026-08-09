@@ -22,6 +22,10 @@ set(TEST_SOURCES
     TestTraceBuffer.cpp
     TestTraceEventLog.h
     TestTraceEventLog.cpp
+    TestTraceRecorderPlayer.h
+    TestTraceRecorderPlayer.cpp
+    TestWatchProfile.h
+    TestWatchProfile.cpp
 
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.h
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.cpp
@@ -40,6 +44,12 @@ set(TEST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceBuffer.cpp
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceEventLog.h
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceEventLog.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceRecorder.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceRecorder.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/TracePlayer.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/TracePlayer.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchProfile.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchProfile.cpp
 )
 
 qt_add_executable(STM32AiDeployerTests ${TEST_SOURCES})

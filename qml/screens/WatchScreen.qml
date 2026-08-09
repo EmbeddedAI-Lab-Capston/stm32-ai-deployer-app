@@ -18,6 +18,11 @@ Item {
         anchors.margins: Theme.spacingLg
         spacing: Theme.spacingMd
 
+        WatchPlaybackBanner {
+            Layout.fillWidth: true
+            Layout.fillHeight: false
+        }
+
         SectionHeader {
             id: hdr
             title: "Değişken İzleyici"
@@ -32,6 +37,12 @@ Item {
             Layout.fillHeight: false
             onAddSymbolRequested: symbolPicker.open()
             onAddAddressRequested: addressDialog.open()
+        }
+
+        WatchRecordingBar {
+            id: recBar
+            Layout.fillWidth: true
+            Layout.fillHeight: false
         }
 
         SplitView {

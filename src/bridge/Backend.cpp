@@ -26,6 +26,8 @@
 #include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QTextStream>
+#include <QCoreApplication>
+#include <QStandardPaths>
 #include <QUrl>
 #include <QtMath>
 
@@ -43,6 +45,7 @@
 #include "modules/debug/DebugLink.h"
 #include "modules/watcher/VariableWatcher.h"
 #include "modules/watcher/ValueCodec.h"
+#include "modules/watcher/WatchProfile.h"
 
 namespace
 {
@@ -2813,8 +2816,8 @@ void Backend::wireSerial()
                         m_state->setActiveBoard(board);
                     }
                 }
-                m_eventLog.addEvent(QStringLiteral("boot"),
-                                     tr("Boot: %1 / %2").arg(boot.card, boot.model), QStringLiteral("info"));
+                logWatchEvent(QStringLiteral("boot"),
+                              tr("Boot: %1 / %2").arg(boot.card, boot.model), QStringLiteral("info"));
             });
 
     connect(m_serial, &SerialManager::inferenceReceived, this,
@@ -2839,9 +2842,9 @@ void Backend::wireSerial()
                 // Not rate-limited like the monitor log line above — Faz 6's
                 // event/trace correlation (plan Bolum 9.6 point 3) needs
                 // every inference arrival, not a throttled sample of them.
-                m_eventLog.addEvent(QStringLiteral("inference"),
-                                     tr("%1  %2 ms  label=%3").arg(d.model, QString::number(d.inf_us / 1000.0, 'f', 1), d.label),
-                                     QStringLiteral("info"));
+                logWatchEvent(QStringLiteral("inference"),
+                              tr("%1  %2 ms  label=%3").arg(d.model, QString::number(d.inf_us / 1000.0, 'f', 1), d.label),
+                              QStringLiteral("info"));
             });
 
     connect(m_serial, &SerialManager::sensorReceived, this,
@@ -2880,15 +2883,15 @@ void Backend::wireSerial()
                                       .arg(s.state.isEmpty() ? "--" : s.state), "info");
                 if (m_state)
                     m_state->setSystemMetrics(static_cast<int>(s.uptime_s), s.temp_c, s.free_ram_b / 1024.0);
-                m_eventLog.addEvent(QStringLiteral("sys"),
-                                     tr("uptime=%1s state=%2").arg(s.uptime_s).arg(s.state), QStringLiteral("info"));
+                logWatchEvent(QStringLiteral("sys"),
+                              tr("uptime=%1s state=%2").arg(s.uptime_s).arg(s.state), QStringLiteral("info"));
             });
 
     connect(m_serial, &SerialManager::errorReceived, this,
             [this](const ErrorData &e) {
                 appendMonitorLine(QString("[err %1] %2").arg(e.code).arg(e.msg), "err");
-                m_eventLog.addEvent(QStringLiteral("uartError"),
-                                     tr("[%1] %2").arg(e.code).arg(e.msg), QStringLiteral("error"));
+                logWatchEvent(QStringLiteral("uartError"),
+                              tr("[%1] %2").arg(e.code).arg(e.msg), QStringLiteral("error"));
             });
 }
 
@@ -2977,9 +2980,9 @@ void Backend::wireRegisters()
         const QString slotLabel = (slot == 0) ? QStringLiteral("A")
                                  : (slot == 1) ? QStringLiteral("B")
                                  : QString::number(slot);
-        m_eventLog.addEvent(QStringLiteral("snapshot"),
-                             tr("Snapshot %1 alindi").arg(slotLabel),
-                             QStringLiteral("info"));
+        logWatchEvent(QStringLiteral("snapshot"),
+                      tr("Snapshot %1 alindi").arg(slotLabel),
+                      QStringLiteral("info"));
     });
     connect(m_registers, &RegisterInspector::errorOccurred, this, [this](const QString &m) {
         emit statusMessage(m);
@@ -3421,6 +3424,11 @@ void Backend::wireWatcher()
     connect(m_watcher, &VariableWatcher::runningChanged,   this, &Backend::watchRunChanged);
     connect(m_watcher, &VariableWatcher::symbolsLoaded,    this, &Backend::watchSymbolsLoaded);
     connect(m_watcher, &VariableWatcher::elfMatchChanged,  this, &Backend::watchElfMatchChanged);
+    connect(m_watcher, &VariableWatcher::playbackFinished, this, [this]() {
+        emit watchLinkChanged();
+        emit watchItemsChanged();
+        emit statusMessage(tr("Kayittan oynatma tamamlandi"));
+    });
     connect(m_watcher, &VariableWatcher::errorOccurred, this, [this](const QString &m) {
         emit watchError(m);
         emit statusMessage(m);
@@ -3436,9 +3444,9 @@ void Backend::wireWatcher()
             m_plotYRange.clear();
         });
         connect(m_debugLink, &DebugLink::coreReset, this, [this]() {
-            m_eventLog.addEvent(QStringLiteral("targetReset"),
-                                 tr("Hedef reset edildi - bu noktadan sonraki degerler sureksizdir."),
-                                 QStringLiteral("warning"));
+            logWatchEvent(QStringLiteral("targetReset"),
+                          tr("Hedef reset edildi - bu noktadan sonraki degerler sureksizdir."),
+                          QStringLiteral("warning"));
         });
         connect(m_debugLink, &DebugLink::closed, this, [this]() {
             if (m_stlinkOwner == QStringLiteral("watch"))
@@ -3493,6 +3501,8 @@ QString Backend::watchLinkState() const
 QString Backend::watchLinkError() const { return m_debugLink ? m_debugLink->lastError() : QString(); }
 
 bool Backend::watchRunning() const { return m_watcher && m_watcher->isRunning(); }
+bool Backend::watchPlayback() const { return m_watcher && m_watcher->isPlayback(); }
+bool Backend::watchRecording() const { return m_watcher && m_watcher->isRecording(); }
 
 QVariantMap Backend::watchRateInfo() const { return m_watcher ? m_watcher->rateInfo() : QVariantMap(); }
 
@@ -3694,6 +3704,13 @@ void Backend::acknowledgeElfMismatch()
     if (m_watcher) m_watcher->acknowledgeElfMismatch();
 }
 
+void Backend::logWatchEvent(const QString &kind, const QString &text, const QString &severity)
+{
+    const double t = m_eventLog.now();
+    m_eventLog.addEvent(kind, text, severity);
+    if (m_watcher) m_watcher->addRecordingEvent(t, kind, text, severity);
+}
+
 // ── Variable Watcher - Faz 6 (grafik + zaman ekseni) ────────────────────────
 
 QVariantList Backend::watchPlotFrame(int columns, double windowSec)
@@ -3851,4 +3868,189 @@ QVariantMap Backend::watchValuesAt(double t) const
 double Backend::watchSessionNow() const
 {
     return m_eventLog.now();
+}
+
+// ── Variable Watcher - Faz 7 (kayit / oynatma / disa aktarma) ──────────────
+
+QString Backend::defaultWatchRecordPath() const
+{
+    AppSettings settings;
+    QString dir = settings.watchRecordDir();
+    if (dir.isEmpty())
+        dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/STM32AiDeployer/watch";
+    QDir().mkpath(dir);
+    const QString ts = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss"));
+    return dir + "/watch_" + ts + ".csv";
+}
+
+QString Backend::demoTracePath() const
+{
+    // Shipped with the app — CMake copies watch/ next to the executable
+    // (same pattern as templates/, see CMakeLists.txt post-build step).
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+        appDir + "/watch/demo/h7_demo_trace.csv",
+        appDir + "/../watch/demo/h7_demo_trace.csv",
+        appDir + "/../../watch/demo/h7_demo_trace.csv",
+        appDir + "/../../../watch/demo/h7_demo_trace.csv",
+    };
+    for (const QString &c : candidates)
+        if (QFile::exists(c)) return QDir::cleanPath(c);
+    return QDir::cleanPath(candidates.first());
+}
+
+bool Backend::startWatchRecording(const QString &path)
+{
+    if (!m_watcher) return false;
+    const QString realPath = path.isEmpty() ? defaultWatchRecordPath() : path;
+    const QString board = m_state ? m_state->activeBoard().name : QString();
+    const QString model = m_state ? m_state->lastModelName() : QString();
+    const QString err = m_watcher->startRecording(realPath, board, model);
+    if (err.isEmpty())
+        m_lastWatchRecordPath = realPath;
+    emit watchRunChanged();
+    return err.isEmpty();
+}
+
+void Backend::stopWatchRecording()
+{
+    if (m_watcher) m_watcher->stopRecording();
+    emit watchRunChanged();
+}
+
+bool Backend::startWatchPlayback(const QString &path, double speed)
+{
+    if (!m_watcher) return false;
+    const QString err = m_watcher->startPlayback(path, speed);
+    emit watchLinkChanged();
+    emit watchItemsChanged();
+    return err.isEmpty();
+}
+
+void Backend::stopWatchPlayback()
+{
+    if (m_watcher) m_watcher->stopPlayback();
+    emit watchLinkChanged();
+    emit watchItemsChanged();
+}
+
+void Backend::setWatchPlaybackSpeed(double speed)
+{
+    if (m_watcher) m_watcher->setPlaybackSpeed(speed);
+}
+
+void Backend::stepWatchPlayback()
+{
+    if (m_watcher) m_watcher->stepPlayback();
+}
+
+QVariantMap Backend::watchPlaybackInfo() const
+{
+    return m_watcher ? m_watcher->playbackInfo() : QVariantMap();
+}
+
+bool Backend::saveWatchProfile(const QString &note)
+{
+    if (!m_watcher || !m_analysis) return false;
+
+    const QList<WatchItem> &items = m_watcher->items();
+    if (items.isEmpty()) return false;
+
+    QList<WatchStats> stats;
+    stats.reserve(items.size());
+    for (int i = 0; i < items.size(); ++i)
+        stats.append(m_watcher->buffer().stats(i));
+
+    WatchProfileInput input;
+    input.model         = m_state ? m_state->lastModelName() : QString();
+    input.board         = m_state ? m_state->activeBoard().name : QString();
+    input.rawSeriesPath = m_lastWatchRecordPath;
+    input.note           = note;
+
+    const double actualHz = m_watcher->rateInfo().value(QStringLiteral("actualHz")).toDouble();
+    const double duration = (m_watcher->buffer().sampleCount() > 0)
+        ? (m_watcher->buffer().lastTime() - m_watcher->buffer().firstTime()) : 0.0;
+
+    const QList<QStringList> rows = WatchProfile::buildRows(input, items, stats, actualHz, duration);
+    for (const QStringList &cells : rows)
+        m_analysis->addRecord(QStringLiteral("watch_profile"), cells);
+
+    emit analysisChanged();
+    return !rows.isEmpty();
+}
+
+bool Backend::exportWatchCsv(const QString &path)
+{
+    if (!m_watcher) return false;
+
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
+        return false;
+    QTextStream out(&f);
+
+    const QList<WatchItem> &items = m_watcher->items();
+    const TraceBuffer &buf = m_watcher->buffer();
+    const double t0 = buf.firstTime();
+    const double t1 = buf.lastTime();
+
+    out << "t";
+    for (const WatchItem &it : items)
+        out << ',' << it.label;
+    out << "\n";
+
+    const int columns = 800;
+    QVector<QVector<PlotColumn>> perItem;
+    perItem.reserve(items.size());
+    for (int i = 0; i < items.size(); ++i)
+        perItem.append(buf.decimate(i, t0, t1, columns));
+
+    for (int c = 0; c < columns; ++c) {
+        if (perItem.isEmpty()) break;
+        out << QString::number(perItem.at(0).at(c).t, 'f', 6);
+        for (int i = 0; i < items.size(); ++i) {
+            const PlotColumn &pc = perItem.at(i).at(c);
+            out << ',' << (pc.hasData ? QString::number(pc.vlast, 'g', 10) : QString());
+        }
+        out << "\n";
+    }
+    return true;
+}
+
+bool Backend::exportWatchJson(const QString &path)
+{
+    if (!m_watcher) return false;
+
+    QJsonObject root;
+    root[QStringLiteral("board")]        = m_state ? m_state->activeBoard().name : QString();
+    root[QStringLiteral("model")]        = m_state ? m_state->lastModelName() : QString();
+    root[QStringLiteral("elfPath")]      = m_watcher->elfPath();
+    root[QStringLiteral("targetRateHz")] = m_watcher->rateInfo().value(QStringLiteral("targetHz")).toInt();
+    root[QStringLiteral("exportedAt")]   = QDateTime::currentDateTime().toString(Qt::ISODate);
+
+    QJsonArray itemsArr;
+    const QList<WatchItem> &items = m_watcher->items();
+    for (int i = 0; i < items.size(); ++i) {
+        const WatchItem &it = items.at(i);
+        const WatchStats &st = m_watcher->buffer().stats(i);
+        QJsonObject o;
+        o[QStringLiteral("label")]   = it.label;
+        o[QStringLiteral("address")] = QStringLiteral("0x%1").arg(it.address, 0, 16);
+        o[QStringLiteral("type")]    = watchValueTypeToString(it.type);
+        o[QStringLiteral("unit")]    = it.unit;
+        o[QStringLiteral("role")]    = it.role;
+        o[QStringLiteral("count")]   = double(st.count);
+        o[QStringLiteral("min")]     = st.min;
+        o[QStringLiteral("max")]     = st.max;
+        o[QStringLiteral("mean")]    = st.mean;
+        o[QStringLiteral("stddev")]  = st.stddev();
+        o[QStringLiteral("last")]    = st.last;
+        itemsArr.append(o);
+    }
+    root[QStringLiteral("items")] = itemsArr;
+
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
+        return false;
+    f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    return true;
 }

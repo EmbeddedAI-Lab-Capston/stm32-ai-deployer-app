@@ -136,6 +136,12 @@ public:
     int  watchTargetRateHz() const;   // default 200
     void setWatchTargetRateHz(int hz);
 
+    // Directory suggested for new watch trace recordings (Faz 7). Empty by
+    // default — Backend::defaultWatchRecordPath() falls back to
+    // Documents/STM32AiDeployer/watch when unset.
+    QString watchRecordDir() const;
+    void    setWatchRecordDir(const QString &dir);
+
 private:
     static constexpr auto kKeyCliPath          = "programmer/cli_path";
     static constexpr auto kKeyComPort          = "serial/last_com_port";
@@ -168,4 +174,5 @@ private:
     static constexpr auto kKeyWatchItems       = "watch/items";
     static constexpr auto kKeyLastWatchElfPath = "watch/last_elf_path";
     static constexpr auto kKeyWatchTargetRateHz = "watch/target_rate_hz";
+    static constexpr auto kKeyWatchRecordDir   = "watch/record_dir";
 };

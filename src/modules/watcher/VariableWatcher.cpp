@@ -224,9 +224,12 @@ void VariableWatcher::start(int targetRateHz)
 
 void VariableWatcher::stop()
 {
+    if (m_isPlayback) { endPlayback(); return; }
     if (!m_running) return;
     m_link->stopSampling();
     flushPending();
+    if (m_recorder.isRecording())
+        m_recorder.stop();
     setRunning(false);
 }
 
@@ -296,6 +299,8 @@ void VariableWatcher::flushPending()
     batch.coreRunning = m_coreRunning;
     batch.skewUs       = m_lastSkewUs;
     m_buffer.append(batch);
+    if (m_recorder.isRecording())
+        m_recorder.appendBatch(batch);
 
     m_pendingTimes.clear();
     for (auto &s : m_pendingSeries) s.clear();
@@ -469,4 +474,201 @@ void VariableWatcher::loadItems(const QString &boardName)
         m_items.append(it);
     }
     emit itemsChanged();
+}
+
+// ── Faz 7: recording ─────────────────────────────────────────────────────
+
+QString VariableWatcher::startRecording(const QString &path, const QString &board, const QString &model)
+{
+    if (m_isPlayback) {
+        const QString msg = tr("Kayittan oynatma sirasinda kayit baslatilamaz");
+        emit errorOccurred(msg);
+        return msg;
+    }
+    if (!m_running) {
+        const QString msg = tr("Kayit icin once izlemeyi baslatin");
+        emit errorOccurred(msg);
+        return msg;
+    }
+    if (!m_recorder.start(path, board, m_elfPath, model, m_targetRateHz, m_items)) {
+        const QString msg = m_recorder.lastError();
+        emit errorOccurred(msg);
+        return msg;
+    }
+    return QString();
+}
+
+void VariableWatcher::stopRecording()
+{
+    m_recorder.stop();
+}
+
+void VariableWatcher::addRecordingEvent(double t, const QString &kind, const QString &text, const QString &severity)
+{
+    if (m_recorder.isRecording())
+        m_recorder.addEvent(t, kind, text, severity);
+}
+
+// ── Faz 7: playback ───────────────────────────────────────────────────────
+
+QString VariableWatcher::startPlayback(const QString &path, double speed)
+{
+    if (m_running) {
+        const QString msg = tr("Canli ornekleme calisirken oynatma baslatilamaz - once durdurun");
+        emit errorOccurred(msg);
+        return msg;
+    }
+    if (!m_player.load(path)) {
+        const QString msg = m_player.lastError();
+        emit errorOccurred(msg);
+        return msg;
+    }
+
+    m_preservedLiveItems = m_items;
+    m_hadPreservedItems  = true;
+
+    m_items.clear();
+    for (const LoadedTraceItem &li : m_player.items()) {
+        WatchItem it;
+        it.id      = QUuid::createUuid().toString(QUuid::Id128);
+        it.label   = li.label;
+        it.address = li.address;
+        it.kind    = WatchItemKind::Scalar;
+        it.type    = li.type;
+        it.format  = li.format;
+        it.scale   = li.scale;
+        it.offset  = li.offset;
+        it.unit    = li.unit;
+        it.role    = li.role;
+        it.source  = QStringLiteral("playback");
+        it.color   = plotPalette().at(m_items.size() % plotPalette().size());
+        m_items.append(it);
+    }
+    emit itemsChanged();
+
+    const int capacity = qMax(1, m_player.times().size());
+    m_buffer.configure(m_items.size(), capacity);
+
+    m_isPlayback        = true;
+    m_playbackSpeed      = qMax(0.0, speed);
+    m_playbackNextIndex = 0;
+    m_playbackBaseT     = m_player.times().isEmpty() ? 0.0 : m_player.times().first();
+    m_playbackVirtualT  = m_playbackBaseT;
+    m_playbackClock.start();
+
+    if (!m_playbackTimer) {
+        m_playbackTimer = new QTimer(this);
+        connect(m_playbackTimer, &QTimer::timeout, this, &VariableWatcher::onPlaybackTick);
+    }
+    m_playbackTimer->start(33);   // same ~30 Hz batching cadence as live (plan Bolum 2.2)
+
+    setRunning(true);
+    return QString();
+}
+
+void VariableWatcher::stopPlayback()
+{
+    if (!m_isPlayback) return;
+    endPlayback();
+}
+
+void VariableWatcher::setPlaybackSpeed(double speed)
+{
+    m_playbackSpeed = qMax(0.0, speed);
+    if (m_playbackClock.isValid())
+        m_playbackClock.restart();   // drop any elapsed time accrued under the old speed
+}
+
+void VariableWatcher::stepPlayback()
+{
+    if (!m_isPlayback) return;
+    if (m_playbackNextIndex >= m_player.times().size()) return;
+
+    WatchSampleBatch batch;
+    appendPlaybackSample(m_playbackNextIndex, batch);
+    m_playbackVirtualT = m_player.times().at(m_playbackNextIndex);
+    ++m_playbackNextIndex;
+
+    batch.coreRunning = true;
+    m_buffer.append(batch);
+    emit samplesAppended();
+
+    if (m_playbackNextIndex >= m_player.times().size()) {
+        endPlayback();
+        emit playbackFinished();
+    }
+}
+
+QVariantMap VariableWatcher::playbackInfo() const
+{
+    QVariantMap m;
+    m[QStringLiteral("active")]    = m_isPlayback;
+    m[QStringLiteral("board")]     = m_player.board();
+    m[QStringLiteral("model")]     = m_player.model();
+    m[QStringLiteral("elfPath")]   = m_player.elfPath();
+    m[QStringLiteral("started")]   = m_player.started();
+    m[QStringLiteral("targetHz")]  = m_player.targetRateHz();
+    m[QStringLiteral("actualHz")]  = m_player.actualHz();
+    m[QStringLiteral("speed")]     = m_playbackSpeed;
+    const double total = m_player.times().isEmpty()
+                              ? 0.0 : (m_player.times().last() - m_player.times().first());
+    m[QStringLiteral("totalS")]    = total;
+    m[QStringLiteral("positionS")] = qBound(0.0, m_playbackVirtualT - m_playbackBaseT, total);
+    return m;
+}
+
+void VariableWatcher::appendPlaybackSample(int idx, WatchSampleBatch &batch)
+{
+    const QVector<double> &times = m_player.times();
+    batch.times.append(times.at(idx) - m_playbackBaseT);
+    if (batch.series.size() != m_items.size())
+        batch.series.resize(m_items.size());
+    for (int i = 0; i < m_items.size(); ++i) {
+        const QVector<double> &s = m_player.series().at(i);
+        batch.series[i].append(idx < s.size() ? s.at(idx) : 0.0);
+    }
+}
+
+void VariableWatcher::onPlaybackTick()
+{
+    if (!m_isPlayback) return;
+
+    const qint64 ms = m_playbackClock.restart();
+    if (m_playbackSpeed <= 0.0) return;   // paused — only stepPlayback() advances
+
+    m_playbackVirtualT += (double(ms) / 1000.0) * m_playbackSpeed;
+
+    const QVector<double> &times = m_player.times();
+    WatchSampleBatch batch;
+    while (m_playbackNextIndex < times.size() && times.at(m_playbackNextIndex) <= m_playbackVirtualT) {
+        appendPlaybackSample(m_playbackNextIndex, batch);
+        ++m_playbackNextIndex;
+    }
+
+    if (!batch.times.isEmpty()) {
+        batch.coreRunning = true;
+        m_buffer.append(batch);
+        emit samplesAppended();
+    }
+
+    if (m_playbackNextIndex >= times.size()) {
+        endPlayback();
+        emit playbackFinished();
+    }
+}
+
+void VariableWatcher::endPlayback()
+{
+    if (m_playbackTimer)
+        m_playbackTimer->stop();
+    m_isPlayback = false;
+
+    if (m_hadPreservedItems) {
+        m_items = m_preservedLiveItems;
+        m_preservedLiveItems.clear();
+        m_hadPreservedItems = false;
+        m_buffer.configure(m_items.size());
+        emit itemsChanged();
+    }
+    setRunning(false);
 }

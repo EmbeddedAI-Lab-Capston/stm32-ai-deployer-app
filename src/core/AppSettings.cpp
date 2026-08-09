@@ -407,6 +407,18 @@ void AppSettings::setWatchTargetRateHz(int hz)
     s.setValue(kKeyWatchTargetRateHz, hz);
 }
 
+QString AppSettings::watchRecordDir() const
+{
+    QSettings s;
+    return s.value(kKeyWatchRecordDir, QString{}).toString();
+}
+
+void AppSettings::setWatchRecordDir(const QString &dir)
+{
+    QSettings s;
+    s.setValue(kKeyWatchRecordDir, dir);
+}
+
 void AppSettings::addCustomBoard(const BoardInfo &board)
 {
     if (board.name.trimmed().isEmpty())

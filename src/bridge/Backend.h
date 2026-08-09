@@ -83,6 +83,7 @@ class Backend : public QObject
     Q_PROPERTY(QString      watchLinkError   READ watchLinkError   NOTIFY watchLinkChanged)
     Q_PROPERTY(bool         watchRunning     READ watchRunning     NOTIFY watchRunChanged)
     Q_PROPERTY(bool         watchPlayback    READ watchPlayback    NOTIFY watchLinkChanged)
+    Q_PROPERTY(bool         watchRecording   READ watchRecording   NOTIFY watchRunChanged)
     Q_PROPERTY(QVariantMap  watchRateInfo    READ watchRateInfo    NOTIFY watchStatsChanged)
     Q_PROPERTY(QVariantList watchItems       READ watchItems       NOTIFY watchItemsChanged)
     Q_PROPERTY(QVariantList watchViolations  READ watchViolations  NOTIFY watchViolationsChanged)
@@ -259,7 +260,8 @@ public:
     QString      watchLinkState() const;
     QString      watchLinkError() const;
     bool         watchRunning() const;
-    bool         watchPlayback() const { return false; }   // Faz 7 not implemented yet
+    bool         watchPlayback() const;
+    bool         watchRecording() const;
     QVariantMap  watchRateInfo() const;
     QVariantList watchItems() const;
     QVariantList watchViolations() const { return {}; }     // Faz 8 (TimeSeriesRuleEngine) not implemented yet
@@ -310,6 +312,20 @@ public:
     // Seconds elapsed on the shared session clock "now" (TraceEventLog) -
     // the upper bound TracePlotView should use for a live-scrolling window.
     Q_INVOKABLE double       watchSessionNow() const;
+
+    // ── Variable Watcher - Faz 7 (kayit / oynatma / disa aktarma) ────────
+    Q_INVOKABLE QString      defaultWatchRecordPath() const;   // AppSettings watch/record_dir, timestamped filename
+    Q_INVOKABLE QString      demoTracePath() const;            // watch/demo/h7_demo_trace.csv shipped with the app
+    Q_INVOKABLE bool         startWatchRecording(const QString &path);
+    Q_INVOKABLE void         stopWatchRecording();
+    Q_INVOKABLE bool         startWatchPlayback(const QString &path, double speed);
+    Q_INVOKABLE void         stopWatchPlayback();
+    Q_INVOKABLE void         setWatchPlaybackSpeed(double speed);   // 0 = paused
+    Q_INVOKABLE void         stepWatchPlayback();
+    Q_INVOKABLE QVariantMap  watchPlaybackInfo() const;
+    Q_INVOKABLE bool         saveWatchProfile(const QString &note);   // -> analysis_records kind="watch_profile"
+    Q_INVOKABLE bool         exportWatchCsv(const QString &path);     // visible window, decimated
+    Q_INVOKABLE bool         exportWatchJson(const QString &path);    // session summary + config
 
 signals:
     void toolPathsChanged();
@@ -364,6 +380,10 @@ private:
     QVariantMap  diffToVariant(const SnapshotDiff &diff) const;
 
     void wireWatcher();
+    // Adds to the live TraceEventLog AND (if a recording is active) to
+    // TraceRecorder's trailing event block, from one call site instead of
+    // two — every event source added in Faz 6 goes through this.
+    void logWatchEvent(const QString &kind, const QString &text, const QString &severity);
     // Single named arbiter for the shared ST-Link (Bolum 7.5). Tracked in
     // PARALLEL to but SEPARATE from DebugLink's own retain/release refcount —
     // this answers "which FEATURE is using the ST-Link", the refcount
@@ -389,6 +409,7 @@ private:
     // Keyed by WatchItem::id; grows instantly, shrinks exponentially.
     QMap<QString, QPair<double, double>> m_plotYRange;
     QElapsedTimer      m_plotFrameClock;   // dt between watchPlotFrame() calls, for the shrink smoothing
+    QString            m_lastWatchRecordPath;   // set on a successful startWatchRecording(), for saveWatchProfile()'s c13
     QString            m_stlinkOwner;   // "" | "watch" (flash/pipeline/probe/register keep their own flags)
     int                m_registerViewSlot = 0;   // which slot registerModel shows
 

@@ -4,12 +4,15 @@
 #include "TraceBuffer.h"
 #include "ElfTargetMatcher.h"
 #include "SymbolModel.h"
+#include "TraceRecorder.h"
+#include "TracePlayer.h"
 #include "modules/debug/DebugLinkTypes.h"
 
 #include <QElapsedTimer>
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 #include <QVariantMap>
 #include <QVector>
 
@@ -63,6 +66,30 @@ public:
     const ElfMatchReport &elfMatchDetail() const { return m_elfMatchReport; }
     void acknowledgeElfMismatch() { m_mismatchAcknowledged = true; }
 
+    // ── Faz 7: recording ──────────────────────────────────────────────────
+    // Only while a live session is already running (m_running) — a
+    // recording captures an ACTIVE session, it doesn't pre-arm one.
+    bool isRecording() const { return m_recorder.isRecording(); }
+    QString startRecording(const QString &path, const QString &board, const QString &model);
+    void    stopRecording();
+    // Forwards to the recorder's trailing event log iff currently recording
+    // (no-op otherwise) — called by Backend from the same spots that feed
+    // TraceEventLog, so the CSV's events match what the live session saw.
+    void    addRecordingEvent(double t, const QString &kind, const QString &text, const QString &severity);
+
+    // ── Faz 7: playback ("guvenli mod") ─────────────────────────────────────
+    // Replays a TraceRecorder CSV through the SAME TraceBuffer/signal path
+    // as live sampling (plan Bolum 10.3) — no DebugLink/ST-Link involved.
+    // Mutually exclusive with live start() via the shared m_running flag.
+    // The caller's current live item list (if any) is preserved and
+    // restored when playback ends.
+    bool isPlayback() const { return m_isPlayback; }
+    QString startPlayback(const QString &path, double speed);   // "" = ok
+    void    stopPlayback();
+    void    setPlaybackSpeed(double speed);   // 0 = paused (use stepPlayback())
+    void    stepPlayback();                   // advance exactly one recorded sample
+    QVariantMap playbackInfo() const;
+
 signals:
     void itemsChanged();
     void samplesAppended();      // <=30 Hz
@@ -71,8 +98,10 @@ signals:
     void symbolsLoaded(int count);
     void errorOccurred(const QString &message);
     void elfMatchChanged();
+    void playbackFinished();
 
 private slots:
+    void onPlaybackTick();
     void onLinkOpened();
     void onLinkFailed(const QString &message);
     void onElfSymbolsLoaded(const QList<Symbol> &symbols, const QString &elfPath);
@@ -90,6 +119,9 @@ private:
     void maybeCheckElfMatch();
     void handleElfMatchReply(const QVector<MemoryReply> &replies);
     void setElfMatch(ElfMatchResult result, const ElfMatchReport &report);
+
+    void appendPlaybackSample(int idx, WatchSampleBatch &batch);
+    void endPlayback();
 
     DebugLink        *m_link = nullptr;
     ElfSymbolSource  *m_elfSource = nullptr;
@@ -122,4 +154,19 @@ private:
     bool           m_mismatchAcknowledged = false;
     int            m_elfMatchStep = 0;     // 0=idle, 1=awaiting VTOR, 2=awaiting vector table
     quint32        m_pendingVtor = 0;
+
+    // Faz 7 — recording
+    TraceRecorder  m_recorder;
+
+    // Faz 7 — playback
+    TracePlayer    m_player;
+    bool           m_isPlayback = false;
+    double         m_playbackSpeed = 1.0;
+    QElapsedTimer  m_playbackClock;
+    double         m_playbackBaseT = 0.0;      // player.times().first(), for re-basing to t=0
+    double         m_playbackVirtualT = 0.0;   // how far into the recording we've played
+    int            m_playbackNextIndex = 0;
+    QTimer        *m_playbackTimer = nullptr;
+    QList<WatchItem> m_preservedLiveItems;     // saved across a playback session
+    bool           m_hadPreservedItems = false;
 };

@@ -8,6 +8,8 @@
 #include "TestWatchPlanBuilder.h"
 #include "TestTraceBuffer.h"
 #include "TestTraceEventLog.h"
+#include "TestTraceRecorderPlayer.h"
+#include "TestWatchProfile.h"
 
 // Runs every suite with QTest::qExec and ORs the exit statuses, so a failure
 // in one suite doesn't stop the others from reporting (docs/variable_watcher_plan.md
@@ -24,5 +26,7 @@ int main(int argc, char **argv)
     { TestWatchPlanBuilder t; status |= QTest::qExec(&t, argc, argv); }
     { TestTraceBuffer t;      status |= QTest::qExec(&t, argc, argv); }
     { TestTraceEventLog t;    status |= QTest::qExec(&t, argc, argv); }
+    { TestTraceRecorderPlayer t; status |= QTest::qExec(&t, argc, argv); }
+    { TestWatchProfile t;     status |= QTest::qExec(&t, argc, argv); }
     return status;
 }

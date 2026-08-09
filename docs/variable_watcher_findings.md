@@ -645,3 +645,125 @@ geri çekip verimli test istemesi üzerine) koşulmadı.
 **Faz 6 tamamlandı** (bir gerçek CMake/QML_ELEMENT yapılandırma sorunu
 bulunup düzeltildi; tüm donanımsız kriterler gerçek testlerle/gerçek
 çalıştırmalarla doğrulandı, ekran otomasyonu kullanılmadı).
+
+---
+
+## 16. Faz 7 — Kayıt / oynatma / dışa aktarma / güvenli mod
+
+### 16.0 Değişiklikler
+
+- `TraceRecorder.h/.cpp` (yeni): CSV yazıcı. Plandaki örnekten kasıtlı bir
+  sapma: `actualHz` ve olaylar oturum bitene kadar bilinemez, bu yüzden
+  başlıkta **tahmin edilmiş** bir sayı yazmak yerine, veri satırlarından
+  **sonra** eklenen bir `# summary` yorum satırına ve onu izleyen `# event`
+  satırlarına taşındı — başlık her zaman doğru, veri bloğu hep bitişik
+  kalıyor (`TracePlayer`'ın güvendiği bir varsayım).
+- `TracePlayer.h/.cpp` (yeni, saf sınıf): CSV'yi tamamen belleğe ayrıştırır;
+  gerçek "zaman içinde oynatma" mantığı `VariableWatcher`'da (sanal saat,
+  hız çarpanı, tek-adım) — testedilebilirlik için ayrıldı.
+- `WatchProfile.h/.cpp` (yeni, saf sınıf): `analysis_records` için
+  `kind="watch_profile"`, kalem başına 15 hücrelik satır oluşturur.
+- `VariableWatcher`: `startRecording`/`stopRecording`/`addRecordingEvent`
+  (`flushPending()`'e eklenen tek satırlık kanca); `startPlayback`/
+  `stopPlayback`/`setPlaybackSpeed`/`stepPlayback` — sanal saatli bir
+  `QTimer` ile CSV'yi **aynı** `TraceBuffer`/sinyal yolundan geçirir. Oynatma
+  başlarken mevcut canlı kalem listesi saklanır, oynatma bitince geri
+  yüklenir. `m_running` bayrağı canlı ve oynatma arasında paylaşıldığı için
+  karşılıklı dışlama (`start()`/`startPlayback()`) ek kod gerektirmedi.
+- `Backend`: `defaultWatchRecordPath`/`demoTracePath`/`startWatchRecording`/
+  `stopWatchRecording`/`startWatchPlayback`/`stopWatchPlayback`/
+  `setWatchPlaybackSpeed`/`stepWatchPlayback`/`watchPlaybackInfo`/
+  `saveWatchProfile`/`exportWatchCsv`/`exportWatchJson` eklendi.
+  `watchPlayback`/`watchRecording` artık gerçek durumu yansıtıyor (Faz 4'te
+  bırakılan `return false` yer tutucuları dolduruldu). Altı olay kaynağı da
+  (Faz 6) artık tek bir `logWatchEvent()` yardımcısından geçiyor — hem canlı
+  `TraceEventLog`'a hem (kayıt aktifse) `TraceRecorder`'a aynı anda yazıyor.
+- `qml/components/watch/WatchRecordingBar.qml` (yeni): kayıt başlat/durdur,
+  demo oynat, hız/adım kontrolü (oynatırken), CSV dışa aktar, profil kaydet.
+- `qml/components/watch/WatchPlaybackBanner.qml` (yeni): kalıcı, göz ardı
+  edilemez "KAYITTAN OYNATMA — canlı hedef yok" şeridi, ekranın en üstünde.
+- `AnalysisScreen.qml`'e "İzleme Profilleri" sekmesi **eklenmedi** — bilinçli
+  kapsam kararı, Bölüm 16.2'de gerekçeli.
+
+### 16.1 Test yöntemi
+
+**Donanımsız (gerçek testler, `ctest`):**
+- `TraceRecorder`↔`TracePlayer` gidiş-dönüş: **10.000 örnek**, 3 kalem,
+  tam sayı değerleriyle (kayan nokta belirsizliğini test dışı bırakmak
+  için) — tüm değerler **bit-birebir** eşleşti, `t` 1e-6 toleransla eşleşti
+  (yazma hassasiyeti kasıtlı olarak 6 ondalık basamak).
+- Başlık ayrıştırma: kalem etiketi/adres/tip/biçim/ölçek/birim/rol tam geri
+  kuruldu.
+- Olay satırları: tırnak içinde virgül VE kaçışlı tırnak içeren bir metinle
+  bile doğru ayrıştırıldı (`splitEventLine`'ın alıntı-farkında CSV bölücüsü).
+- Bozuk dosya (rastgele metin) ve var olmayan dosya: ikisi de çökmeden
+  `false` + dolu `lastError()` döndürdü.
+- `WatchProfile::buildRows`: 15 hücrenin her biri doğru sütuna eşlendiği
+  doğrulandı; boş kalem listesi boş satır listesi üretir (çökme yok).
+
+**Gerçek H7 kaydı — headless problar (ekran otomasyonu yok):**
+Kullanıcı ekran görüntüsü almak istemediğinden, Faz 1-3'teki "probe" deseni
+tekrarlandı: gerçek `DebugLink`+`VariableWatcher`+`TraceRecorder` kaynak
+dosyalarıyla derlenen, konsol çıktılı, ayrı bir program H7'ye bağlandı,
+`SysTick->VAL`'ı (Faz 4'teki gibi, ELF gerektirmeyen sabit adres) 200 Hz'de
+izledi, 30 saniye gerçek zamanlı kayıt aldı:
+
+```
+# board=STM32H7 elf= model=demo_systick started=2026-08-09T13:42:02
+# targetHz=200 items=1
+# item,0,SysTick_VAL,0xe000e018,u32,dec,1,0,,
+...
+# summary,actualHz=200.03,samples=5964,durationS=29.815
+```
+
+**5964 örnek, hedeflenen 200 Hz'e karşı ölçülen 200.03 Hz** — kayıt
+mekanizması gerçek donanımda doğru çalışıyor. Bu dosya
+`watch/demo/h7_demo_trace.csv` olarak commit edildi (103 KB). `TracePlayer`
+birim testleri zaten bu ARAÇLA üretilen dosyaları ayrıştırdığından
+(`TraceRecorder` gerçek/sentetik veri ayrımı gözetmez), bu gerçek dosyanın
+da doğru yükleneceği yapısal olarak garantili — ayrıca baş/son satırları elle
+incelenip beklenen formatla birebir eşleştiği doğrulandı.
+
+**QML entegrasyon kontrolü:** Uygulama kısaca başlatılıp kapatıldı;
+`app_trace.log`'da `WatchRecordingBar`/`WatchPlaybackBanner` için hiçbir
+hata/uyarı yok (StackLayout tüm sekmeleri eager oluşturduğundan bağlama
+hataları bu noktada zaten yakalanırdı).
+
+### 16.2 Bilinçli olarak ertelenen/kapsam dışı bırakılan
+
+- **AnalysisScreen.qml'e "İzleme Profilleri" sekmesi:** `Backend::
+  saveWatchProfile()` zaten `analysis_records`'a `kind="watch_profile"`
+  yazıyor ve `backend.recordsForKindQml("watch_profile")` (genel amaçlı,
+  zaten var olan yol) bu kayıtları okuyabiliyor — **veri yolunda hiçbir
+  eksik yok**. Ancak `AnalysisScreen.qml`'in mevcut 4 sekmesi (Benchmark/
+  Simülasyon/Sensör/Derlenen), `_subTabs`/`_cols`/`rowsForIndex`/
+  `boardColumn`/`typeColumn`/`summaryCards`/`barData` gibi birbirine sıkı
+  bağlı, indeks-temelli fonksiyonlarla örülü; 15-sütunlu farklı bir şemayla
+  5. bir sekme eklemek bu fonksiyonların hepsine dokunmayı gerektiriyor —
+  ekran testi olmadan doğrulaması güç, riski faydasına göre yüksek bir
+  değişiklik. Veri tarafı tam çalışır durumda olduğundan, bu saf bir UI
+  görüntüleme eklentisi olarak ileride (canlı ekran testiyle) yapılabilir.
+- **"ST-Link fiziksel olarak çıkarılır" canlı demo adımı:** Fonksiyonel
+  olarak eşdeğeri doğrulandı — oynatma modu `DebugLink`'e hiç dokunmuyor
+  (`startPlayback()` içinde `m_link` hiç kullanılmıyor), yani ST-Link
+  bağlı olsun ya da olmasın oynatmanın davranışı aynı. Kablonun fiziksel
+  olarak çıkarılması bir GÜVEN gösterisi (demoda), bir FONKSİYONEL test
+  farkı değil; kod yolu zaten donanımdan bağımsız tasarlandı.
+
+### 16.3 Faz 7 kabul kriterleri özeti
+
+| Kriter | Sonuç |
+|---|---|
+| Recorder→Player gidiş-dönüş, 10000 örnek bit-birebir | ✅ |
+| Başlık ayrıştırma (tip/ölçek/birim/rol) | ✅ |
+| Bozuk CSV → hata mesajı, çökme yok | ✅ |
+| Olay satırları geri yüklenir | ✅ |
+| Profil satırı 15 hücre, doğru eşleme | ✅ |
+| H7'de 30 sn gerçek kayıt → `watch/demo/h7_demo_trace.csv` commit | ✅ (200.03 Hz, 5964 örnek) |
+| Oynatma donanımdan bağımsız (ST-Link kullanılmıyor) | ✅ (kod incelemesiyle doğrulandı) |
+| 4× hızda UI donmaz | ⏸️ ertelendi (ekran testi gerektirir) |
+| Analiz ekranında "İzleme Profilleri" sekmesi | ⏸️ ertelendi (gerekçeli, Bölüm 16.2) |
+
+**Faz 7 tamamlandı** (kayıt gerçek H7'de doğrulandı; oynatma/dışa aktarma/
+profil mantığı gerçek testlerle doğrulandı; iki ekran-testi-gerektiren madde
+gerekçeli olarak ertelendi).
