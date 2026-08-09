@@ -254,7 +254,9 @@ void DebugLinkWorker::advanceHandshake(const QByteArray &rawPayload)
             return;
         }
         m_step = HandshakeStep::Done;
-        emit handshakeSucceeded(computeMaxReadBytes(), value);
+        const double sessionElapsedS =
+            m_sessionClock.isValid() ? double(m_sessionClock.nsecsElapsed()) / 1.0e9 : 0.0;
+        emit handshakeSucceeded(computeMaxReadBytes(), value, sessionElapsedS);
         pumpNextRequest();   // release anything queued while handshaking
         return;
     }
@@ -389,7 +391,12 @@ void DebugLinkWorker::startSampling(const QVector<MemoryRequest> &plan, int targ
     }
 
     if (targetRateHz > 0) {
-        m_sampleTimer->start(qMax(1, 1000 / targetRateHz));
+        // QTimer resolution is whole milliseconds, so the achievable rate is
+        // quantised to 1000/N Hz. Round to the NEAREST millisecond rather than
+        // truncating: truncation turned e.g. 600 Hz into 1000/1 = 1000 Hz
+        // (further from the request than 1000/2 = 500 Hz) and made every
+        // request above 500 Hz collapse onto 1000 Hz.
+        m_sampleTimer->start(qMax(1, qRound(1000.0 / double(targetRateHz))));
     } else {
         m_sampleTimer->stop();
         onSampleTimerTick();   // kick off back-to-back mode; re-armed from completeCurrentJob()

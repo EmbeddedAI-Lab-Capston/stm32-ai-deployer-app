@@ -18,6 +18,8 @@ set(TEST_SOURCES
     TestElfTargetMatcher.cpp
     TestWatchPlanBuilder.h
     TestWatchPlanBuilder.cpp
+    TestWatchSampler.h
+    TestWatchSampler.cpp
     TestTraceBuffer.h
     TestTraceBuffer.cpp
     TestTraceEventLog.h
@@ -44,6 +46,8 @@ set(TEST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/ElfTargetMatcher.cpp
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchPlanBuilder.h
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchPlanBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchSampler.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchSampler.cpp
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceBuffer.h
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceBuffer.cpp
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceEventLog.h
@@ -62,6 +66,12 @@ set(TEST_SOURCES
 )
 
 qt_add_executable(STM32AiDeployerTests ${TEST_SOURCES})
+
+# qt_add_executable() defaults to the Windows GUI subsystem, which detaches
+# stdout — the suite then reports only its exit code and `ctest
+# --output-on-failure` prints nothing at all, so a failure gives you no idea
+# WHICH assertion broke. Force the console subsystem.
+set_target_properties(STM32AiDeployerTests PROPERTIES WIN32_EXECUTABLE FALSE)
 
 target_include_directories(STM32AiDeployerTests PRIVATE
     ${CMAKE_SOURCE_DIR}/src

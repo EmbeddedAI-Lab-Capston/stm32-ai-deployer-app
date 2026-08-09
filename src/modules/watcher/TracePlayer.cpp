@@ -134,8 +134,14 @@ bool TracePlayer::load(const QString &path)
             }
             it.type    = watchValueTypeFromString(f.at(4));
             it.format  = displayFormatFromString(f.at(5));
-            it.scale   = f.at(6).toDouble();
-            it.offset  = f.at(7).toDouble();
+            // An unparseable/blank scale column must fall back to 1.0, not to
+            // toDouble()'s 0.0 — a zero scale silently flattens the whole
+            // replayed series to the offset. (Same default as
+            // VariableWatcher::loadItems().)
+            bool scaleOk = false;
+            const double parsedScale = f.at(6).trimmed().toDouble(&scaleOk);
+            it.scale   = scaleOk ? parsedScale : 1.0;
+            it.offset  = f.at(7).trimmed().toDouble();
             it.unit    = f.at(8);
             it.role    = f.size() > 9 ? f.at(9) : QString();
             m_items.append(it);

@@ -1,14 +1,15 @@
 #include "TraceEventLog.h"
 
-void TraceEventLog::reset()
+void TraceEventLog::reset(double originS)
 {
     m_events.clear();
+    m_originS = originS;
     m_clock.start();
 }
 
 double TraceEventLog::now() const
 {
-    return m_clock.isValid() ? double(m_clock.nsecsElapsed()) / 1.0e9 : 0.0;
+    return m_clock.isValid() ? m_originS + double(m_clock.nsecsElapsed()) / 1.0e9 : 0.0;
 }
 
 void TraceEventLog::addEvent(const QString &kind, const QString &text, const QString &severity)
@@ -22,6 +23,9 @@ void TraceEventLog::addEvent(const QString &kind, const QString &text, const QSt
     e.text     = text;
     e.severity = severity;
     m_events.append(e);
+
+    if (m_events.size() > kMaxEvents)
+        m_events.remove(0, m_events.size() - kMaxEvents);
 }
 
 QVector<TraceEvent> TraceEventLog::eventsBetween(double t0, double t1) const

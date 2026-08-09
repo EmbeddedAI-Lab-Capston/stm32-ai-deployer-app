@@ -2,8 +2,10 @@
 #include "modules/watcher/TraceRecorder.h"
 #include "modules/watcher/TracePlayer.h"
 
+#include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTextStream>
 
 namespace {
 QList<WatchItem> makeItems()
@@ -152,4 +154,32 @@ void TestTraceRecorderPlayer::missingFileReturnsErrorNoCrash()
     TracePlayer player;
     QVERIFY(!player.load(QStringLiteral("D:/this/path/does/not/exist_at_all.csv")));
     QVERIFY(!player.lastError().isEmpty());
+}
+
+// Regression: a blank/unparseable scale column used to land as toDouble()'s
+// 0.0, which silently flattened the entire replayed series to the offset.
+void TestTraceRecorderPlayer::blankScaleColumnFallsBackToOneNotZero()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("blank_scale.csv"));
+
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    QTextStream out(&f);
+    out << "# stm32-ai-deployer watch trace v1\n";
+    out << "# board=STM32H7 elf= model=m started=2026-08-09T00:00:00\n";
+    out << "# targetHz=100 items=1\n";
+    out << "# item,0,uwTick,0x24000000,u32,dec,,,ms,hwTick\n";   // scale + offset blank
+    out << "t,0\n";
+    out << "0.000000,1000\n";
+    out << "0.010000,1010\n";
+    f.close();
+
+    TracePlayer player;
+    QVERIFY2(player.load(path), qPrintable(player.lastError()));
+    QCOMPARE(player.items().size(), 1);
+    QCOMPARE(player.items().first().scale, 1.0);
+    QCOMPARE(player.items().first().offset, 0.0);
+    QCOMPARE(player.items().first().role, QStringLiteral("hwTick"));
 }

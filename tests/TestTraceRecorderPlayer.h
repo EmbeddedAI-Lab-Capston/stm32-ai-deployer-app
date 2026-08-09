@@ -12,4 +12,5 @@ private slots:
     void eventsRoundTrip();
     void corruptFileReturnsErrorNoCrash();
     void missingFileReturnsErrorNoCrash();
+    void blankScaleColumnFallsBackToOneNotZero();
 };

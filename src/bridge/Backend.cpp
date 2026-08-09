@@ -3445,10 +3445,12 @@ void Backend::wireWatcher()
     if (m_debugLink) {
         connect(m_debugLink, &DebugLink::stateChanged, this, &Backend::watchLinkChanged);
         connect(m_debugLink, &DebugLink::opened,       this, &Backend::watchLinkChanged);
-        // Faz 6: event times share one clock with sample times, both
-        // starting fresh at link-open (plan Bolum 9.5).
+        // Faz 6: event times must share ONE axis with sample times (plan Bolum
+        // 9.5). Sample times come from the worker's clock, which starts at
+        // socket-connect, so the event log is seeded with that clock's reading
+        // at link-open instead of restarting from zero.
         connect(m_debugLink, &DebugLink::opened, this, [this]() {
-            m_eventLog.reset();
+            m_eventLog.reset(m_debugLink->sessionElapsedAtOpen());
             m_plotYRange.clear();
         });
         connect(m_debugLink, &DebugLink::coreReset, this, [this]() {
@@ -4001,9 +4003,13 @@ bool Backend::exportWatchCsv(const QString &path)
     const double t0 = buf.firstTime();
     const double t1 = buf.lastTime();
 
+    // Header carries the unit because the values below are SCALED (raw *
+    // scale + offset), matching what the table/statistics and the saved
+    // watch_profile rows show. Exporting raw counts under a scaled unit label
+    // was the same defect WatchProfile::buildRows() was fixed for in Faz 8.
     out << "t";
     for (const WatchItem &it : items)
-        out << ',' << it.label;
+        out << ',' << it.label << (it.unit.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(it.unit));
     out << "\n";
 
     const int columns = 800;
@@ -4017,7 +4023,10 @@ bool Backend::exportWatchCsv(const QString &path)
         out << QString::number(perItem.at(0).at(c).t, 'f', 6);
         for (int i = 0; i < items.size(); ++i) {
             const PlotColumn &pc = perItem.at(i).at(c);
-            out << ',' << (pc.hasData ? QString::number(pc.vlast, 'g', 10) : QString());
+            const WatchItem &it = items.at(i);
+            out << ',' << (pc.hasData
+                               ? QString::number(pc.vlast * it.scale + it.offset, 'g', 10)
+                               : QString());
         }
         out << "\n";
     }
@@ -4046,12 +4055,17 @@ bool Backend::exportWatchJson(const QString &path)
         o[QStringLiteral("type")]    = watchValueTypeToString(it.type);
         o[QStringLiteral("unit")]    = it.unit;
         o[QStringLiteral("role")]    = it.role;
+        // Scaled, so the numbers agree with "unit" above and with the
+        // watch_profile rows written by WatchProfile::buildRows().
+        const auto scaled = [&](double raw) { return raw * it.scale + it.offset; };
         o[QStringLiteral("count")]   = double(st.count);
-        o[QStringLiteral("min")]     = st.min;
-        o[QStringLiteral("max")]     = st.max;
-        o[QStringLiteral("mean")]    = st.mean;
-        o[QStringLiteral("stddev")]  = st.stddev();
-        o[QStringLiteral("last")]    = st.last;
+        o[QStringLiteral("min")]     = scaled(st.min);
+        o[QStringLiteral("max")]     = scaled(st.max);
+        o[QStringLiteral("mean")]    = scaled(st.mean);
+        o[QStringLiteral("stddev")]  = st.stddev() * qAbs(it.scale);
+        o[QStringLiteral("last")]    = scaled(st.last);
+        o[QStringLiteral("scale")]   = it.scale;
+        o[QStringLiteral("offset")]  = it.offset;
         itemsArr.append(o);
     }
     root[QStringLiteral("items")] = itemsArr;
@@ -4172,11 +4186,14 @@ void Backend::applyWatchPresets()
             // adding it, so region-scan suggestions are skipped here.
             continue;
         }
-        m_watcher->addAddress(it.address, it.type, it.label);
+        if (m_watcher->addAddress(it.address, it.type, it.label).isEmpty())
+            continue;   // refused (e.g. sampling running) — nothing to update
         m_watcher->updateItem(m_watcher->items().last().id, {
-            {QStringLiteral("role"), it.role},
-            {QStringLiteral("unit"), it.unit},
-            {QStringLiteral("scale"), it.scale},
+            {QStringLiteral("role"),   it.role},
+            {QStringLiteral("unit"),   it.unit},
+            {QStringLiteral("scale"),  it.scale},
+            {QStringLiteral("offset"), it.offset},
+            {QStringLiteral("format"), displayFormatToString(it.format)},
         });
     }
 }

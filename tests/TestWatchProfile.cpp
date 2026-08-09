@@ -52,3 +52,46 @@ void TestWatchProfile::emptyItemListProducesNoRows()
     const QList<QStringList> rows = WatchProfile::buildRows(session, {}, {}, 0.0, 0.0);
     QVERIFY(rows.isEmpty());
 }
+
+// Regression for the Faz 8 unit-scale fix (docs/variable_watcher_findings.md
+// 17.1): WatchStats holds RAW decoded values, so buildRows() must apply
+// scale/offset before storing, or c5..c9 stay in raw counts while c11 claims a
+// scaled unit. Mutation-tested: reverting the fix must fail this test.
+void TestWatchProfile::scaleAndOffsetAreAppliedToStoredNumbers()
+{
+    WatchItem it;
+    it.label = QStringLiteral("g_ai_last_inference_us");
+    it.role  = QStringLiteral("inferenceUs");
+    it.unit  = QStringLiteral("ms");
+    it.scale = 0.001;      // microseconds -> milliseconds
+    it.offset = 0.0;
+
+    WatchStats st;
+    st.push(1000.0);
+    st.push(3000.0);
+    st.push(2000.0);       // mean 2000 us, min 1000, max 3000
+
+    WatchProfileInput in;
+    in.board = QStringLiteral("STM32H7");
+    const QList<QStringList> rows = WatchProfile::buildRows(in, {it}, {st}, 200.0, 10.0);
+
+    QCOMPARE(rows.size(), 1);
+    const QStringList &c = rows.first();
+    QCOMPARE(c.at(5).toDouble(), 1.0);   // min  -> ms
+    QCOMPARE(c.at(6).toDouble(), 3.0);   // max  -> ms
+    QCOMPARE(c.at(7).toDouble(), 2.0);   // mean -> ms
+    QCOMPARE(c.at(9).toDouble(), 2.0);   // last -> ms
+    QCOMPARE(c.at(11), QStringLiteral("ms"));
+    // stddev scales by |scale| only (offset must NOT shift a dispersion).
+    // Tolerance is relative: cells are written with QString::number(..., 'g', 10).
+    const double expectedStddev = st.stddev() * 0.001;
+    QVERIFY(qAbs(c.at(8).toDouble() - expectedStddev) < qAbs(expectedStddev) * 1e-9);
+
+    // An offset must shift the level but still not the stddev.
+    WatchItem shifted = it;
+    shifted.scale = 1.0;
+    shifted.offset = 5.0;
+    const QList<QStringList> rows2 = WatchProfile::buildRows(in, {shifted}, {st}, 200.0, 10.0);
+    QCOMPARE(rows2.first().at(5).toDouble(), 1005.0);
+    QVERIFY(qAbs(rows2.first().at(8).toDouble() - st.stddev()) < st.stddev() * 1e-9);
+}

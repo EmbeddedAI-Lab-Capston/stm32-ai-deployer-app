@@ -52,6 +52,7 @@ VariableWatcher::VariableWatcher(DebugLink *link, QObject *parent)
     connect(m_link, &DebugLink::rangesRead,     this, &VariableWatcher::onRangesRead);
     connect(m_link, &DebugLink::rawSamplesReady, this, &VariableWatcher::onRawSamplesReady);
     connect(m_link, &DebugLink::samplingStats,  this, &VariableWatcher::onSamplingStats);
+    connect(m_link, &DebugLink::closed,         this, &VariableWatcher::onLinkClosed);
     connect(m_link, &DebugLink::coreHalted,     this, &VariableWatcher::onCoreHalted);
     connect(m_link, &DebugLink::coreReset,      this, &VariableWatcher::onCoreReset);
 
@@ -152,7 +153,14 @@ void VariableWatcher::updateItem(const QString &id, const QVariantMap &props)
         if (item.id != id) continue;
 
         if (props.contains(QStringLiteral("label")))   item.label   = props.value(QStringLiteral("label")).toString();
+        // NOTE: "role" MUST be settable here — TimeSeriesRuleEngine matches
+        // rules by WatchItem::role (appliesToRole) and WatchProfile stores it
+        // for compareWatchProfiles()'s findByRole(). Dropping it silently made
+        // every role-based rule and the whole profile comparison dead code.
+        if (props.contains(QStringLiteral("role")))     item.role    = props.value(QStringLiteral("role")).toString();
         if (props.contains(QStringLiteral("address")))  item.address = props.value(QStringLiteral("address")).toULongLong();
+        if (props.contains(QStringLiteral("regionBytes")))
+            item.regionBytes = quint32(props.value(QStringLiteral("regionBytes")).toUInt());
         if (props.contains(QStringLiteral("type")))     item.type    = watchValueTypeFromString(props.value(QStringLiteral("type")).toString());
         if (props.contains(QStringLiteral("format")))   item.format  = displayFormatFromString(props.value(QStringLiteral("format")).toString());
         if (props.contains(QStringLiteral("scale")))    item.scale   = props.value(QStringLiteral("scale")).toDouble();
@@ -215,6 +223,8 @@ void VariableWatcher::start(int targetRateHz)
     m_pendingSeries.assign(m_items.size(), QVector<double>());
     m_flushTimer.start();
     m_droppedTotal = 0;
+    m_readErrors   = 0;
+    m_lastGoodValues = QVector<double>(m_items.size(), 0.0);
     m_actualRateHz = 0.0;
     m_rttMsAvg     = 0.0;
 
@@ -263,6 +273,7 @@ QVariantMap VariableWatcher::rateInfo() const
     m[QStringLiteral("blocks")]      = m_plan.roundTripsPerSample();
     m[QStringLiteral("skewUs")]      = m_lastSkewUs;
     m[QStringLiteral("missed")]      = m_droppedTotal;
+    m[QStringLiteral("readErrors")]  = qulonglong(m_readErrors);
     m[QStringLiteral("coreRunning")] = m_coreRunning;
     return m;
 }
@@ -271,13 +282,28 @@ void VariableWatcher::onRawSamplesReady(const QVector<MemoryReply> &replies, dou
 {
     if (!m_running) return;
 
-    const QVector<double> values = WatchSampler::decodeSample(m_items, m_plan, replies, nullptr);
+    QVector<bool> ok;
+    const QVector<double> values = WatchSampler::decodeSample(m_items, m_plan, replies, &ok);
 
     m_pendingTimes.append(t);
     if (m_pendingSeries.size() != m_items.size())
         m_pendingSeries.resize(m_items.size());
-    for (int i = 0; i < m_items.size(); ++i)
-        m_pendingSeries[i].append(i < values.size() ? values.at(i) : 0.0);
+    if (m_lastGoodValues.size() != m_items.size())
+        m_lastGoodValues = QVector<double>(m_items.size(), 0.0);
+
+    for (int i = 0; i < m_items.size(); ++i) {
+        // A failed read must NOT enter the trace as a literal 0.0: it would be
+        // indistinguishable from a genuine zero, and rules like
+        // "stack headroom < 512 B" would fire on it as a hard false alarm.
+        // Hold the last good value instead and count the failure so the UI can
+        // show it (rateInfo()["readErrors"]).
+        const bool good = (i < ok.size()) && ok.at(i) && (i < values.size());
+        if (good)
+            m_lastGoodValues[i] = values.at(i);
+        else
+            ++m_readErrors;
+        m_pendingSeries[i].append(m_lastGoodValues.at(i));
+    }
     m_lastSkewUs = skewUs;
 
     if (!m_flushTimer.isValid())
@@ -315,6 +341,22 @@ void VariableWatcher::onSamplingStats(double actualRateHz, double rttMsAvg, quin
     m_rttMsAvg      = rttMsAvg;
     m_droppedTotal += dropped;
     emit statsChanged();
+}
+
+void VariableWatcher::onLinkClosed()
+{
+    // Any in-flight ELF match check is dead with the link; clear the guard so
+    // a later reconnect can re-run it instead of being stuck "in flight".
+    m_elfMatchStep = 0;
+    setElfMatch(ElfMatchResult::Unknown, ElfMatchReport{});
+
+    if (m_isPlayback || !m_running)
+        return;   // playback needs no link
+
+    if (m_recorder.isRecording())
+        m_recorder.stop();   // flush the summary/event trailer we do have
+    setRunning(false);
+    emit errorOccurred(tr("Baglanti kesildi - ornekleme durduruldu"));
 }
 
 void VariableWatcher::onCoreHalted()

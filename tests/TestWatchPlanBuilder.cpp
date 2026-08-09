@@ -82,3 +82,38 @@ void TestWatchPlanBuilder::disabledItemsAreExcluded()
     QCOMPARE(plan.itemSlots.at(1).first, -1);
     QCOMPARE(plan.itemSlots.at(1).second, -1);
 }
+
+// maxReadBytes is the gdbserver PacketSize budget: exceeding it would make the
+// server truncate or reject the read, so the merge loop must split instead.
+void TestWatchPlanBuilder::maxReadBytesLimitSplitsIntoSeparateRequests()
+{
+    QList<WatchItem> items;
+    // Four u32s spaced 200 B apart: gaps (196 B) are under the 256 B merge
+    // threshold, so ONLY the byte budget can force a split.
+    for (int i = 0; i < 4; ++i) {
+        WatchItem it;
+        it.address = 0x24000000 + quint64(i) * 200;
+        it.type    = WatchValueType::U32;
+        it.enabled = true;
+        items.append(it);
+    }
+
+    const WatchPlan generous = WatchPlanBuilder::build(items, 4096);
+    QCOMPARE(generous.requests.size(), 1);
+    QCOMPARE(generous.requests.at(0).len, quint32(604));
+
+    // 256 B budget cannot span more than two items (204 B ok, 404 B not).
+    const WatchPlan tight = WatchPlanBuilder::build(items, 256);
+    QCOMPARE(tight.requests.size(), 2);
+    for (const MemoryRequest &r : tight.requests)
+        QVERIFY2(r.len <= 256, "a request exceeded maxReadBytes");
+
+    // Every item must still be reachable, at a correct offset.
+    for (int i = 0; i < items.size(); ++i) {
+        const int req = tight.itemSlots.at(i).first;
+        const int off = tight.itemSlots.at(i).second;
+        QVERIFY(req >= 0 && req < tight.requests.size());
+        QVERIFY(off >= 0);
+        QCOMPARE(tight.requests.at(req).addr + quint64(off), items.at(i).address);
+    }
+}

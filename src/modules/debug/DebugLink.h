@@ -40,6 +40,10 @@ public:
     QString  lastError() const { return m_lastError; }
     bool     isOpen() const { return m_state == DebugLinkState::Open; }
     quint32  maxReadBytes() const { return m_maxReadBytes; }   // min(4096, (PacketSize-8)/2)
+    // Reading of the sampling clock at the moment the link finished opening.
+    // A main-thread timeline that wants to share one axis with sample times
+    // must start at THIS value, not at zero (see TraceEventLog::reset()).
+    double   sessionElapsedAtOpen() const { return m_sessionElapsedAtOpen; }
     bool     coreRunning() const { return m_coreRunning; }
     bool     isSampling() const { return m_sampling; }
 
@@ -84,7 +88,7 @@ private slots:
     void onServerCrashed(const QString &message);
 
     void onWorkerSocketConnected();
-    void onWorkerHandshakeSucceeded(quint32 maxReadBytes, quint32 dhcsrValue);
+    void onWorkerHandshakeSucceeded(quint32 maxReadBytes, quint32 dhcsrValue, double sessionElapsedS);
     void onWorkerHandshakeFailed(const QString &message);
     void onWorkerSocketClosed();
 
@@ -101,6 +105,7 @@ private:
     QString        m_lastError;
     int            m_refCount    = 0;
     quint32        m_maxReadBytes = 0;
+    double         m_sessionElapsedAtOpen = 0.0;
     bool           m_coreRunning = true;
     bool           m_sampling    = false;
     bool           m_pendingClose = false;   // release() -> refCount 0 while gdbserver teardown is in flight

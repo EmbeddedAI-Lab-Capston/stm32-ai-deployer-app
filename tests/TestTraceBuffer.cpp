@@ -111,3 +111,34 @@ void TestTraceBuffer::decimatePerfUnder20MsFor1eSamples800Columns()
     QCOMPARE(cols.size(), 800);
     QVERIFY2(elapsedMs < 20, qPrintable(QString("decimate() took %1 ms, expected < 20 ms").arg(elapsedMs)));
 }
+
+// Ring wraparound: overflowCapsRingButStatsKeepGrowing() only checked counts,
+// so a read path that ignored eviction still passed. This pins the CONTENT.
+void TestTraceBuffer::wraparoundKeepsNewestSamplesAndTimes()
+{
+    TraceBuffer buf;
+    const int capacity = 100;
+    buf.configure(1, capacity);
+    // 250 samples at t = 0.000 .. 0.249, value == index.
+    buf.append(makeBatch(250, 0.0, 0.001));
+
+    QCOMPARE(buf.sampleCount(), quint64(capacity));
+    // Oldest RETAINED sample is index 150 (250 - 100), newest is 249.
+    QCOMPARE(buf.firstTime(), 150 * 0.001);
+    QCOMPARE(buf.lastTime(), 249 * 0.001);
+    QCOMPARE(buf.valueAt(0, 150 * 0.001), 150.0);
+    QCOMPARE(buf.valueAt(0, 249 * 0.001), 249.0);
+
+    // Evicted samples must not reappear through any read path.
+    const QVector<RawSample> win = buf.rawWindow(0, 0.0, 1.0);
+    QCOMPARE(win.size(), capacity);
+    QCOMPARE(win.first().v, 150.0);
+    QCOMPARE(win.last().v, 249.0);
+
+    const QVector<PlotColumn> cols = buf.decimate(0, 0.0, 0.249, 250);
+    for (int i = 0; i < cols.size(); ++i) {
+        if (!cols.at(i).hasData) continue;
+        QVERIFY2(cols.at(i).vmin >= 150.0,
+                 "decimate() surfaced an evicted sample -> eviction ignored on read");
+    }
+}

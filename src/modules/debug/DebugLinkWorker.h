@@ -56,7 +56,12 @@ public slots:
 
 signals:
     void socketConnected();   // TCP connected, RSP handshake about to start
-    void handshakeSucceeded(quint32 maxReadBytes, quint32 dhcsrValue);
+    // sessionElapsedS = the sample clock's reading at this instant. Sample
+    // timestamps (rawSamplesReady's t) are measured against that same clock,
+    // which starts at connectToServer() - i.e. BEFORE the handshake. Main-
+    // thread consumers need this value to put their own event timeline on
+    // the same origin instead of starting a second, later-zeroed clock.
+    void handshakeSucceeded(quint32 maxReadBytes, quint32 dhcsrValue, double sessionElapsedS);
     void handshakeFailed(const QString &message);
     void socketClosed();
 

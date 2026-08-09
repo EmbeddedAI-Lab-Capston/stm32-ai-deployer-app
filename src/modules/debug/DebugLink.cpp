@@ -184,9 +184,10 @@ void DebugLink::onWorkerSocketConnected()
     setState(DebugLinkState::Handshaking);
 }
 
-void DebugLink::onWorkerHandshakeSucceeded(quint32 maxReadBytes, quint32 dhcsrValue)
+void DebugLink::onWorkerHandshakeSucceeded(quint32 maxReadBytes, quint32 dhcsrValue, double sessionElapsedS)
 {
-    m_maxReadBytes = maxReadBytes;
+    m_maxReadBytes         = maxReadBytes;
+    m_sessionElapsedAtOpen = sessionElapsedS;
     m_coreRunning  = true;
 
     emit logLine(tr("Handshake tamamlandi. DHCSR=0x%1 maxReadBytes=%2")

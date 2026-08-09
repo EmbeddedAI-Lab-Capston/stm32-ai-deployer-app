@@ -11,4 +11,6 @@ private slots:
     void eventsBetweenFiltersByRange();
     void resetClearsAndRestartsClock();
     void emptyLogReturnsEmptyRange();
+    void resetWithOriginPutsEventsOnTheSampleClockAxis();
+    void eventListIsCappedAndKeepsNewest();
 };

@@ -6,6 +6,7 @@
 #include "TestWatchModel.h"
 #include "TestElfTargetMatcher.h"
 #include "TestWatchPlanBuilder.h"
+#include "TestWatchSampler.h"
 #include "TestTraceBuffer.h"
 #include "TestTraceEventLog.h"
 #include "TestTraceRecorderPlayer.h"
@@ -26,6 +27,7 @@ int main(int argc, char **argv)
     { TestWatchModel t;       status |= QTest::qExec(&t, argc, argv); }
     { TestElfTargetMatcher t; status |= QTest::qExec(&t, argc, argv); }
     { TestWatchPlanBuilder t; status |= QTest::qExec(&t, argc, argv); }
+    { TestWatchSampler t; status |= QTest::qExec(&t, argc, argv); }
     { TestTraceBuffer t;      status |= QTest::qExec(&t, argc, argv); }
     { TestTraceEventLog t;    status |= QTest::qExec(&t, argc, argv); }
     { TestTraceRecorderPlayer t; status |= QTest::qExec(&t, argc, argv); }

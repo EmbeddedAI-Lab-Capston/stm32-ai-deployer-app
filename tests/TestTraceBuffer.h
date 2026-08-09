@@ -7,6 +7,7 @@ class TestTraceBuffer : public QObject
     Q_OBJECT
 
 private slots:
+    void wraparoundKeepsNewestSamplesAndTimes();
     void appendAndDecimateProduceRequestedColumnCount();
     void overflowCapsRingButStatsKeepGrowing();
     void decimateOutsideDataRangeHasNoDataNoCrash();

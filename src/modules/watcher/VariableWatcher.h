@@ -109,6 +109,7 @@ private slots:
     void onRangesRead(quint32 batchId, const QVector<MemoryReply> &replies);
     void onRawSamplesReady(const QVector<MemoryReply> &replies, double t, double skewUs);
     void onSamplingStats(double actualRateHz, double rttMsAvg, quint32 dropped);
+    void onLinkClosed();
     void onCoreHalted();
     void onCoreReset();
 
@@ -140,7 +141,12 @@ private:
     double  m_rttMsAvg     = 0.0;
     double  m_lastSkewUs   = 0.0;
     quint32 m_droppedTotal = 0;
+    quint64 m_readErrors   = 0;   // decode/read failures held over, see onRawSamplesReady()
     bool    m_coreRunning  = true;
+
+    // Last successfully decoded value per item. A failed read reuses this
+    // instead of injecting a literal 0.0 into the trace and the stats.
+    QVector<double> m_lastGoodValues;
 
     // <=30 Hz / 512-sample coalescing gate — the batching Faz 1's
     // DebugLinkWorker deferred to "whoever consumes rawSamplesReady at real

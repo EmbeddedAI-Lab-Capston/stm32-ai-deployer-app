@@ -267,3 +267,98 @@ void TestTimeSeriesRuleEngine::loadRulesFromJsonSkipsEntriesMissingId()
     QCOMPARE(rules.size(), 1);
     QCOMPARE(rules.first().id, QStringLiteral("ok"));
 }
+
+// appliesToRole is the ONLY link between watch/watch_rules.json and a watch
+// item. VariableWatcher::updateItem() used to silently drop "role", which left
+// every role-based rule permanently unmatched (and profile comparison empty)
+// while nothing failed. Pin both directions of the match here.
+void TestTimeSeriesRuleEngine::ruleDoesNotMatchAnItemWithADifferentOrEmptyRole()
+{
+    TraceBuffer buf;
+    buf.configure(1, 1000);
+    for (int i = 0; i <= 150; ++i)
+        appendSample(buf, i * 0.01, 100.0);
+
+    TsRule rule;
+    rule.id = "stack_headroom_critical";
+    rule.appliesToRole = "stackWatermark";
+    rule.type = TsConditionType::Threshold;
+    rule.op = "<";
+    rule.value = 512;
+    rule.sustainMs = 1000;
+    rule.message = "m";
+
+    const double now = buf.lastTime();
+
+    // Empty role -> no match (the regression that made the rule dead).
+    const QList<WatchItem> noRole = { makeItem("i1", "stackFree", "") };
+    QCOMPARE(TimeSeriesRuleEngine::evaluate({rule}, noRole, buf, now, {}).size(), 0);
+
+    // Different role -> no match.
+    const QList<WatchItem> otherRole = { makeItem("i1", "stackFree", "heapEnd") };
+    QCOMPARE(TimeSeriesRuleEngine::evaluate({rule}, otherRole, buf, now, {}).size(), 0);
+
+    // Correct role -> match.
+    const QList<WatchItem> right = { makeItem("i1", "stackFree", "stackWatermark") };
+    QCOMPARE(TimeSeriesRuleEngine::evaluate({rule}, right, buf, now, {}).size(), 1);
+}
+
+void TestTimeSeriesRuleEngine::thresholdBoundaryIsExclusiveForStrictLessThan()
+{
+    TraceBuffer buf;
+    buf.configure(1, 1000);
+    for (int i = 0; i <= 150; ++i)
+        appendSample(buf, i * 0.01, 512.0);   // exactly AT the threshold
+
+    TsRule rule;
+    rule.id = "stack_headroom_critical";
+    rule.appliesToRole = "stackWatermark";
+    rule.type = TsConditionType::Threshold;
+    rule.op = "<";
+    rule.value = 512;
+    rule.sustainMs = 1000;
+    rule.message = "m";
+
+    const QList<WatchItem> items = { makeItem("i1", "stackFree", "stackWatermark") };
+    QCOMPARE(TimeSeriesRuleEngine::evaluate({rule}, items, buf, buf.lastTime(), {}).size(), 0);
+
+    TsRule le = rule;
+    le.op = "<=";
+    QCOMPARE(TimeSeriesRuleEngine::evaluate({le}, items, buf, buf.lastTime(), {}).size(), 1);
+}
+
+// The gate window is symmetric (|e.t - t| <= withinMs): an event just BEFORE
+// the sample correlates just as well as one just after.
+void TestTimeSeriesRuleEngine::gateRejectsAnEventOutsideTheWindowOnEitherSide()
+{
+    TraceBuffer buf;
+    buf.configure(1, 1000);
+    for (int i = 0; i < 199; ++i)
+        appendSample(buf, i * 0.001, 100.0);
+    appendSample(buf, 0.199, 1000.0);
+
+    TsRule rule;
+    rule.id = "inference_time_outlier";
+    rule.appliesToLabelRegex = "inference_us";
+    rule.type = TsConditionType::ZScore;
+    rule.windowMs = 5000;
+    rule.k = 4.0;
+    rule.minSamples = 200;
+    rule.gate.eventKind = "inference";
+    rule.gate.withinMs = 50;
+    rule.message = "x";
+
+    const QList<WatchItem> items = { makeItem("i1", "inference_us", "") };
+    auto evAt = [](double t) {
+        TraceEvent e; e.t = t; e.kind = "inference"; e.severity = "info"; return e;
+    };
+
+    // 20 ms BEFORE the spike -> inside the window, must be allowed.
+    QCOMPARE(TimeSeriesRuleEngine::evaluate({rule}, items, buf, buf.lastTime(), {evAt(0.179)}).size(), 1);
+    // 20 ms after -> also allowed.
+    QCOMPARE(TimeSeriesRuleEngine::evaluate({rule}, items, buf, buf.lastTime(), {evAt(0.219)}).size(), 1);
+    // 200 ms before -> outside on the early side, must be rejected.
+    QCOMPARE(TimeSeriesRuleEngine::evaluate({rule}, items, buf, buf.lastTime(), {evAt(-0.001)}).size(), 0);
+    // 200 ms after -> outside on the late side, rejected.
+    QCOMPARE(TimeSeriesRuleEngine::evaluate({rule}, items, buf, buf.lastTime(), {evAt(0.399)}).size(), 0);
+}

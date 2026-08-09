@@ -27,11 +27,19 @@ struct TraceEvent
 class TraceEventLog
 {
 public:
-    // Clears all events and restarts the session clock at t=0. Call when the
-    // watch link opens so event times share the same origin as sample times.
-    void reset();
+    // Clears all events and restarts the session clock. Call when the watch
+    // link opens so event times share the same origin as sample times.
+    //
+    // originS MATTERS: sample timestamps are measured against DebugLinkWorker's
+    // clock, which starts at socket-connect — earlier than link-open by the
+    // whole handshake (measured: ~61 ms on a NUCLEO-H723ZG). Starting this log
+    // at 0 therefore put events on an axis shifted by that amount, which was
+    // enough on its own to make the ±50 ms "inference" gate in
+    // watch/watch_rules.json reject every genuine correlation. Pass
+    // DebugLink::sessionElapsedAtOpen() so both axes share one origin.
+    void reset(double originS = 0.0);
 
-    double now() const;   // seconds since the last reset(); 0 if never reset
+    double now() const;   // seconds on the shared session axis; 0 if never reset
     void addEvent(const QString &kind, const QString &text,
                   const QString &severity = QStringLiteral("info"));
 
@@ -42,7 +50,14 @@ public:
     void clear();
     int  count() const { return m_events.size(); }
 
+    // Hard cap on retained events. UART-sourced events arrive per inference
+    // packet, so an unbounded list grows without limit over a long session
+    // while eventsBetween() scans it linearly at plot rate. Oldest events are
+    // dropped once the cap is hit.
+    static constexpr int kMaxEvents = 20000;
+
 private:
     QElapsedTimer        m_clock;
+    double               m_originS = 0.0;
     QVector<TraceEvent>  m_events;
 };

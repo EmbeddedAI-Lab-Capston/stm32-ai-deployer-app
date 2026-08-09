@@ -60,3 +60,43 @@ void TestTraceEventLog::emptyLogReturnsEmptyRange()
     const QVector<TraceEvent> out = log.eventsBetween(0.0, 100.0);
     QVERIFY(out.isEmpty());
 }
+
+// Regression: sample timestamps run on DebugLinkWorker's clock, which starts
+// at socket-connect — earlier than link-open by the whole handshake. reset()
+// must be seedable with that clock's reading so both live on ONE axis; before
+// this, events were shifted by the handshake duration (~61 ms measured on a
+// NUCLEO-H723ZG), which alone defeated the +/-50 ms "inference" event gate.
+void TestTraceEventLog::resetWithOriginPutsEventsOnTheSampleClockAxis()
+{
+    TraceEventLog log;
+    log.reset(12.5);                       // link opened 12.5 s into the session
+    QVERIFY(log.now() >= 12.5);
+    QVERIFY(log.now() < 12.5 + 5.0);       // generous upper bound, not a timing test
+
+    log.addEvent(QStringLiteral("inference"), QStringLiteral("x"));
+    const QVector<TraceEvent> all = log.eventsBetween(0.0, 1e9);
+    QCOMPARE(all.size(), 1);
+    QVERIFY2(all.first().t >= 12.5,
+             "event stamped before the session origin -> two-clock regression");
+
+    // A default reset() keeps the old zero-based behaviour.
+    TraceEventLog zeroed;
+    zeroed.reset();
+    QVERIFY(zeroed.now() < 1.0);
+}
+
+// Regression: the event list used to grow without bound (one event per
+// inference packet) while eventsBetween() scans it linearly at plot rate.
+void TestTraceEventLog::eventListIsCappedAndKeepsNewest()
+{
+    TraceEventLog log;
+    log.reset();
+    for (int i = 0; i < TraceEventLog::kMaxEvents + 250; ++i)
+        log.addEvent(QStringLiteral("inference"), QString::number(i));
+
+    QCOMPARE(log.count(), TraceEventLog::kMaxEvents);
+    const QVector<TraceEvent> all = log.eventsBetween(0.0, 1e9);
+    QCOMPARE(all.size(), TraceEventLog::kMaxEvents);
+    QCOMPARE(all.first().text, QString::number(250));                       // oldest dropped
+    QCOMPARE(all.last().text, QString::number(TraceEventLog::kMaxEvents + 249));
+}

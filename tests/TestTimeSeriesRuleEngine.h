@@ -7,6 +7,9 @@ class TestTimeSeriesRuleEngine : public QObject
     Q_OBJECT
 
 private slots:
+    void ruleDoesNotMatchAnItemWithADifferentOrEmptyRole();
+    void thresholdBoundaryIsExclusiveForStrictLessThan();
+    void gateRejectsAnEventOutsideTheWindowOnEitherSide();
     void thresholdSingleSampleUnderSustainMsIsNotAViolation();
     void thresholdSustainedOverWindowIsAViolationWithCorrectTime();
     void zscoreSpikeIsDetectedWithExpectedZ();
