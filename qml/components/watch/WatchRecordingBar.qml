@@ -67,6 +67,18 @@ RowLayout {
     Item { Layout.fillWidth: true }
 
     AppButton {
+        text: "AI Presetlerini Uygula"
+        variant: "ghost"
+        enabled: root._hasBackend && !backend.watchRunning
+        onClicked: backend.applyWatchPresets()
+    }
+    AppButton {
+        text: "Profilleri Karşılaştır"
+        variant: "ghost"
+        enabled: root._hasBackend
+        onClicked: compareDialog.open()
+    }
+    AppButton {
         text: "CSV Dışa Aktar"
         variant: "ghost"
         enabled: root._hasBackend
@@ -78,6 +90,8 @@ RowLayout {
         enabled: root._hasBackend && backend.watchItems.length > 0
         onClicked: { noteField.text = ""; profileDialog.open() }
     }
+
+    ProfileCompareDialog { id: compareDialog }
 
     FileDialog {
         id: csvDialog

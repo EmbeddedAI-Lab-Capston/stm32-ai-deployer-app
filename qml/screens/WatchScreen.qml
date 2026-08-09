@@ -62,6 +62,12 @@ Item {
                 SplitView.fillHeight: true
                 SplitView.minimumHeight: 120
             }
+
+            WatchRuleFeed {
+                id: ruleFeed
+                SplitView.preferredHeight: 120
+                SplitView.minimumHeight: 80
+            }
         }
 
         WatchLinkStatus {

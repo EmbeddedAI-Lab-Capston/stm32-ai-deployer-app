@@ -148,6 +148,11 @@ set(PROJECT_SOURCES
     src/modules/watcher/TracePlayer.cpp
     src/modules/watcher/WatchProfile.h
     src/modules/watcher/WatchProfile.cpp
+    src/modules/watcher/TimeSeriesRuleModel.h
+    src/modules/watcher/TimeSeriesRuleEngine.h
+    src/modules/watcher/TimeSeriesRuleEngine.cpp
+    src/modules/watcher/WatchPresetMatcher.h
+    src/modules/watcher/WatchPresetMatcher.cpp
 
     src/quick/TracePlot.h
     src/quick/TracePlot.cpp
@@ -240,6 +245,8 @@ qt_add_qml_module(STM32AiDeployer
         qml/components/watch/WatchEventLane.qml
         qml/components/watch/WatchRecordingBar.qml
         qml/components/watch/WatchPlaybackBanner.qml
+        qml/components/watch/WatchRuleFeed.qml
+        qml/dialogs/ProfileCompareDialog.qml
         qml/factory/FactorySimWindow.qml
         qml/factory/FactoryDashboard.qml
         qml/factory/FactoryMap.qml

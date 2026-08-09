@@ -19,6 +19,15 @@ struct PlotColumn
     bool   hasData = false;
 };
 
+// Undecimated (t, value) pair — for the rule engine (Faz 8), which needs
+// actual samples (for z-score/linear-regression) rather than decimate()'s
+// per-pixel-column min/max envelope.
+struct RawSample
+{
+    double t = 0.0;
+    double v = 0.0;
+};
+
 class TraceBuffer
 {
 public:
@@ -41,6 +50,11 @@ public:
 
     QVector<PlotColumn> decimate(int item, double t0, double t1, int columns) const;
     const WatchStats &stats(int item) const;
+
+    // Raw (undecimated) samples in [t0, t1] — Faz 8 rule engine. Cost is
+    // O(samples in range), fine for the few-second windows rules use; NOT
+    // meant for the full-buffer/plot-frame case (use decimate() there).
+    QVector<RawSample> rawWindow(int item, double t0, double t1) const;
 
     // Cursor read (plan Bolum 9.4 watchValuesAt): value of the sample whose
     // timestamp is closest to t. NaN if the item/buffer is empty or out of

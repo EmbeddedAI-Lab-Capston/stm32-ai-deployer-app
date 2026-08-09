@@ -46,6 +46,8 @@
 #include "modules/watcher/VariableWatcher.h"
 #include "modules/watcher/ValueCodec.h"
 #include "modules/watcher/WatchProfile.h"
+#include "modules/watcher/TimeSeriesRuleEngine.h"
+#include "modules/watcher/WatchPresetMatcher.h"
 
 namespace
 {
@@ -525,6 +527,12 @@ Backend::Backend(AppState          *state,
     wireAnalysis();
     wireRegisters();
     wireWatcher();
+
+    loadWatchRulesAndPresets();
+    m_ruleTimer = new QTimer(this);
+    m_ruleTimer->setInterval(250);   // 4 Hz - rule checks aren't latency-critical like the plot
+    connect(m_ruleTimer, &QTimer::timeout, this, &Backend::evaluateWatchRules);
+    m_ruleTimer->start();
 
     // Pre-populate analysis with sample data so the tables aren't empty on first launch.
     seedAnalysisIfEmpty();
@@ -4053,4 +4061,243 @@ bool Backend::exportWatchJson(const QString &path)
         return false;
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     return true;
+}
+
+// ── Variable Watcher - Faz 8 (kural motoru + preset + profil karsilastirma) ──
+
+QString Backend::findAppDataFile(const QString &relPath) const
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+        appDir + "/" + relPath,
+        appDir + "/../" + relPath,
+        appDir + "/../../" + relPath,
+        appDir + "/../../../" + relPath,
+    };
+    for (const QString &c : candidates)
+        if (QFile::exists(c)) return QDir::cleanPath(c);
+    return QString();
+}
+
+void Backend::loadWatchRulesAndPresets()
+{
+    const QString rulesPath = findAppDataFile(QStringLiteral("watch/watch_rules.json"));
+    if (!rulesPath.isEmpty()) {
+        QFile f(rulesPath);
+        if (f.open(QIODevice::ReadOnly)) {
+            QString err;
+            m_tsRules = TimeSeriesRuleEngine::loadRulesFromJson(f.readAll(), &err);
+            if (!err.isEmpty())
+                emit statusMessage(tr("watch_rules.json ayristirilamadi: %1").arg(err));
+        }
+    }
+
+    const QString presetsPath = findAppDataFile(QStringLiteral("watch/watch_presets.json"));
+    if (!presetsPath.isEmpty()) {
+        QFile f(presetsPath);
+        if (f.open(QIODevice::ReadOnly)) {
+            QString err;
+            m_watchPresets = WatchPresetMatcher::loadPresetsFromJson(f.readAll(), &err);
+            if (!err.isEmpty())
+                emit statusMessage(tr("watch_presets.json ayristirilamadi: %1").arg(err));
+        }
+    }
+}
+
+void Backend::evaluateWatchRules()
+{
+    if (!m_watcher || m_tsRules.isEmpty() || !m_watcher->isRunning()) {
+        if (!m_watchViolationsCache.isEmpty()) {
+            m_watchViolationsCache.clear();
+            emit watchViolationsChanged();
+        }
+        return;
+    }
+
+    const double now = m_eventLog.now();
+    const QVector<TraceEvent> recent = m_eventLog.eventsBetween(now - 5.0, now);
+    m_watchViolationsCache = TimeSeriesRuleEngine::evaluate(m_tsRules, m_watcher->items(),
+                                                             m_watcher->buffer(), now, recent);
+    emit watchViolationsChanged();
+}
+
+QVariantList Backend::watchViolations() const
+{
+    QVariantList out;
+    for (const TsRuleViolation &v : m_watchViolationsCache) {
+        QVariantMap m;
+        m[QStringLiteral("ruleId")]   = v.ruleId;
+        m[QStringLiteral("severity")] = v.severity;
+        m[QStringLiteral("itemId")]   = v.itemId;
+        m[QStringLiteral("label")]    = v.label;
+        m[QStringLiteral("message")]  = v.message;
+        m[QStringLiteral("t")]        = v.t;
+        m[QStringLiteral("value")]    = v.value;
+        m[QStringLiteral("detail")]   = v.detail;
+        out.append(m);
+    }
+    return out;
+}
+
+QVariantList Backend::watchPresetSuggestions() const
+{
+    QVariantList out;
+    if (!m_watcher) return out;
+    const QList<WatchItem> suggestions = WatchPresetMatcher::resolveSuggestions(m_watchPresets, m_watcher->symbols());
+    for (const WatchItem &it : suggestions) {
+        QVariantMap m;
+        m[QStringLiteral("label")]   = it.label;
+        m[QStringLiteral("role")]    = it.role;
+        m[QStringLiteral("address")] = QStringLiteral("0x%1").arg(it.address, 0, 16);
+        m[QStringLiteral("kind")]    = (it.kind == WatchItemKind::RegionScan)
+                                            ? QStringLiteral("region") : QStringLiteral("scalar");
+        m[QStringLiteral("regionBytes")] = int(it.regionBytes);
+        m[QStringLiteral("unit")]    = it.unit;
+        m[QStringLiteral("source")]  = it.source;
+        out.append(m);
+    }
+    return out;
+}
+
+void Backend::applyWatchPresets()
+{
+    if (!m_watcher) return;
+    const QList<WatchItem> suggestions = WatchPresetMatcher::resolveSuggestions(m_watchPresets, m_watcher->symbols());
+    for (const WatchItem &it : suggestions) {
+        if (it.kind == WatchItemKind::RegionScan) {
+            // Live sampling of RegionScan items (byte-pattern watermark scan)
+            // isn't wired into WatchSampler yet — see watch/README.md and
+            // docs/variable_watcher_findings.md Bolum 17. Adding one now
+            // would silently sit at 0/unavailable, which is worse than not
+            // adding it, so region-scan suggestions are skipped here.
+            continue;
+        }
+        m_watcher->addAddress(it.address, it.type, it.label);
+        m_watcher->updateItem(m_watcher->items().last().id, {
+            {QStringLiteral("role"), it.role},
+            {QStringLiteral("unit"), it.unit},
+            {QStringLiteral("scale"), it.scale},
+        });
+    }
+}
+
+QVariantList Backend::watchProfiles() const
+{
+    QVariantList out;
+    if (!m_analysis) return out;
+
+    QVector<AnalysisRecord> sorted = m_analysis->records(QStringLiteral("watch_profile"));
+    std::sort(sorted.begin(), sorted.end(), [](const AnalysisRecord &a, const AnalysisRecord &b) { return a.id < b.id; });
+
+    int i = 0;
+    while (i < sorted.size()) {
+        const AnalysisRecord &first = sorted.at(i);
+        if (first.cells.size() < 15) { ++i; continue; }
+
+        int j = i + 1, itemCount = 1;
+        while (j < sorted.size()) {
+            const AnalysisRecord &r = sorted.at(j);
+            if (r.cells.size() < 15
+                || r.cells.at(0) != first.cells.at(0) || r.cells.at(1) != first.cells.at(1)
+                || r.cells.at(4) != first.cells.at(4) || r.cells.at(10) != first.cells.at(10)
+                || r.cells.at(13) != first.cells.at(13) || r.cells.at(14) != first.cells.at(14))
+                break;
+            ++itemCount; ++j;
+        }
+
+        QVariantMap m;
+        m[QStringLiteral("id")]        = first.id;   // representative id -> compareWatchProfiles
+        m[QStringLiteral("model")]     = first.cells.at(0);
+        m[QStringLiteral("board")]     = first.cells.at(1);
+        m[QStringLiteral("actualHz")]  = first.cells.at(4);
+        m[QStringLiteral("durationS")] = first.cells.at(10);
+        m[QStringLiteral("note")]      = first.cells.at(14);
+        m[QStringLiteral("itemCount")] = itemCount;
+        out.append(m);
+
+        i = j;
+    }
+    return out;
+}
+
+QVector<AnalysisRecord> Backend::watchProfileSessionRows(int representativeId) const
+{
+    QVector<AnalysisRecord> out;
+    if (!m_analysis) return out;
+
+    QVector<AnalysisRecord> sorted = m_analysis->records(QStringLiteral("watch_profile"));
+    std::sort(sorted.begin(), sorted.end(), [](const AnalysisRecord &a, const AnalysisRecord &b) { return a.id < b.id; });
+
+    int idx = -1;
+    for (int i = 0; i < sorted.size(); ++i)
+        if (sorted.at(i).id == representativeId) { idx = i; break; }
+    if (idx < 0 || sorted.at(idx).cells.size() < 15)
+        return out;
+
+    const AnalysisRecord &first = sorted.at(idx);
+    out.append(first);
+    for (int j = idx + 1; j < sorted.size(); ++j) {
+        const AnalysisRecord &r = sorted.at(j);
+        if (r.cells.size() < 15
+            || r.cells.at(0) != first.cells.at(0) || r.cells.at(1) != first.cells.at(1)
+            || r.cells.at(4) != first.cells.at(4) || r.cells.at(10) != first.cells.at(10)
+            || r.cells.at(13) != first.cells.at(13) || r.cells.at(14) != first.cells.at(14))
+            break;
+        out.append(r);
+    }
+    return out;
+}
+
+QVariantMap Backend::compareWatchProfiles(int idA, int idB)
+{
+    QVariantMap out;
+    const QVector<AnalysisRecord> a = watchProfileSessionRows(idA);
+    const QVector<AnalysisRecord> b = watchProfileSessionRows(idB);
+    if (a.isEmpty() || b.isEmpty())
+        return out;
+
+    auto findByRole = [](const QVector<AnalysisRecord> &rows, const QString &role) -> const AnalysisRecord * {
+        for (const AnalysisRecord &r : rows)
+            if (r.cells.size() > 12 && r.cells.at(12) == role) return &r;
+        return nullptr;
+    };
+
+    QVariantMap sessionA, sessionB;
+    sessionA[QStringLiteral("model")]     = a.first().cells.at(0);
+    sessionA[QStringLiteral("board")]     = a.first().cells.at(1);
+    sessionA[QStringLiteral("actualHz")]  = a.first().cells.at(4);
+    sessionA[QStringLiteral("durationS")] = a.first().cells.at(10);
+    sessionB[QStringLiteral("model")]     = b.first().cells.at(0);
+    sessionB[QStringLiteral("board")]     = b.first().cells.at(1);
+    sessionB[QStringLiteral("actualHz")]  = b.first().cells.at(4);
+    sessionB[QStringLiteral("durationS")] = b.first().cells.at(10);
+    out[QStringLiteral("sessionA")] = sessionA;
+    out[QStringLiteral("sessionB")] = sessionB;
+
+    QVariantList rows;
+    // c5=min c6=max c7=mean c9=last — plan Bolum 10.4's column mapping.
+    auto addMetricRow = [&](const QString &metric, const QString &role, int cellIdx) {
+        const AnalysisRecord *ra = findByRole(a, role);
+        const AnalysisRecord *rb = findByRole(b, role);
+        QVariantMap row;
+        row[QStringLiteral("metric")] = metric;
+        row[QStringLiteral("hasMatch")] = (ra && rb);
+        if (ra && ra->cells.size() > cellIdx) row[QStringLiteral("a")] = ra->cells.at(cellIdx).toDouble();
+        if (rb && rb->cells.size() > cellIdx) row[QStringLiteral("b")] = rb->cells.at(cellIdx).toDouble();
+        if (row.contains(QStringLiteral("a")) && row.contains(QStringLiteral("b"))) {
+            const double da = row.value(QStringLiteral("a")).toDouble();
+            const double db = row.value(QStringLiteral("b")).toDouble();
+            row[QStringLiteral("delta")] = db - da;
+            if (!qFuzzyIsNull(da))
+                row[QStringLiteral("deltaPct")] = (db - da) / qAbs(da) * 100.0;
+        }
+        rows.append(row);
+    };
+
+    addMetricRow(tr("Ortalama inference (ms)"), QStringLiteral("inferenceUs"), 7);
+    addMetricRow(tr("Tepe inference (ms)"), QStringLiteral("inferenceUs"), 6);
+    addMetricRow(tr("Tepe heap kullanimi (B)"), QStringLiteral("heapEnd"), 6);
+    addMetricRow(tr("En dusuk stack boslugu (B)"), QStringLiteral("stackWatermark"), 5);
+    out[QStringLiteral("rows")] = rows;
+    return out;
 }

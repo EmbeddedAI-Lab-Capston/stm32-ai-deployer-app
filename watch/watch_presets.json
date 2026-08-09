@@ -1,0 +1,29 @@
+{
+  "_schemaVersion": 1,
+  "presets": [
+    {
+      "id": "core_memory", "label": "Bellek sagligi", "always": true,
+      "items": [
+        { "role": "heapEnd", "symbol": "__sbrk_heap_end", "type": "u32", "format": "hex" },
+        { "role": "bssEnd",  "symbol": "_end",            "type": "u32", "format": "hex", "constant": true },
+        { "role": "stackWatermark", "kind": "regionScan",
+          "regionFrom": ["_sstack", "_estack-_Min_Stack_Size"],
+          "regionTo": "_estack", "pattern": "0xA5A5A5A5", "unit": "B", "rateHz": 2 }
+      ]
+    },
+    {
+      "id": "xcubeai_runtime", "label": "X-CUBE-AI calisma zamani",
+      "requiresAnySymbol": ["s_network", "net_exec_ctx", "g_npu_exec_ctx", "NN_Instance_Default"],
+      "items": [
+        { "role": "inferenceUs", "symbol": "g_ai_last_inference_us", "type": "u32", "scale": 0.001, "unit": "ms" },
+        { "role": "inferCount",  "symbol": "g_ai_infer_count",       "type": "u32" },
+        { "role": "lastClass",   "symbol": "g_ai_last_class",        "type": "u8"  },
+        { "role": "confidence",  "symbol": "g_ai_last_confidence",   "type": "u8", "unit": "%" }
+      ]
+    },
+    {
+      "id": "hal_timebase", "label": "HAL zaman tabani", "always": true,
+      "items": [ { "role": "hwTick", "symbol": "uwTick", "type": "u32", "unit": "ms" } ]
+    }
+  ]
+}

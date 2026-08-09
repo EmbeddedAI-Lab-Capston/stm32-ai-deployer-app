@@ -115,6 +115,25 @@ QVector<PlotColumn> TraceBuffer::decimate(int item, double t0, double t1, int co
     return out;
 }
 
+QVector<RawSample> TraceBuffer::rawWindow(int item, double t0, double t1) const
+{
+    QVector<RawSample> out;
+    if (item < 0 || item >= m_series.size() || m_capacity <= 0 || m_totalCount == 0 || t1 < t0)
+        return out;
+
+    const quint64 oldest = (m_totalCount > quint64(m_capacity)) ? (m_totalCount - quint64(m_capacity)) : 0;
+    const quint64 available = m_totalCount - oldest;
+
+    for (quint64 k = 0; k < available; ++k) {
+        const int slot = slotFor(oldest + k);
+        const double t = m_times.at(slot);
+        if (t < t0 || t > t1)
+            continue;
+        out.append({t, m_series.at(item).at(slot)});
+    }
+    return out;
+}
+
 double TraceBuffer::valueAt(int item, double t) const
 {
     if (item < 0 || item >= m_series.size() || m_capacity <= 0 || m_totalCount == 0)

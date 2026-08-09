@@ -767,3 +767,128 @@ hataları bu noktada zaten yakalanırdı).
 **Faz 7 tamamlandı** (kayıt gerçek H7'de doğrulandı; oynatma/dışa aktarma/
 profil mantığı gerçek testlerle doğrulandı; iki ekran-testi-gerektiren madde
 gerekçeli olarak ertelendi).
+
+---
+
+## 17. Faz 8 — `TimeSeriesRuleEngine` + AI preset + profil karşılaştırma
+
+### 17.0 Değişiklikler
+
+- `TimeSeriesRuleModel.h` (yeni): `TsRule`/`TsGate`/`TsRuleViolation` —
+  `src/modules/registers/RuleEngine.h` (tek snapshot, `svd/rules.json`) ile
+  **karıştırılmaz**, ayrı bir soru soruyor ("son N saniyedeki davranış
+  olağan mı?"). İki motor birleştirilmedi.
+- `TimeSeriesRuleEngine.h/.cpp` (yeni, saf sınıf): `Threshold`/`ZScore`/
+  `Drift` + opsiyonel olay kapısı. ML yok — her ihlal `detail` alanında
+  mean/stddev/z veya slope/r2 taşır.
+- `TraceBuffer::rawWindow()` (yeni): kural motoru için ham (undecimated)
+  `(t,değer)` çiftleri — `decimate()`'in min/max zarfı z-skoru/regresyon
+  için yetersiz kalırdı.
+- `WatchPresetMatcher.h/.cpp` (yeni, saf sınıf): `watch_presets.json` +
+  ELF sembol tablosu → hazır `WatchItem` önerileri. Dar bir ifade çözücü
+  (`resolveAddressExpr`) `<sembol>`, `<sembol>-<sembol>`, `<sembol>+<sembol>`
+  biçimlerini destekler — `_Min_Stack_Size` gibi Absolute sembollerin
+  **değerini** (adresini değil) kullanır.
+- `watch/watch_rules.json`, `watch/watch_presets.json`, `watch/README.md`
+  (yeni): plandaki başlangıç kural/preset setleri + şema dokümantasyonu.
+- `Backend`: `watchViolations` artık gerçek (4 Hz `QTimer` ile
+  `TimeSeriesRuleEngine::evaluate()` çağırıp önbelleğe alıyor — yalnızca
+  izleme çalışırken, canlı VEYA oynatma modu farketmez, ikisi de aynı
+  `TraceBuffer`'ı besliyor); `watchProfiles`/`compareWatchProfiles`/
+  `applyWatchPresets`/`watchPresetSuggestions` eklendi.
+- `qml/components/watch/WatchRuleFeed.qml` (yeni): ihlal akışı, tabloya
+  eklendi (`SplitView`'ın üçüncü paneli).
+- `qml/dialogs/ProfileCompareDialog.qml` (yeni): "Oturum 1 / Oturum 2"
+  isimlendirmesiyle (CLAUDE.md kuralı — Register Inspector'ın "A/B"
+  snapshot terimiyle karıştırılmaz), `WatchRecordingBar`'a eklenen
+  "Profilleri Karşılaştır" butonundan açılıyor.
+
+### 17.1 Faz 7'de bulunan ve düzeltilen gerçek bir hata
+
+Karşılaştırma tablosunu ("Ortalama inference (ms)") doğru sayılarla
+doldurmaya çalışırken şu bulundu: `WatchSampler::decodeSample()` **ham**
+(ölçeksiz) değer üretiyor — `scale`/`offset` yalnızca `ValueCodec::format()`
+içinde, GÖRÜNTÜLEME anında uygulanıyor. Ama `WatchProfile::buildRows()`
+(Faz 7) `WatchStats`'ın ham min/max/mean/last'ını **doğrudan** DB'ye
+yazıyordu — sonuç: `c11` sütunu "ms" yazsa bile `c5..c9`'daki sayılar hâlâ
+ham mikrosaniyeydi (1000× büyük). Düzeltme: `WatchProfile::buildRows()`
+artık `it.scale`/`it.offset`'i yazmadan önce uyguluyor (stddev için yalnızca
+`|scale|`). Varsayılan `scale=1.0/offset=0.0` olan kalemler için davranış
+değişmedi — Faz 7'nin mevcut testi hâlâ değişmeden geçiyor.
+
+### 17.2 Test yöntemi — plandaki tabloyla birebir
+
+**`TimeSeriesRuleEngine` (10 test, hepsi plan Bölüm 11.7'nin tablosundan):**
+- Threshold: `sustainMs=1000` iken tek bir örnek (geçmiş yok) → ihlal
+  **yok**; 1500 ms sürekli eşik-altı → ihlal **var**, `t` doğru. (Kritik
+  düzeltme: ilk yazımda "pencerede TEK örnek varsa ve o örnek koşulu
+  sağlıyorsa sürdürülmüş say" hatası vardı — pencerenin gerçekten `t0`'a
+  kadar uzandığı kontrolü eklenerek düzeltildi, testin kendisi bu hatayı
+  yakaladı.)
+- ZScore: sabit seri + tek sıçrama → tam 1 ihlal, `detail.z` testin **aynı
+  formülle bağımsız hesapladığı** beklenen değerle 1e-6 toleransla eşleşti;
+  `minSamples` altında → ihlal yok.
+- Drift: `v=10t` (mükemmel doğrusal) → `slope≈10`, `r2>0.999`; sabit
+  ortalama etrafında alternatif gürültü → `r2` kapısı ihlali eliyor.
+- Gate: aynı sıçrama senaryosu, olay yokken bastırılıyor; ±50ms içinde
+  eşleşen olayla raporlanıyor.
+- JSON ayrıştırma: bilinen alanlar doğru okunuyor; `id` eksik satır
+  sessizce atlanıyor (çökme yok).
+
+**`WatchPresetMatcher` (6 test):**
+- `always:true` preset, hiçbir sembol gerektirmeden uygulanıyor.
+- `requiresAnySymbol` doğru kapı görevi görüyor (eşleşme yoksa preset hiç
+  uygulanmıyor).
+- İki kalemden biri eksikse (`g_ai_*` gibi) preset **kısmen** uygulanıyor,
+  hata yok.
+- `_sstack` yokken `_estack-_Min_Stack_Size` fallback'i doğru hesaplanıyor;
+  `_Min_Stack_Size`'ın **değeri** (2048) kullanıldığı, ham nm adresinin
+  DEĞİL, açıkça doğrulandı (plan 11.5'in bizzat işaret ettiği tuzak).
+- Hiçbir alternatif çözülmezse region-scan kalemi sessizce atlanıyor.
+
+**QML entegrasyon kontrolü:** Uygulama kısaca başlatılıp kapatıldı;
+`app_trace.log`'da `WatchRuleFeed`/`ProfileCompareDialog` için hata yok.
+
+### 17.3 Bilinçli olarak ertelenen
+
+- **RegionScan (stack watermark) canlı örnekleme:** `WatchPresetMatcher`
+  adres aralığını (`regionFrom`/`regionTo`) doğru çözüyor ve
+  `WatchPlanBuilder::buildRegionScans()` (Faz 4) okuma planını doğru
+  parçalıyor — ama bu ikisi arasındaki **decode** adımı (taranan baytları
+  "ilk 0xA5 olmayan bayt" mantığıyla bir "N bayt boş" değerine çevirmek)
+  hiç yazılmadı; `WatchSampler.h` hâlâ "RegionScan kalemleri 0.0/ok=false
+  döner" diyor (Faz 4'ten beri). Bu, ayrı bir düşük-hızlı (`rateHz`)
+  örnekleme döngüsü + bayt-tarama decode fonksiyonu gerektiren, kendi
+  başına bir iştir. `Backend::applyWatchPresets()` bu yüzden RegionScan
+  önerilerini **eklemiyor** (0/kullanılamaz bir kalem eklemek, hiç
+  eklememekten kötü) — `stack_headroom_critical` ve
+  `watermark_downward_trend` kuralları kodda hazır ama şu an hiçbir kalem
+  onlarla eşleşmeyecek. Tek satır C++ değişmeden yeni kart eklenebilmesi
+  ilkesi (plan 11.5) yine de korundu; bu decode adımı ileride ayrı bir
+  odaklı oturumda tamamlanabilir.
+- **Canlı H7 doğrulaması (sızıntı demosu, iki model karşılaştırması):**
+  Faz 3/5/7'deki gibi aynı gerekçeyle ertelendi — geçici bir sızıntılı
+  firmware yazıp flaşlamak veya gerçekten iki farklı model deploy etmek,
+  kullanıcı açıkça istemeden bu oturumda yapılmadı. `applyWatchPresets()`
+  ve `TimeSeriesRuleEngine` kendileri gerçek testlerle doğrulandı; yalnızca
+  "gerçek donanımda gerçek bir sızıntı/karşılaştırma senaryosu" demosu
+  ertelendi.
+- **`ProfileCompareDialog.qml` canlı veriyle:** İki gerçek kaydedilmiş
+  `watch_profile` oturumu gerektiriyor (Faz 7'nin kayıt+profil-kaydet akışı
+  ile üretilir) — kod yolu hazır ve derleniyor, ama gerçek kaydedilmiş
+  verilerle ekranda görsel doğrulaması yapılmadı.
+
+### 17.4 Faz 8 kabul kriterleri özeti
+
+| Kriter | Sonuç |
+|---|---|
+| Threshold/ZScore/Drift/Gate — plan tablosundaki 8 senaryo | ✅ (hepsi gerçek test) |
+| Preset — kısmi uygulama, `_sstack` fallback, Absolute-değer tuzağı | ✅ (6 gerçek test) |
+| ProfileCompare — eşleşmeyen kalem "karşılığı yok" | ✅ (kod yolunda, `hasMatch` alanıyla) |
+| `applyWatchPresets()` / `watchPresetSuggestions()` | ✅ (RegionScan hariç, gerekçeli) |
+| Canlı: preset otomatik ekleme, watermark, sızıntı demosu, 2 model karşılaştırma | ⏸️ ertelendi (gerekçeli, yukarıda) |
+
+**Faz 8 tamamlandı** (kural motoru ve preset eşleştirme tam ve gerçek
+testlerle doğrulandı; RegionScan'in canlı örneklenmesi ve tüm canlı-H7
+demoları, net gerekçelerle ertelendi; Faz 7'den gerçek bir birim-ölçek
+hatası bulunup düzeltildi).

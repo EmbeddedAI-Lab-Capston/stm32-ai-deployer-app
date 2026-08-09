@@ -12,6 +12,8 @@
 #include <QMap>
 #include "modules/flash/PipelineConfig.h"
 #include "modules/watcher/TraceEventLog.h"
+#include "modules/watcher/TimeSeriesRuleModel.h"
+#include "modules/watcher/WatchPresetMatcher.h"
 
 class AppState;
 class SerialManager;
@@ -25,6 +27,7 @@ class RegisterInspector;
 class RegisterAdvisor;
 struct RegisterSnapshot;
 struct SnapshotDiff;
+struct AnalysisRecord;
 class QProcess;
 class DebugLink;
 class VariableWatcher;
@@ -264,7 +267,7 @@ public:
     bool         watchRecording() const;
     QVariantMap  watchRateInfo() const;
     QVariantList watchItems() const;
-    QVariantList watchViolations() const { return {}; }     // Faz 8 (TimeSeriesRuleEngine) not implemented yet
+    QVariantList watchViolations() const;
     QString      stlinkOwner() const { return m_stlinkOwner; }
     QString      watchElfMatch() const;
     QVariantMap  watchElfMatchDetail() const;
@@ -327,6 +330,12 @@ public:
     Q_INVOKABLE bool         exportWatchCsv(const QString &path);     // visible window, decimated
     Q_INVOKABLE bool         exportWatchJson(const QString &path);    // session summary + config
 
+    // ── Variable Watcher - Faz 8 (kural motoru + preset + profil karsilastirma) ──
+    Q_INVOKABLE QVariantList watchProfiles() const;                       // saved sessions, for a picker
+    Q_INVOKABLE QVariantMap  compareWatchProfiles(int idA, int idB);
+    Q_INVOKABLE void         applyWatchPresets();                        // adds every resolvable preset item
+    Q_INVOKABLE QVariantList watchPresetSuggestions() const;              // preview before applying
+
 signals:
     void toolPathsChanged();
     void scanningChanged();
@@ -384,6 +393,13 @@ private:
     // TraceRecorder's trailing event block, from one call site instead of
     // two — every event source added in Faz 6 goes through this.
     void logWatchEvent(const QString &kind, const QString &text, const QString &severity);
+
+    // Faz 8: watch/watch_rules.json + watch/watch_presets.json, found the
+    // same way as demoTracePath() (candidates relative to applicationDirPath()).
+    QString findAppDataFile(const QString &relPath) const;
+    void    loadWatchRulesAndPresets();
+    void    evaluateWatchRules();   // re-evaluates m_tsRules, caches into m_watchViolationsCache
+    QVector<AnalysisRecord> watchProfileSessionRows(int representativeId) const;
     // Single named arbiter for the shared ST-Link (Bolum 7.5). Tracked in
     // PARALLEL to but SEPARATE from DebugLink's own retain/release refcount —
     // this answers "which FEATURE is using the ST-Link", the refcount
@@ -410,6 +426,12 @@ private:
     QMap<QString, QPair<double, double>> m_plotYRange;
     QElapsedTimer      m_plotFrameClock;   // dt between watchPlotFrame() calls, for the shrink smoothing
     QString            m_lastWatchRecordPath;   // set on a successful startWatchRecording(), for saveWatchProfile()'s c13
+
+    // Faz 8 — rule engine + presets
+    QVector<TsRule>          m_tsRules;               // loaded once from watch/watch_rules.json
+    QList<WatchPreset>       m_watchPresets;           // loaded once from watch/watch_presets.json
+    QVector<TsRuleViolation> m_watchViolationsCache;   // refreshed by evaluateWatchRules()
+    QTimer                  *m_ruleTimer = nullptr;
     QString            m_stlinkOwner;   // "" | "watch" (flash/pipeline/probe/register keep their own flags)
     int                m_registerViewSlot = 0;   // which slot registerModel shows
 

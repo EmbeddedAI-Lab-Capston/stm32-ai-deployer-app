@@ -1,0 +1,35 @@
+{
+  "_schemaVersion": 1,
+  "_comment": "Deterministic, windowed rules for the Variable Watcher. Separate from svd/rules.json (instantaneous register state) on purpose — see CLAUDE.md.",
+  "rules": [
+    {
+      "id": "stack_headroom_critical",
+      "severity": "error",
+      "appliesToRole": "stackWatermark",
+      "type": "threshold", "op": "<", "value": 512, "sustainMs": 1000,
+      "message": "{label}: yalnizca {value} B stack bosluk kaldi (esik {threshold} B)"
+    },
+    {
+      "id": "heap_leak_drift",
+      "severity": "warning",
+      "appliesToRole": "heapEnd",
+      "type": "drift", "windowMs": 30000, "minSlopePerSec": 8.0, "minR2": 0.6,
+      "message": "{label}: {windowSec} s icinde {slope} B/s artis egilimi (R2={r2}) — olasi bellek sizintisi"
+    },
+    {
+      "id": "inference_time_outlier",
+      "severity": "info",
+      "appliesToLabelRegex": "inference_us|elapsed_us|inf_us",
+      "type": "zscore", "windowMs": 5000, "k": 4.0, "minSamples": 200,
+      "gate": { "eventKind": "inference", "withinMs": 50 },
+      "message": "{label}: {value} (pencere ort. {mean}, z={z}) — aykiri inference suresi"
+    },
+    {
+      "id": "watermark_downward_trend",
+      "severity": "warning",
+      "appliesToRole": "stackWatermark",
+      "type": "drift", "windowMs": 60000, "minSlopePerSec": -4.0, "minR2": 0.5,
+      "message": "{label}: stack bosluğu {windowSec} s'de {slope} B/s azaliyor — limite tirmanma"
+    }
+  ]
+}

@@ -26,6 +26,10 @@ set(TEST_SOURCES
     TestTraceRecorderPlayer.cpp
     TestWatchProfile.h
     TestWatchProfile.cpp
+    TestTimeSeriesRuleEngine.h
+    TestTimeSeriesRuleEngine.cpp
+    TestWatchPresetMatcher.h
+    TestWatchPresetMatcher.cpp
 
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.h
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.cpp
@@ -50,6 +54,11 @@ set(TEST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/TracePlayer.cpp
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchProfile.h
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchProfile.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/TimeSeriesRuleModel.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/TimeSeriesRuleEngine.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/TimeSeriesRuleEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchPresetMatcher.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchPresetMatcher.cpp
 )
 
 qt_add_executable(STM32AiDeployerTests ${TEST_SOURCES})
