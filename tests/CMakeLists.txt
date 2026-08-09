@@ -16,6 +16,10 @@ set(TEST_SOURCES
     TestWatchModel.cpp
     TestElfTargetMatcher.h
     TestElfTargetMatcher.cpp
+    TestWatchPlanBuilder.h
+    TestWatchPlanBuilder.cpp
+    TestTraceBuffer.h
+    TestTraceBuffer.cpp
 
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.h
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.cpp
@@ -28,6 +32,10 @@ set(TEST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/ValueCodec.cpp
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/ElfTargetMatcher.h
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/ElfTargetMatcher.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchPlanBuilder.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchPlanBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceBuffer.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/TraceBuffer.cpp
 )
 
 qt_add_executable(STM32AiDeployerTests ${TEST_SOURCES})

@@ -21,6 +21,7 @@
 #include "modules/registers/RegisterInspector.h"
 #include "modules/registers/RegisterAdvisor.h"
 #include "modules/debug/DebugLink.h"
+#include "modules/watcher/VariableWatcher.h"
 #include "bridge/Backend.h"
 #include "ui/SplashScreen.h"
 
@@ -121,6 +122,14 @@ int main(int argc, char *argv[])
         }
 
         debugLink->setPaths(gdbServerPath, cubeProgrammerBinDir);
+
+        // arm-none-eabi-nm.exe (Degisken Izleyici symbol layer, Faz 3/4).
+        QString armNmPath = settings.armNmPath();
+        if (armNmPath.isEmpty() || !QFile::exists(armNmPath)) {
+            armNmPath = ToolDetector::detectArmNm();
+            if (!armNmPath.isEmpty())
+                settings.setArmNmPath(armNmPath);
+        }
     }
 
     // Register Inspector's GDB backend (Faz 2) shares this same link — see
@@ -128,7 +137,12 @@ int main(int argc, char *argv[])
     // actually use it per snapshot.
     registers->setDebugLink(debugLink);
 
-    auto *backend = new Backend(appState, serial, flash, analysis, registers, advisor, debugLink, &app);
+    // Variable Watcher (Faz 4) — same shared link, retained/released
+    // explicitly via Backend::openWatchLink()/closeWatchLink(), never by
+    // VariableWatcher itself (plan Bolum 7.4/7.5).
+    auto *watcher = new VariableWatcher(debugLink, &app);
+
+    auto *backend = new Backend(appState, serial, flash, analysis, registers, advisor, debugLink, watcher, &app);
 
     // Factory Simulation engine (synthetic large-factory data for the demo mode).
     auto *factorySim = new FactorySimulator(&app);

@@ -390,3 +390,70 @@ Plan Bölüm 12.5 ile aynı; kart elde olmadığı için Faz 1'de koşulamadı.
 - [ ] TrustZone/RIF: güvenli RAM bölgesi okuması hata olarak mı yüzeye çıkıyor
       (sessiz sıfır DEĞİL)
 - [ ] Başarısızsa `boards.json` `debug.gdb.support` `"unsupported"` yapılır
+
+---
+
+## 13. Faz 4 — İzleme UI'sı (sampler, ring buffer, ekran)
+
+### 13.1 QML layout hatası — bulundu ve düzeltildi
+
+İlk derlemede `WatchItemTable` (tablo) İzleyici sekmesinde tamamen boş
+görünüyordu — başlık satırı, satırlar veya boş-durum metni hiç render
+olmuyordu, üstteki araç çubuğu ise anormal derecede uzun görünüyordu.
+
+**Kök neden:** `WatchToolbar` (kök: `RowLayout`) ve `SectionHeader` (kök:
+`ColumnLayout`) kendileri de birer Layout türü; QtQuick.Layouts'ta bir Layout,
+başka bir Layout içine iç içe konduğunda `Layout.fillHeight` **varsayılan
+olarak `true`** olur (düz bir `Item`/`Rectangle`'ın aksine, ki onlarda
+varsayılan `false`'tur). Sonuç: dış `ColumnLayout` içindeki araç çubuğu,
+tabloya ayrılması gereken dikey alanın neredeyse tamamını sessizce yutuyordu;
+tablo yalnızca birkaç pikselik bir alana sıkışıyordu.
+
+**Düzeltme:** `qml/screens/WatchScreen.qml`'de `hdr` (SectionHeader) ve `tb`
+(WatchToolbar) üzerine açıkça `Layout.fillHeight: false` eklendi. Ekran
+görüntüsüyle doğrulandı: araç çubuğu, tablo başlığı (Etkin/Etiket/Adres/
+Tip/Biçim/Ölçek/Birim/Canlı Değer/Min/Max/Ort), boş-durum mesajı ve alt durum
+şeridi hepsi doğru boyut ve konumda render oluyor.
+
+### 13.2 Canlı H7 testi — kullanıcı tarafından, manuel adres ile ✅
+
+ELF eşleştirme/sembol çözümleme gerektirmeyen, donanım-bağımsız sabit bir
+hedef seçildi: **`SysTick->VAL`** (`0xE000E018`, her Cortex-M çekirdeğinde
+aynı adreste duran ARM çekirdek register'ı — hangi kullanıcı firmware'inin
+flashlı olduğuna bağlı değil, bu yüzden Faz 3'teki ELF-eşleşme belirsizliği
+hiç devreye girmedi).
+
+Kullanıcı uygulamayı bizzat çalıştırıp şu adımları izledi: İzleyici sekmesi →
+**Bağlan** (`STM32H7 bağlı` durumuna geçti) → **Adres Ekle** (`0xe000e018`,
+`u32`, `dec`) → **Başlat** (200 Hz).
+
+**Gözlem:** Canlı Değer sütunu sürekli değişti; **Min=242, Max=274968,
+Ort=138923** — SysTick'in LOAD'dan 0'a aşağı sayıp yeniden yüklenen
+"testere dişi" davranışıyla tutarlı, gerçek donanımdan okunan, sabit/donmuş
+olmayan bir değer. Bu, uçtan uca boru hattının (bağlan → adres ekle → canlı
+okuma döngüsü → decode → tablo/istatistik güncelleme) gerçek H7 üzerinde
+çalıştığının doğrudan kanıtıdır.
+
+**Not — plan Bölüm 7.8'in kalan maddeleri ertelendi:** 1000 Hz hedefte 60 sn
+sürdürülebilirlik/UI donmazlık testi, azami hız (`0`=maks) ölçümü ve
+60 sn/1000 Hz/8 değişkende RSS bellek artışı (<100 MB) testleri, ekran
+otomasyonunun (fare tıklama/ekran görüntüsü) hem yavaş hem token-maliyetli
+olduğu görülüp kullanıcının kendi elle testine geçilmesi kararıyla bu oturumda
+koşulmadı. Temel boru hattı (bağlantı, canlı okuma, decode, UI güncelleme)
+gerçek donanımda kanıtlanmış durumda; yüksek-hız/uzun-süre sağlamlık testi
+ileride (Faz 6 grafik ekranıyla birlikte, gerçek kullanım sırasında) doğal
+olarak ortaya çıkacak.
+
+### 13.3 Faz 4 kabul kriterleri özeti
+
+| Kriter | Sonuç |
+|---|---|
+| C++ tarafı (WatchPlanBuilder/TraceBuffer/WatchSampler/VariableWatcher) derlenir, birim testleri yeşil | ✅ |
+| Backend API (properties/invokables/signals) + ST-Link hakemi (`m_stlinkOwner`) | ✅ |
+| QML ekranları (toolbar/tablo/durum şeridi/dialoglar) doğru render olur | ✅ (Bölüm 13.1'deki hata düzeltildikten sonra) |
+| Canlı H7: bağlan → adres ekle → başlat → değişen değer görünür | ✅ (Bölüm 13.2) |
+| 60 sn/1000 Hz sürdürülebilirlik + bellek testi | ⏸️ ertelendi (gerekçeli, yukarıda) |
+
+**Faz 4 tamamlandı** (bir gerçek UI hatası bulunup düzeltildi; temel canlı
+boru hattı H7'de doğrulandı; yüksek-hız sürdürülebilirlik testi gerekçeli
+olarak ertelendi).

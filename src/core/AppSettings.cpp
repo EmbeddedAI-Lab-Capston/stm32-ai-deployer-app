@@ -368,6 +368,45 @@ void AppSettings::setRegisterReadBackend(const QString &backend)
     s.setValue(kKeyRegisterReadBackend, backend);
 }
 
+QByteArray AppSettings::watchItemsJson(const QString &boardName) const
+{
+    QSettings s;
+    const QJsonObject obj = QJsonDocument::fromJson(s.value(kKeyWatchItems).toByteArray()).object();
+    return QJsonDocument(obj.value(boardName).toArray()).toJson(QJsonDocument::Compact);
+}
+
+void AppSettings::setWatchItemsJson(const QString &boardName, const QByteArray &json)
+{
+    QSettings s;
+    QJsonObject obj = QJsonDocument::fromJson(s.value(kKeyWatchItems).toByteArray()).object();
+    obj.insert(boardName, QJsonDocument::fromJson(json).array());
+    s.setValue(kKeyWatchItems, QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+QString AppSettings::lastWatchElfPath() const
+{
+    QSettings s;
+    return s.value(kKeyLastWatchElfPath, QString{}).toString();
+}
+
+void AppSettings::setLastWatchElfPath(const QString &path)
+{
+    QSettings s;
+    s.setValue(kKeyLastWatchElfPath, path);
+}
+
+int AppSettings::watchTargetRateHz() const
+{
+    QSettings s;
+    return s.value(kKeyWatchTargetRateHz, 200).toInt();
+}
+
+void AppSettings::setWatchTargetRateHz(int hz)
+{
+    QSettings s;
+    s.setValue(kKeyWatchTargetRateHz, hz);
+}
+
 void AppSettings::addCustomBoard(const BoardInfo &board)
 {
     if (board.name.trimmed().isEmpty())

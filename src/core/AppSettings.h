@@ -124,6 +124,18 @@ public:
     QString registerReadBackend() const;
     void    setRegisterReadBackend(const QString &backend);
 
+    // Variable Watcher (Faz 4). Item schema is owned by VariableWatcher —
+    // AppSettings only stores/retrieves the raw JSON, same pattern as
+    // registerPeripherals().
+    QByteArray watchItemsJson(const QString &boardName) const;
+    void       setWatchItemsJson(const QString &boardName, const QByteArray &json);
+
+    QString lastWatchElfPath() const;
+    void    setLastWatchElfPath(const QString &path);
+
+    int  watchTargetRateHz() const;   // default 200
+    void setWatchTargetRateHz(int hz);
+
 private:
     static constexpr auto kKeyCliPath          = "programmer/cli_path";
     static constexpr auto kKeyComPort          = "serial/last_com_port";
@@ -153,4 +165,7 @@ private:
     static constexpr auto kKeyCubeProgrammerBinDir = "tools/cubeprogrammer_bin_dir";
     static constexpr auto kKeyWatchGdbPort     = "watch/gdb_port";
     static constexpr auto kKeyRegisterReadBackend = "registers/read_backend";
+    static constexpr auto kKeyWatchItems       = "watch/items";
+    static constexpr auto kKeyLastWatchElfPath = "watch/last_elf_path";
+    static constexpr auto kKeyWatchTargetRateHz = "watch/target_rate_hz";
 };

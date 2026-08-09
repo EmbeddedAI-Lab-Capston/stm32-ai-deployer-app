@@ -5,6 +5,8 @@
 #include "TestValueCodec.h"
 #include "TestWatchModel.h"
 #include "TestElfTargetMatcher.h"
+#include "TestWatchPlanBuilder.h"
+#include "TestTraceBuffer.h"
 
 // Runs every suite with QTest::qExec and ORs the exit statuses, so a failure
 // in one suite doesn't stop the others from reporting (docs/variable_watcher_plan.md
@@ -18,5 +20,7 @@ int main(int argc, char **argv)
     { TestValueCodec t;       status |= QTest::qExec(&t, argc, argv); }
     { TestWatchModel t;       status |= QTest::qExec(&t, argc, argv); }
     { TestElfTargetMatcher t; status |= QTest::qExec(&t, argc, argv); }
+    { TestWatchPlanBuilder t; status |= QTest::qExec(&t, argc, argv); }
+    { TestTraceBuffer t;      status |= QTest::qExec(&t, argc, argv); }
     return status;
 }

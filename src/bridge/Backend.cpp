@@ -40,6 +40,8 @@
 #include "modules/registers/RegisterInspector.h"
 #include "modules/registers/RegisterAdvisor.h"
 #include "modules/debug/DebugLink.h"
+#include "modules/watcher/VariableWatcher.h"
+#include "modules/watcher/ValueCodec.h"
 
 namespace
 {
@@ -473,6 +475,7 @@ Backend::Backend(AppState          *state,
                  RegisterInspector *registers,
                  RegisterAdvisor   *advisor,
                  DebugLink         *debugLink,
+                 VariableWatcher   *watcher,
                  QObject           *parent)
     : QObject(parent)
     , m_state(state)
@@ -482,6 +485,7 @@ Backend::Backend(AppState          *state,
     , m_registers(registers)
     , m_advisor(advisor)
     , m_debugLink(debugLink)
+    , m_watcher(watcher)
 {
     m_simTimer  = new QTimer(this);
     m_simParser = new PacketParser(this);
@@ -516,6 +520,7 @@ Backend::Backend(AppState          *state,
     wireFlash();
     wireAnalysis();
     wireRegisters();
+    wireWatcher();
 
     // Pre-populate analysis with sample data so the tables aren't empty on first launch.
     seedAnalysisIfEmpty();
@@ -564,6 +569,8 @@ void Backend::setToolPath(const QString &key, const QString &path)
     // an already-open session is unaffected until it closes and reopens).
     if (m_debugLink && (key == "tools/gdbserver_path" || key == "tools/cubeprogrammer_bin_dir"))
         m_debugLink->setPaths(s.gdbServerPath(), s.cubeProgrammerBinDir());
+    if (m_watcher && key == "tools/arm_nm_path")
+        m_watcher->setNmPath(path);
     emit toolPathsChanged();
 }
 
@@ -772,6 +779,10 @@ void Backend::probeStLinkBoardForPort(const QString &portName)
     if (m_probeBusy) return;
     if (m_registers && m_registers->isBusy()) {
         emit statusMessage(QStringLiteral("Register snapshot suruyor; probe iptal."));
+        return;
+    }
+    if (!m_stlinkOwner.isEmpty()) {
+        emit statusMessage(QStringLiteral("ST-Link su anda %1 tarafindan kullaniliyor; probe iptal.").arg(m_stlinkOwner));
         return;
     }
 
@@ -1545,6 +1556,10 @@ void Backend::flashFirmware(const QString &path, const QString &modelName,
         emit statusMessage(QStringLiteral("Register snapshot suruyor; flash iptal."));
         return;
     }
+    if (!m_stlinkOwner.isEmpty()) {
+        emit statusMessage(QStringLiteral("ST-Link su anda %1 tarafindan kullaniliyor; flash iptal.").arg(m_stlinkOwner));
+        return;
+    }
 
     FlashConfig cfg;
     cfg.hexPath        = path;
@@ -1646,6 +1661,10 @@ void Backend::runPipeline(const QVariantMap &config)
     if (m_pipelineBusy) return;
     if (m_registers && m_registers->isBusy()) {
         emit statusMessage(QStringLiteral("Register snapshot suruyor; pipeline iptal."));
+        return;
+    }
+    if (!m_stlinkOwner.isEmpty()) {
+        emit statusMessage(QStringLiteral("ST-Link su anda %1 tarafindan kullaniliyor; pipeline iptal.").arg(m_stlinkOwner));
         return;
     }
     m_lastPipelineConfig = pipelineConfigFromMap(config);
@@ -3004,9 +3023,13 @@ void Backend::takeRegisterSnapshot(int slot, const QStringList &peripherals)
 {
     if (!m_registers || !m_state)
         return;
-    // Shared ST-Link guard (Bolum 5.3): one client at a time.
+    // Shared ST-Link guard (Bolum 5.3, extended Bolum 7.5 for the watcher).
     if (m_flashBusy || m_pipelineBusy || m_probeBusy) {
         emit statusMessage(QStringLiteral("ST-Link mesgul (flash/probe/pipeline); snapshot iptal."));
+        return;
+    }
+    if (!m_stlinkOwner.isEmpty()) {
+        emit statusMessage(QStringLiteral("ST-Link su anda %1 tarafindan kullaniliyor; snapshot iptal.").arg(m_stlinkOwner));
         return;
     }
     const BoardInfo board = m_state->activeBoard();
@@ -3359,4 +3382,284 @@ bool Backend::exportRegisterSnapshotJson(const QString &path)
     }
     file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     return true;
+}
+
+// ── Variable Watcher (Faz 4) ─────────────────────────────────────────────
+
+void Backend::wireWatcher()
+{
+    if (!m_watcher)
+        return;
+
+    AppSettings settings;
+    const QString nmPath = settings.armNmPath();
+    if (!nmPath.isEmpty())
+        m_watcher->setNmPath(nmPath);
+
+    connect(m_watcher, &VariableWatcher::itemsChanged,     this, &Backend::watchItemsChanged);
+    connect(m_watcher, &VariableWatcher::samplesAppended,  this, &Backend::watchStatsChanged);
+    connect(m_watcher, &VariableWatcher::statsChanged,     this, &Backend::watchStatsChanged);
+    connect(m_watcher, &VariableWatcher::runningChanged,   this, &Backend::watchRunChanged);
+    connect(m_watcher, &VariableWatcher::symbolsLoaded,    this, &Backend::watchSymbolsLoaded);
+    connect(m_watcher, &VariableWatcher::elfMatchChanged,  this, &Backend::watchElfMatchChanged);
+    connect(m_watcher, &VariableWatcher::errorOccurred, this, [this](const QString &m) {
+        emit watchError(m);
+        emit statusMessage(m);
+    });
+
+    if (m_debugLink) {
+        connect(m_debugLink, &DebugLink::stateChanged, this, &Backend::watchLinkChanged);
+        connect(m_debugLink, &DebugLink::opened,       this, &Backend::watchLinkChanged);
+        connect(m_debugLink, &DebugLink::closed, this, [this]() {
+            if (m_stlinkOwner == QStringLiteral("watch"))
+                releaseStLink(QStringLiteral("watch"));
+            emit watchLinkChanged();
+        });
+        connect(m_debugLink, &DebugLink::failed, this, [this](const QString &msg) {
+            if (m_stlinkOwner == QStringLiteral("watch"))
+                releaseStLink(QStringLiteral("watch"));
+            emit watchError(msg);
+            emit statusMessage(msg);
+            emit watchLinkChanged();
+        });
+    }
+}
+
+bool Backend::acquireStLink(const QString &who)
+{
+    if (!m_stlinkOwner.isEmpty() && m_stlinkOwner != who) {
+        emit statusMessage(QStringLiteral("ST-Link su anda %1 tarafindan kullaniliyor.").arg(m_stlinkOwner));
+        return false;
+    }
+    m_stlinkOwner = who;
+    emit stlinkOwnerChanged();
+    return true;
+}
+
+void Backend::releaseStLink(const QString &who)
+{
+    if (m_stlinkOwner == who) {
+        m_stlinkOwner.clear();
+        emit stlinkOwnerChanged();
+    }
+}
+
+bool Backend::watchLinkOpen() const { return m_debugLink && m_debugLink->isOpen(); }
+
+QString Backend::watchLinkState() const
+{
+    if (!m_debugLink) return QStringLiteral("closed");
+    switch (m_debugLink->state()) {
+    case DebugLinkState::Closed:         return QStringLiteral("closed");
+    case DebugLinkState::StartingServer: return QStringLiteral("starting");
+    case DebugLinkState::Connecting:     return QStringLiteral("connecting");
+    case DebugLinkState::Handshaking:    return QStringLiteral("handshaking");
+    case DebugLinkState::Open:           return QStringLiteral("open");
+    case DebugLinkState::Failed:         return QStringLiteral("failed");
+    }
+    return QStringLiteral("closed");
+}
+
+QString Backend::watchLinkError() const { return m_debugLink ? m_debugLink->lastError() : QString(); }
+
+bool Backend::watchRunning() const { return m_watcher && m_watcher->isRunning(); }
+
+QVariantMap Backend::watchRateInfo() const { return m_watcher ? m_watcher->rateInfo() : QVariantMap(); }
+
+QVariantList Backend::watchItems() const
+{
+    QVariantList out;
+    if (!m_watcher) return out;
+
+    const QList<WatchItem> &items = m_watcher->items();
+    for (int i = 0; i < items.size(); ++i) {
+        const WatchItem &it = items.at(i);
+        const WatchStats &st = m_watcher->buffer().stats(i);
+
+        QVariantMap m;
+        m[QStringLiteral("id")]      = it.id;
+        m[QStringLiteral("label")]   = it.label;
+        m[QStringLiteral("role")]    = it.role;
+        m[QStringLiteral("address")] = QStringLiteral("0x%1").arg(it.address, 0, 16);
+        m[QStringLiteral("kind")]    = (it.kind == WatchItemKind::RegionScan)
+                                            ? QStringLiteral("region") : QStringLiteral("scalar");
+        m[QStringLiteral("type")]    = watchValueTypeToString(it.type);
+        m[QStringLiteral("format")]  = displayFormatToString(it.format);
+        m[QStringLiteral("scale")]   = it.scale;
+        m[QStringLiteral("offset")]  = it.offset;
+        m[QStringLiteral("unit")]    = it.unit;
+        m[QStringLiteral("enabled")] = it.enabled;
+        m[QStringLiteral("source")]  = it.source;
+        m[QStringLiteral("color")]   = it.color;
+
+        const bool hasValue = st.count > 0;
+        m[QStringLiteral("hasValue")]  = hasValue;
+        m[QStringLiteral("liveValue")] = hasValue ? ValueCodec::format(st.last, it) : QStringLiteral("—");
+        m[QStringLiteral("minValue")]  = hasValue ? ValueCodec::format(st.min, it)  : QStringLiteral("—");
+        m[QStringLiteral("maxValue")]  = hasValue ? ValueCodec::format(st.max, it)  : QStringLiteral("—");
+        m[QStringLiteral("meanValue")] = hasValue ? ValueCodec::format(st.mean, it) : QStringLiteral("—");
+
+        out.append(m);
+    }
+    return out;
+}
+
+QString Backend::watchElfMatch() const
+{
+    if (!m_watcher) return QStringLiteral("unknown");
+    switch (m_watcher->elfMatchResult()) {
+    case ElfMatchResult::Match:    return QStringLiteral("match");
+    case ElfMatchResult::Mismatch: return QStringLiteral("mismatch");
+    case ElfMatchResult::Unknown:  return QStringLiteral("unknown");
+    }
+    return QStringLiteral("unknown");
+}
+
+QVariantMap Backend::watchElfMatchDetail() const
+{
+    QVariantMap m;
+    if (!m_watcher) return m;
+    const ElfMatchReport &r = m_watcher->elfMatchDetail();
+    m[QStringLiteral("detail")]          = r.detail;
+    m[QStringLiteral("vtor")]            = QStringLiteral("0x%1").arg(r.vtor, 0, 16);
+    m[QStringLiteral("targetInitialSp")] = QStringLiteral("0x%1").arg(r.targetInitialSp, 0, 16);
+    m[QStringLiteral("targetResetVec")]  = QStringLiteral("0x%1").arg(r.targetResetVec, 0, 16);
+    m[QStringLiteral("elfEstack")]       = QStringLiteral("0x%1").arg(r.elfEstack, 0, 16);
+    m[QStringLiteral("elfResetHandler")] = QStringLiteral("0x%1").arg(r.elfResetHandler, 0, 16);
+    m[QStringLiteral("spMatches")]       = r.spMatches;
+    m[QStringLiteral("resetMatches")]    = r.resetMatches;
+    return m;
+}
+
+void Backend::openWatchLink()
+{
+    if (!m_debugLink) return;
+    if (m_flashBusy || m_pipelineBusy || m_probeBusy || (m_registers && m_registers->isBusy())) {
+        emit statusMessage(QStringLiteral("ST-Link mesgul (flash/probe/pipeline/register); izleyici baglantisi acilamiyor."));
+        return;
+    }
+    if (!acquireStLink(QStringLiteral("watch")))
+        return;
+    m_debugLink->retain();
+}
+
+void Backend::closeWatchLink()
+{
+    if (!m_debugLink) return;
+    if (m_watcher && m_watcher->isRunning())
+        m_watcher->stop();
+    m_debugLink->release();
+    releaseStLink(QStringLiteral("watch"));
+}
+
+QString Backend::watchElfPath() const { return m_watcher ? m_watcher->elfPath() : QString(); }
+
+QString Backend::suggestedElfPath() const
+{
+    const QString dir = AppSettings().deployedModelOutputDir();
+    if (dir.isEmpty())
+        return QString();
+    QDir buildDir(dir + QStringLiteral("/build"));
+    const QStringList elfs = buildDir.entryList(QStringList() << QStringLiteral("*.elf"), QDir::Files);
+    return elfs.isEmpty() ? QString() : buildDir.absoluteFilePath(elfs.first());
+}
+
+void Backend::loadWatchElf(const QString &path)
+{
+    if (!m_watcher) return;
+    m_watcher->loadElf(path);
+    AppSettings().setLastWatchElfPath(path);
+}
+
+QVariantList Backend::watchSymbols(const QString &filter, int limit) const
+{
+    QVariantList out;
+    if (!m_watcher) return out;
+
+    const QString needle = filter.trimmed();
+    int count = 0;
+    for (const Symbol &s : m_watcher->symbols()) {
+        if (!needle.isEmpty() && !s.name.contains(needle, Qt::CaseInsensitive))
+            continue;
+        QVariantMap m;
+        m[QStringLiteral("name")]           = s.name;
+        m[QStringLiteral("address")]        = QStringLiteral("0x%1").arg(s.address, 0, 16);
+        m[QStringLiteral("size")]           = qulonglong(s.size);
+        m[QStringLiteral("hasSize")]        = s.hasSize;
+        m[QStringLiteral("nmType")]         = QString(QChar::fromLatin1(s.nmType));
+        m[QStringLiteral("addressIsValue")] = s.addressIsValue;
+        m[QStringLiteral("watchable")]      = !s.addressIsValue;
+        out.append(m);
+        if (limit > 0 && ++count >= limit)
+            break;
+    }
+    return out;
+}
+
+void Backend::addWatchSymbol(const QString &symbolName)
+{
+    if (!m_watcher) return;
+    const QString id = m_watcher->addSymbol(symbolName);
+    if (!id.isEmpty() && m_state)
+        m_watcher->saveItems(m_state->activeBoard().name);
+}
+
+void Backend::addWatchAddress(const QString &addrHex, const QString &type, const QString &label)
+{
+    if (!m_watcher) return;
+    QString hex = addrHex.trimmed();
+    if (hex.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive))
+        hex = hex.mid(2);
+    bool ok = false;
+    const quint64 addr = hex.toULongLong(&ok, 16);
+    if (!ok) {
+        emit statusMessage(QStringLiteral("Gecersiz adres: %1").arg(addrHex));
+        return;
+    }
+    const QString id = m_watcher->addAddress(addr, watchValueTypeFromString(type), label);
+    if (!id.isEmpty() && m_state)
+        m_watcher->saveItems(m_state->activeBoard().name);
+}
+
+void Backend::updateWatchItem(const QString &id, const QVariantMap &props)
+{
+    if (!m_watcher) return;
+    m_watcher->updateItem(id, props);
+    if (m_state) m_watcher->saveItems(m_state->activeBoard().name);
+}
+
+void Backend::removeWatchItem(const QString &id)
+{
+    if (!m_watcher) return;
+    m_watcher->removeItem(id);
+    if (m_state) m_watcher->saveItems(m_state->activeBoard().name);
+}
+
+void Backend::clearWatchItems()
+{
+    if (!m_watcher) return;
+    m_watcher->clearItems();
+    if (m_state) m_watcher->saveItems(m_state->activeBoard().name);
+}
+
+void Backend::startWatch(int targetRateHz)
+{
+    if (!m_watcher) return;
+    m_watcher->start(targetRateHz);
+    AppSettings().setWatchTargetRateHz(targetRateHz);
+}
+
+void Backend::stopWatch()
+{
+    if (m_watcher) m_watcher->stop();
+}
+
+void Backend::clearWatchData()
+{
+    if (m_watcher) m_watcher->clearBuffer();
+}
+
+void Backend::acknowledgeElfMismatch()
+{
+    if (m_watcher) m_watcher->acknowledgeElfMismatch();
 }

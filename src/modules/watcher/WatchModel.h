@@ -64,3 +64,55 @@ struct WatchStats
         min = max = last = mean = m2 = 0;
     }
 };
+
+// String <-> enum conversions, shared by VariableWatcher (persistence) and
+// Backend (QML marshalling) so both sides agree on one vocabulary.
+inline QString watchValueTypeToString(WatchValueType t)
+{
+    switch (t) {
+    case WatchValueType::U8:  return QStringLiteral("u8");
+    case WatchValueType::I8:  return QStringLiteral("i8");
+    case WatchValueType::U16: return QStringLiteral("u16");
+    case WatchValueType::I16: return QStringLiteral("i16");
+    case WatchValueType::U32: return QStringLiteral("u32");
+    case WatchValueType::I32: return QStringLiteral("i32");
+    case WatchValueType::U64: return QStringLiteral("u64");
+    case WatchValueType::I64: return QStringLiteral("i64");
+    case WatchValueType::F32: return QStringLiteral("f32");
+    case WatchValueType::F64: return QStringLiteral("f64");
+    }
+    return QStringLiteral("u32");
+}
+
+inline WatchValueType watchValueTypeFromString(const QString &s)
+{
+    const QString v = s.trimmed().toLower();
+    if (v == QStringLiteral("u8"))  return WatchValueType::U8;
+    if (v == QStringLiteral("i8"))  return WatchValueType::I8;
+    if (v == QStringLiteral("u16")) return WatchValueType::U16;
+    if (v == QStringLiteral("i16")) return WatchValueType::I16;
+    if (v == QStringLiteral("i32")) return WatchValueType::I32;
+    if (v == QStringLiteral("u64")) return WatchValueType::U64;
+    if (v == QStringLiteral("i64")) return WatchValueType::I64;
+    if (v == QStringLiteral("f32")) return WatchValueType::F32;
+    if (v == QStringLiteral("f64")) return WatchValueType::F64;
+    return WatchValueType::U32;   // includes "u32" and any unrecognised value
+}
+
+inline QString displayFormatToString(DisplayFormat f)
+{
+    switch (f) {
+    case DisplayFormat::Hex: return QStringLiteral("hex");
+    case DisplayFormat::Bin: return QStringLiteral("bin");
+    case DisplayFormat::Dec: return QStringLiteral("dec");
+    }
+    return QStringLiteral("dec");
+}
+
+inline DisplayFormat displayFormatFromString(const QString &s)
+{
+    const QString v = s.trimmed().toLower();
+    if (v == QStringLiteral("hex")) return DisplayFormat::Hex;
+    if (v == QStringLiteral("bin")) return DisplayFormat::Bin;
+    return DisplayFormat::Dec;
+}

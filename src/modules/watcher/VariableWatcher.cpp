@@ -1,0 +1,455 @@
+#include "VariableWatcher.h"
+#include "ElfSymbolSource.h"
+#include "ValueCodec.h"
+#include "WatchSampler.h"
+#include "modules/debug/DebugLink.h"
+#include "core/AppSettings.h"
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QUuid>
+
+#include <limits>
+
+namespace {
+constexpr quint32 kElfMatchBatchId = 0xE1F0u;
+
+WatchValueType guessTypeFromSize(quint64 size, bool hasSize)
+{
+    if (!hasSize) return WatchValueType::U32;
+    switch (size) {
+    case 1: return WatchValueType::U8;
+    case 2: return WatchValueType::U16;
+    case 8: return WatchValueType::U64;
+    default: return WatchValueType::U32;
+    }
+}
+}
+
+VariableWatcher::VariableWatcher(DebugLink *link, QObject *parent)
+    : QObject(parent)
+    , m_link(link)
+{
+    m_elfSource = new ElfSymbolSource(this);
+    connect(m_elfSource, &ElfSymbolSource::loaded, this, &VariableWatcher::onElfSymbolsLoaded);
+    connect(m_elfSource, &ElfSymbolSource::failed, this, &VariableWatcher::onElfSymbolLoadFailed);
+
+    connect(m_link, &DebugLink::opened,         this, &VariableWatcher::onLinkOpened);
+    connect(m_link, &DebugLink::failed,         this, &VariableWatcher::onLinkFailed);
+    connect(m_link, &DebugLink::rangesRead,     this, &VariableWatcher::onRangesRead);
+    connect(m_link, &DebugLink::rawSamplesReady, this, &VariableWatcher::onRawSamplesReady);
+    connect(m_link, &DebugLink::samplingStats,  this, &VariableWatcher::onSamplingStats);
+    connect(m_link, &DebugLink::coreHalted,     this, &VariableWatcher::onCoreHalted);
+    connect(m_link, &DebugLink::coreReset,      this, &VariableWatcher::onCoreReset);
+
+    m_buffer.configure(0);
+}
+
+void VariableWatcher::setNmPath(const QString &path) { m_elfSource->setNmPath(path); }
+
+void VariableWatcher::loadElf(const QString &path)
+{
+    m_elfSource->load(path);
+}
+
+// ── Items ─────────────────────────────────────────────────────────────────
+
+QString VariableWatcher::addSymbol(const QString &symbolName)
+{
+    if (m_running) {
+        emit errorOccurred(tr("Ornekleme calisirken degisken listesi degistirilemez - once durdurun"));
+        return QString();
+    }
+
+    const Symbol *found = nullptr;
+    for (const Symbol &s : m_symbols)
+        if (s.name == symbolName) { found = &s; break; }
+
+    if (!found) {
+        emit errorOccurred(tr("Sembol bulunamadi: %1").arg(symbolName));
+        return QString();
+    }
+    if (found->addressIsValue) {
+        emit errorOccurred(tr("'%1' bir DEGER (A tipi) - izleme listesine adres olarak eklenemez").arg(symbolName));
+        return QString();
+    }
+
+    WatchItem item;
+    item.id      = QUuid::createUuid().toString(QUuid::Id128);
+    item.label   = symbolName;
+    item.address = found->address;
+    item.kind    = WatchItemKind::Scalar;
+    item.type    = guessTypeFromSize(found->size, found->hasSize);
+    item.source  = QStringLiteral("elf:%1").arg(symbolName);
+
+    m_items.append(item);
+    emit itemsChanged();
+    return item.id;
+}
+
+QString VariableWatcher::addAddress(quint64 addr, WatchValueType t, const QString &label)
+{
+    if (m_running) {
+        emit errorOccurred(tr("Ornekleme calisirken degisken listesi degistirilemez - once durdurun"));
+        return QString();
+    }
+
+    // Soft validation against the loaded ELF's symbol address range — a
+    // WARNING, never a block (plan Bolum 7.4: "hicbir durumda C++'a sabit
+    // RAM tablosu yazilmaz"). qXfer:memory-map:read is not wired up yet
+    // (deferred — DebugLinkWorker's whitelist allows it, nothing calls it),
+    // so this is the ELF-range fallback only, per the plan's own point 2.
+    if (!m_symbols.isEmpty()) {
+        quint64 lo = std::numeric_limits<quint64>::max();
+        quint64 hi = 0;
+        for (const Symbol &s : m_symbols) {
+            if (s.addressIsValue) continue;
+            lo = qMin(lo, s.address);
+            hi = qMax(hi, s.address + qMax<quint64>(1, s.size));
+        }
+        if (lo <= hi && (addr < lo || addr > hi)) {
+            emit errorOccurred(tr("Uyari: 0x%1 yuklu ELF sembollerinin adres araligi disinda (yine de eklendi)")
+                                    .arg(addr, 0, 16));
+        }
+    }
+
+    WatchItem item;
+    item.id      = QUuid::createUuid().toString(QUuid::Id128);
+    item.label   = label.isEmpty() ? QStringLiteral("0x%1").arg(addr, 0, 16) : label;
+    item.address = addr;
+    item.kind    = WatchItemKind::Scalar;
+    item.type    = t;
+    item.source  = QStringLiteral("manual");
+
+    m_items.append(item);
+    emit itemsChanged();
+    return item.id;
+}
+
+void VariableWatcher::updateItem(const QString &id, const QVariantMap &props)
+{
+    if (m_running) {
+        emit errorOccurred(tr("Ornekleme calisirken degisken listesi degistirilemez - once durdurun"));
+        return;
+    }
+
+    for (WatchItem &item : m_items) {
+        if (item.id != id) continue;
+
+        if (props.contains(QStringLiteral("label")))   item.label   = props.value(QStringLiteral("label")).toString();
+        if (props.contains(QStringLiteral("address")))  item.address = props.value(QStringLiteral("address")).toULongLong();
+        if (props.contains(QStringLiteral("type")))     item.type    = watchValueTypeFromString(props.value(QStringLiteral("type")).toString());
+        if (props.contains(QStringLiteral("format")))   item.format  = displayFormatFromString(props.value(QStringLiteral("format")).toString());
+        if (props.contains(QStringLiteral("scale")))    item.scale   = props.value(QStringLiteral("scale")).toDouble();
+        if (props.contains(QStringLiteral("offset")))   item.offset  = props.value(QStringLiteral("offset")).toDouble();
+        if (props.contains(QStringLiteral("unit")))     item.unit    = props.value(QStringLiteral("unit")).toString();
+        if (props.contains(QStringLiteral("enabled")))  item.enabled = props.value(QStringLiteral("enabled")).toBool();
+        if (props.contains(QStringLiteral("color")))    item.color   = props.value(QStringLiteral("color")).toString();
+
+        emit itemsChanged();
+        return;
+    }
+}
+
+void VariableWatcher::removeItem(const QString &id)
+{
+    if (m_running) {
+        emit errorOccurred(tr("Ornekleme calisirken degisken listesi degistirilemez - once durdurun"));
+        return;
+    }
+    const int before = m_items.size();
+    m_items.removeIf([&id](const WatchItem &it) { return it.id == id; });
+    if (m_items.size() != before)
+        emit itemsChanged();
+}
+
+void VariableWatcher::clearItems()
+{
+    if (m_running) {
+        emit errorOccurred(tr("Ornekleme calisirken degisken listesi degistirilemez - once durdurun"));
+        return;
+    }
+    if (m_items.isEmpty()) return;
+    m_items.clear();
+    emit itemsChanged();
+}
+
+// ── Sampling ──────────────────────────────────────────────────────────────
+
+void VariableWatcher::start(int targetRateHz)
+{
+    if (m_running) return;
+    if (!m_link->isOpen()) {
+        emit errorOccurred(tr("Izleyici baglantisi acik degil"));
+        return;
+    }
+    if (m_items.isEmpty()) {
+        emit errorOccurred(tr("Izlenecek degisken yok"));
+        return;
+    }
+    if (m_elfMatchResult == ElfMatchResult::Mismatch && !m_mismatchAcknowledged) {
+        emit errorOccurred(tr("ELF hedefle eslesmiyor - once onaylayin (Yine de devam et)"));
+        return;
+    }
+
+    m_targetRateHz = targetRateHz;
+    rebuildPlan();
+    m_buffer.configure(m_items.size());
+    m_pendingTimes.clear();
+    m_pendingSeries.assign(m_items.size(), QVector<double>());
+    m_flushTimer.start();
+    m_droppedTotal = 0;
+    m_actualRateHz = 0.0;
+    m_rttMsAvg     = 0.0;
+
+    setRunning(true);
+    m_link->startSampling(m_plan.requests, targetRateHz);
+}
+
+void VariableWatcher::stop()
+{
+    if (!m_running) return;
+    m_link->stopSampling();
+    flushPending();
+    setRunning(false);
+}
+
+void VariableWatcher::setRunning(bool running)
+{
+    if (m_running == running) return;
+    m_running = running;
+    emit runningChanged();
+}
+
+void VariableWatcher::rebuildPlan()
+{
+    quint32 maxBytes = m_link->maxReadBytes();
+    if (maxBytes == 0) maxBytes = 4096;
+    m_plan = WatchPlanBuilder::build(m_items, maxBytes);
+}
+
+void VariableWatcher::clearBuffer()
+{
+    m_buffer.clear();
+    m_pendingTimes.clear();
+    for (auto &s : m_pendingSeries) s.clear();
+}
+
+QVariantMap VariableWatcher::rateInfo() const
+{
+    QVariantMap m;
+    m[QStringLiteral("targetHz")]    = m_targetRateHz;
+    m[QStringLiteral("actualHz")]    = m_actualRateHz;
+    m[QStringLiteral("rttMs")]       = m_rttMsAvg;
+    m[QStringLiteral("blocks")]      = m_plan.roundTripsPerSample();
+    m[QStringLiteral("skewUs")]      = m_lastSkewUs;
+    m[QStringLiteral("missed")]      = m_droppedTotal;
+    m[QStringLiteral("coreRunning")] = m_coreRunning;
+    return m;
+}
+
+void VariableWatcher::onRawSamplesReady(const QVector<MemoryReply> &replies, double t, double skewUs)
+{
+    if (!m_running) return;
+
+    const QVector<double> values = WatchSampler::decodeSample(m_items, m_plan, replies, nullptr);
+
+    m_pendingTimes.append(t);
+    if (m_pendingSeries.size() != m_items.size())
+        m_pendingSeries.resize(m_items.size());
+    for (int i = 0; i < m_items.size(); ++i)
+        m_pendingSeries[i].append(i < values.size() ? values.at(i) : 0.0);
+    m_lastSkewUs = skewUs;
+
+    if (!m_flushTimer.isValid())
+        m_flushTimer.start();
+
+    // <=30 Hz or 512 samples, whichever comes first (plan Bolum 2.2).
+    if (m_flushTimer.elapsed() >= 33 || m_pendingTimes.size() >= 512)
+        flushPending();
+}
+
+void VariableWatcher::flushPending()
+{
+    if (m_pendingTimes.isEmpty())
+        return;
+
+    WatchSampleBatch batch;
+    batch.times       = m_pendingTimes;
+    batch.series       = m_pendingSeries;
+    batch.coreRunning = m_coreRunning;
+    batch.skewUs       = m_lastSkewUs;
+    m_buffer.append(batch);
+
+    m_pendingTimes.clear();
+    for (auto &s : m_pendingSeries) s.clear();
+    m_flushTimer.restart();
+
+    emit samplesAppended();
+}
+
+void VariableWatcher::onSamplingStats(double actualRateHz, double rttMsAvg, quint32 dropped)
+{
+    m_actualRateHz  = actualRateHz;
+    m_rttMsAvg      = rttMsAvg;
+    m_droppedTotal += dropped;
+    emit statsChanged();
+}
+
+void VariableWatcher::onCoreHalted()
+{
+    m_coreRunning = false;
+    if (m_running) {
+        stop();
+        emit errorOccurred(tr("Hedef durdu (S_HALT) - ornekleme durduruldu"));
+    }
+}
+
+void VariableWatcher::onCoreReset()
+{
+    // Sampling continues on purpose (plan Bolum 4.5) — values just become
+    // discontinuous around this point. TraceEventLog (Faz 6) will mark this
+    // visibly on the graph; for now it is at least surfaced as a message.
+    emit errorOccurred(tr("Hedef resetlendi - bu noktadan sonraki degerler sureksiz olabilir"));
+}
+
+// ── ELF symbols + target match ───────────────────────────────────────────
+
+void VariableWatcher::onElfSymbolsLoaded(const QList<Symbol> &symbols, const QString &elfPath)
+{
+    m_symbols = symbols;
+    m_elfPath = elfPath;
+    m_mismatchAcknowledged = false;
+    emit symbolsLoaded(symbols.size());
+    maybeCheckElfMatch();
+}
+
+void VariableWatcher::onElfSymbolLoadFailed(const QString &message)
+{
+    emit errorOccurred(message);
+}
+
+void VariableWatcher::onLinkOpened()
+{
+    maybeCheckElfMatch();
+}
+
+void VariableWatcher::onLinkFailed(const QString &message)
+{
+    emit errorOccurred(message);
+}
+
+void VariableWatcher::maybeCheckElfMatch()
+{
+    if (m_elfMatchStep != 0)
+        return;   // a check is already in flight
+    if (!m_link->isOpen() || m_symbols.isEmpty()) {
+        setElfMatch(ElfMatchResult::Unknown, ElfMatchReport{});
+        return;
+    }
+
+    m_elfMatchStep = 1;
+    QVector<MemoryRequest> reqs{ MemoryRequest{ 1, 0xE000ED08ull, 4u } };   // VTOR
+    m_link->readRanges(kElfMatchBatchId, reqs);
+}
+
+void VariableWatcher::onRangesRead(quint32 batchId, const QVector<MemoryReply> &replies)
+{
+    if (batchId != kElfMatchBatchId)
+        return;   // not ours (e.g. a Register Inspector snapshot) — ignore
+    handleElfMatchReply(replies);
+}
+
+void VariableWatcher::handleElfMatchReply(const QVector<MemoryReply> &replies)
+{
+    if (m_elfMatchStep == 1) {
+        if (replies.isEmpty() || !replies.first().ok || replies.first().data.size() < 4) {
+            m_elfMatchStep = 0;
+            setElfMatch(ElfMatchResult::Unknown, ElfMatchReport{});
+            return;
+        }
+        const QByteArray &d = replies.first().data;
+        m_pendingVtor = quint32(uchar(d[0])) | (quint32(uchar(d[1])) << 8)
+                       | (quint32(uchar(d[2])) << 16) | (quint32(uchar(d[3])) << 24);
+
+        m_elfMatchStep = 2;
+        QVector<MemoryRequest> reqs{ MemoryRequest{ 2, quint64(m_pendingVtor), 8u } };
+        m_link->readRanges(kElfMatchBatchId, reqs);
+        return;
+    }
+
+    if (m_elfMatchStep == 2) {
+        m_elfMatchStep = 0;
+        if (replies.isEmpty() || !replies.first().ok || replies.first().data.size() < 8) {
+            setElfMatch(ElfMatchResult::Unknown, ElfMatchReport{});
+            return;
+        }
+        const ElfMatchReport report = ElfTargetMatcher::evaluate(m_pendingVtor, replies.first().data, m_symbols);
+        setElfMatch(report.result, report);
+    }
+}
+
+void VariableWatcher::setElfMatch(ElfMatchResult result, const ElfMatchReport &report)
+{
+    const bool resultChanged = (result != m_elfMatchResult);
+    m_elfMatchResult = result;
+    m_elfMatchReport = report;
+    if (resultChanged && result == ElfMatchResult::Mismatch)
+        m_mismatchAcknowledged = false;
+    emit elfMatchChanged();
+}
+
+// ── Persistence ───────────────────────────────────────────────────────────
+
+void VariableWatcher::saveItems(const QString &boardName)
+{
+    QJsonArray arr;
+    for (const WatchItem &it : m_items) {
+        QJsonObject o;
+        o[QStringLiteral("id")]          = it.id;
+        o[QStringLiteral("label")]       = it.label;
+        o[QStringLiteral("role")]        = it.role;
+        o[QStringLiteral("address")]     = QString::number(it.address);
+        o[QStringLiteral("kind")]        = (it.kind == WatchItemKind::RegionScan)
+                                                ? QStringLiteral("region") : QStringLiteral("scalar");
+        o[QStringLiteral("type")]        = watchValueTypeToString(it.type);
+        o[QStringLiteral("format")]      = displayFormatToString(it.format);
+        o[QStringLiteral("regionBytes")] = int(it.regionBytes);
+        o[QStringLiteral("scale")]       = it.scale;
+        o[QStringLiteral("offset")]      = it.offset;
+        o[QStringLiteral("unit")]        = it.unit;
+        o[QStringLiteral("enabled")]     = it.enabled;
+        o[QStringLiteral("source")]      = it.source;
+        o[QStringLiteral("color")]       = it.color;
+        arr.append(o);
+    }
+    AppSettings().setWatchItemsJson(boardName, QJsonDocument(arr).toJson(QJsonDocument::Compact));
+}
+
+void VariableWatcher::loadItems(const QString &boardName)
+{
+    const QJsonArray arr = QJsonDocument::fromJson(AppSettings().watchItemsJson(boardName)).array();
+    m_items.clear();
+    for (const QJsonValue &v : arr) {
+        const QJsonObject o = v.toObject();
+        WatchItem it;
+        it.id          = o.value(QStringLiteral("id")).toString();
+        it.label       = o.value(QStringLiteral("label")).toString();
+        it.role        = o.value(QStringLiteral("role")).toString();
+        it.address     = o.value(QStringLiteral("address")).toString().toULongLong();
+        it.kind        = (o.value(QStringLiteral("kind")).toString() == QStringLiteral("region"))
+                              ? WatchItemKind::RegionScan : WatchItemKind::Scalar;
+        it.type        = watchValueTypeFromString(o.value(QStringLiteral("type")).toString());
+        it.format      = displayFormatFromString(o.value(QStringLiteral("format")).toString());
+        it.regionBytes = quint32(o.value(QStringLiteral("regionBytes")).toInt());
+        it.scale       = o.value(QStringLiteral("scale")).toDouble(1.0);
+        it.offset      = o.value(QStringLiteral("offset")).toDouble(0.0);
+        it.unit        = o.value(QStringLiteral("unit")).toString();
+        it.enabled     = o.value(QStringLiteral("enabled")).toBool(true);
+        it.source      = o.value(QStringLiteral("source")).toString();
+        it.color       = o.value(QStringLiteral("color")).toString();
+        m_items.append(it);
+    }
+    emit itemsChanged();
+}

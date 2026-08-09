@@ -130,6 +130,14 @@ set(PROJECT_SOURCES
     src/modules/watcher/WatchModel.h
     src/modules/watcher/ValueCodec.h
     src/modules/watcher/ValueCodec.cpp
+    src/modules/watcher/WatchPlanBuilder.h
+    src/modules/watcher/WatchPlanBuilder.cpp
+    src/modules/watcher/TraceBuffer.h
+    src/modules/watcher/TraceBuffer.cpp
+    src/modules/watcher/WatchSampler.h
+    src/modules/watcher/WatchSampler.cpp
+    src/modules/watcher/VariableWatcher.h
+    src/modules/watcher/VariableWatcher.cpp
 
     src/modules/simulation/FactorySimulator.h
     src/modules/simulation/FactorySimulator.cpp
@@ -202,6 +210,8 @@ qt_add_qml_module(STM32AiDeployer
         qml/dialogs/SettingsDialog.qml
         qml/dialogs/AboutDialog.qml
         qml/dialogs/PipelineWizard.qml
+        qml/dialogs/SymbolPickerDialog.qml
+        qml/dialogs/WatchItemDialog.qml
         qml/screens/DashboardScreen.qml
         qml/screens/BoardScreen.qml
         qml/screens/FlashScreen.qml
@@ -209,6 +219,10 @@ qt_add_qml_module(STM32AiDeployer
         qml/screens/BenchmarkScreen.qml
         qml/screens/AnalysisScreen.qml
         qml/screens/RegisterScreen.qml
+        qml/screens/WatchScreen.qml
+        qml/components/watch/WatchItemTable.qml
+        qml/components/watch/WatchLinkStatus.qml
+        qml/components/watch/WatchToolbar.qml
         qml/factory/FactorySimWindow.qml
         qml/factory/FactoryDashboard.qml
         qml/factory/FactoryMap.qml

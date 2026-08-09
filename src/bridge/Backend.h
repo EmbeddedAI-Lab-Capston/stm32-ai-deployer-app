@@ -24,6 +24,7 @@ struct RegisterSnapshot;
 struct SnapshotDiff;
 class QProcess;
 class DebugLink;
+class VariableWatcher;
 
 // ── Backend ─────────────────────────────────────────────────────────────────
 // Single QML-facing facade. Forwards to existing managers and adapts data
@@ -73,6 +74,19 @@ class Backend : public QObject
     Q_PROPERTY(QString registerSupportLevel READ registerSupportLevel NOTIFY registerChanged)
     Q_PROPERTY(QVariantList registerModel   READ registerModel   NOTIFY registerModelChanged)
 
+    // Variable Watcher (Faz 4)
+    Q_PROPERTY(bool         watchLinkOpen    READ watchLinkOpen    NOTIFY watchLinkChanged)
+    Q_PROPERTY(QString      watchLinkState   READ watchLinkState   NOTIFY watchLinkChanged)
+    Q_PROPERTY(QString      watchLinkError   READ watchLinkError   NOTIFY watchLinkChanged)
+    Q_PROPERTY(bool         watchRunning     READ watchRunning     NOTIFY watchRunChanged)
+    Q_PROPERTY(bool         watchPlayback    READ watchPlayback    NOTIFY watchLinkChanged)
+    Q_PROPERTY(QVariantMap  watchRateInfo    READ watchRateInfo    NOTIFY watchStatsChanged)
+    Q_PROPERTY(QVariantList watchItems       READ watchItems       NOTIFY watchItemsChanged)
+    Q_PROPERTY(QVariantList watchViolations  READ watchViolations  NOTIFY watchViolationsChanged)
+    Q_PROPERTY(QString      stlinkOwner      READ stlinkOwner      NOTIFY stlinkOwnerChanged)
+    Q_PROPERTY(QString      watchElfMatch       READ watchElfMatch       NOTIFY watchElfMatchChanged)
+    Q_PROPERTY(QVariantMap  watchElfMatchDetail READ watchElfMatchDetail NOTIFY watchElfMatchChanged)
+
 public:
     explicit Backend(AppState          *state,
                      SerialManager     *serial,
@@ -81,6 +95,7 @@ public:
                      RegisterInspector *registers,
                      RegisterAdvisor   *advisor,
                      DebugLink         *debugLink,
+                     VariableWatcher   *watcher,
                      QObject           *parent = nullptr);
 
     // ── Tools ─────────────────────────────────────────────────────────────
@@ -236,6 +251,45 @@ public:
     // slots are available. See docs/register_export_schema.md.
     Q_INVOKABLE bool exportRegisterSnapshotJson(const QString &path);
 
+    // ── Variable Watcher (Faz 4) ──────────────────────────────────────────
+    bool         watchLinkOpen() const;
+    QString      watchLinkState() const;
+    QString      watchLinkError() const;
+    bool         watchRunning() const;
+    bool         watchPlayback() const { return false; }   // Faz 7 not implemented yet
+    QVariantMap  watchRateInfo() const;
+    QVariantList watchItems() const;
+    QVariantList watchViolations() const { return {}; }     // Faz 8 (TimeSeriesRuleEngine) not implemented yet
+    QString      stlinkOwner() const { return m_stlinkOwner; }
+    QString      watchElfMatch() const;
+    QVariantMap  watchElfMatchDetail() const;
+
+    // Link — retain()/release() on the shared DebugLink, arbitrated against
+    // flash/pipeline/probe/register (Bolum 7.5).
+    Q_INVOKABLE void openWatchLink();
+    Q_INVOKABLE void closeWatchLink();
+
+    // Symbols
+    Q_INVOKABLE QString      watchElfPath() const;
+    Q_INVOKABLE QString      suggestedElfPath() const;   // deployedModelOutputDir()/build/*.elf
+    Q_INVOKABLE void         loadWatchElf(const QString &path);
+    Q_INVOKABLE QVariantList watchSymbols(const QString &filter, int limit) const;
+
+    // Watch items
+    Q_INVOKABLE void addWatchSymbol(const QString &symbolName);
+    Q_INVOKABLE void addWatchAddress(const QString &addrHex, const QString &type, const QString &label);
+    Q_INVOKABLE void updateWatchItem(const QString &id, const QVariantMap &props);
+    Q_INVOKABLE void removeWatchItem(const QString &id);
+    Q_INVOKABLE void clearWatchItems();
+
+    // Run
+    Q_INVOKABLE void startWatch(int targetRateHz);   // 0 = max
+    Q_INVOKABLE void stopWatch();
+    Q_INVOKABLE void clearWatchData();
+    // watchElfMatch == "mismatch" iken startWatch() reddedilir; acikca
+    // cagrilmadan ornekleme baslamaz.
+    Q_INVOKABLE void acknowledgeElfMismatch();
+
 signals:
     void toolPathsChanged();
     void scanningChanged();
@@ -259,6 +313,16 @@ signals:
     void registerDiagnosisReady(const QVariantList &hypotheses);
     void registerDiagnosisFailed(const QString &message);
 
+    void watchLinkChanged();
+    void watchRunChanged();
+    void watchItemsChanged();
+    void watchStatsChanged();
+    void watchViolationsChanged();
+    void watchSymbolsLoaded(int count);
+    void watchError(const QString &message);
+    void stlinkOwnerChanged();
+    void watchElfMatchChanged();
+
 private:
     void appendMonitorLine(const QString &text, const QString &type);
     void appendFlashLine(const QString &text, const QString &type);
@@ -278,6 +342,14 @@ private:
     QVariantList snapshotToVariant(const RegisterSnapshot &snap) const;
     QVariantMap  diffToVariant(const SnapshotDiff &diff) const;
 
+    void wireWatcher();
+    // Single named arbiter for the shared ST-Link (Bolum 7.5). Tracked in
+    // PARALLEL to but SEPARATE from DebugLink's own retain/release refcount —
+    // this answers "which FEATURE is using the ST-Link", the refcount
+    // answers "how many owners does the link have".
+    bool acquireStLink(const QString &who);
+    void releaseStLink(const QString &who);
+
     // simulation helpers
     void tickSimulation();
     void tickHardwareSimulation();
@@ -290,6 +362,8 @@ private:
     RegisterInspector *m_registers = nullptr;
     RegisterAdvisor   *m_advisor = nullptr;
     DebugLink         *m_debugLink = nullptr;
+    VariableWatcher   *m_watcher = nullptr;
+    QString            m_stlinkOwner;   // "" | "watch" (flash/pipeline/probe/register keep their own flags)
     int                m_registerViewSlot = 0;   // which slot registerModel shows
 
     // monitor
