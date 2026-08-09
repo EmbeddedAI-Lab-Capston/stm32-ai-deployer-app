@@ -52,8 +52,10 @@ private:
     quint16 pickFreePort() const;
     void    spawn(quint16 port);
     void    scanLineForErrorMarkers(const QString &line);
+    void    scanLineForReady(const QString &line);
     void    failOnce(const QString &message);
     void    teardownProcess();
+    void    releaseProcess();
 
     QProcess      *m_process = nullptr;
     QString        m_serverPath;

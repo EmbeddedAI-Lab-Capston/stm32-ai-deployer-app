@@ -38,6 +38,10 @@ class TracePlayer
 public:
     bool load(const QString &path);
     QString lastError() const { return m_lastError; }
+    // Non-fatal problems from a load() that still SUCCEEDED (e.g. dropped
+    // malformed rows). Empty when the file parsed cleanly.
+    QString loadWarning() const { return m_loadWarning; }
+    int     skippedRows() const { return m_skippedRows; }
 
     QString board() const { return m_board; }
     QString elfPath() const { return m_elfPath; }
@@ -55,6 +59,8 @@ public:
 
 private:
     QString m_lastError;
+    QString m_loadWarning;
+    int     m_skippedRows = 0;
     QString m_board, m_elfPath, m_model, m_started;
     int     m_targetRateHz = 0;
     double  m_actualHz = 0.0;

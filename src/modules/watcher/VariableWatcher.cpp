@@ -566,6 +566,9 @@ QString VariableWatcher::startPlayback(const QString &path, double speed)
         return msg;
     }
 
+    if (!m_player.loadWarning().isEmpty())
+        emit errorOccurred(m_player.loadWarning());   // loaded, but not intact
+
     m_preservedLiveItems = m_items;
     m_hadPreservedItems  = true;
 

@@ -892,3 +892,69 @@ değişmedi — Faz 7'nin mevcut testi hâlâ değişmeden geçiyor.
 testlerle doğrulandı; RegionScan'in canlı örneklenmesi ve tüm canlı-H7
 demoları, net gerekçelerle ertelendi; Faz 7'den gerçek bir birim-ölçek
 hatası bulunup düzeltildi).
+
+---
+
+## 18. ERRATA — bağımsız denetim düzeltmeleri (2026-08-09)
+
+> Bu bölüm, bu dosyanın önceki bölümlerindeki **yanlış veya eksik** iddiaları
+> düzeltir. Tam gerekçe ve kanıtlar:
+> [`docs/variable_watcher_review.md`](variable_watcher_review.md).
+> Yukarıdaki bölümler tarihsel kayıt olarak bırakıldı, silinmedi.
+
+**18.1 — §17.4 "ProfileCompare ✅" iddiası YANLIŞTI.**
+`VariableWatcher::updateItem()` `role` alanını sessizce düşürüyordu.
+`applyWatchPresets()` rolü tam da bu yolla set etmeye çalıştığı için
+`WatchItem::role` daima boş kalıyordu. Sonuçları:
+- `appliesToRole` kullanan üç kural (`stack_headroom_critical`,
+  `heap_leak_drift`, `watermark_downward_trend`) **hiç eşleşemiyordu**;
+- `WatchProfile` c12 sütununa boş rol yazdığı için
+  `compareWatchProfiles()`'ın `findByRole()`'ü her metrik için `nullptr`
+  dönüyor, `ProfileCompareDialog` **tamamen boş** görünüyordu.
+§17.3 yalnızca iki `stackWatermark` kuralının eşleşmeyeceğini söylüyordu;
+`heap_leak_drift`'in de aynı sebeple ölü olduğu **yazılmamıştı**. Düzeltildi.
+
+**18.2 — §15 (Faz 6) "olay korelasyonu" fiilen çalışmıyordu.**
+Örnek zaman damgaları `DebugLinkWorker`'ın **soket bağlanınca** başlayan
+saatinden, olay zamanları ise Backend'in **handshake bitince** sıfırlanan
+ayrı bir saatinden geliyordu. `TraceEventLog.h`'nin "ONE monotonic clock
+shared with the session" ifadesi yanlıştı. NUCLEO-H723ZG'de ölçülen sabit
+kayma **61 ms**; bu tek başına `inference_time_outlier` kuralının ±50 ms'lik
+olay kapısını her zaman reddettiriyordu. Düzeltmeden sonra aynı ölçüm
+**−0.85 ms** (yalnızca kuyruklu sinyal gecikmesi).
+
+**18.3 — §13.3 (Faz 4) hız kriteri o sırada ÖLÇÜLMEMİŞTİ.**
+Plan Bölüm 16'nın şartı "1000 Hz'de ≥800 Hz". Denetimde ilk kez ölçüldü:
+**929–934 Hz**, RTT 0.41 ms, 18675/18675 örnekte değer değişti. Kriter
+sağlanıyor — ama faz bu kanıt olmadan kapatılmıştı. Ayrıca örnekleme hızı
+`1000 / targetRateHz` tam sayı bölmesiyle kuantalanıyordu: 600 Hz isteği
+1000 Hz veriyor, 500 Hz üstündeki her istek 1000 Hz'e çöküyordu.
+
+**18.4 — `WatchSampler`'ın `ok` bayrağı hiçbir çağıran tarafından okunmuyordu.**
+`WatchSampler.h` sözleşmeyi doğru tarif ediyordu ama
+`VariableWatcher::onRawSamplesReady()` `nullptr` geçiyordu; başarısız okuma
+gerçek bir `0.0` ölçüm olarak halka tamponuna ve `WatchStats`'a giriyordu.
+`WatchSampler` saf bir sınıf olmasına rağmen **hiç test edilmemişti** (planın
+kendi "saf sınıflar test edilir" ilkesinin ihlali).
+
+**18.5 — Bir izleme oturumundan sonra ST-Link kilitleniyordu.**
+Kök neden: gdbserver `-e` (persistent) ile başlatılıyordu, bu yüzden biz
+ayrıldıktan sonra da yaşamaya devam ediyor ve öldürülmesi gerekiyordu;
+Windows'ta `QProcess::terminate()` konsol sürecine ulaşmadığı için bu
+`TerminateProcess()`'e düşüyor ve ST-Link'in USB ucu `DEV_USB_COMM_ERR` ile
+kilitleniyordu — **STM32_Programmer_CLI dahil tüm ST araçları** etkileniyor,
+yalnızca fiziksel çıkar-tak ile çözülüyordu. §6'da "bir donanım tuhaflığı"
+diye geçilmişti; donanım tuhaflığı değil, kapatma sırasının sonucuydu.
+
+**18.6 — Faz kapanış etiketleri planın kendi tanımıyla çelişiyor.**
+Plan Bölüm 13: "Bir faz, birim testleri geçse bile canlı kriterleri
+karşılamadan 'tamamlandı' sayılmaz." Bu tanıma göre Faz 5, 6, 7 ve 8
+"tamamlandı" değil, "kod hazır, canlı doğrulama bekliyor" durumundaydı.
+Ertelenen doğrulamaların neredeyse hepsi, ertelendikleri fazın tek gerçek
+hatasını saklıyordu (18.1 Faz 8'i, 18.2 Faz 6'yı, 18.3 Faz 4'ü).
+
+**18.7 — `tests/` çalıştırıcısı hata detayını gösteremiyordu.**
+`qt_add_executable()` Windows'ta GUI alt sistemini varsaydığı için stdout
+kopuktu: test başarısız olduğunda `ctest --output-on-failure` **hiçbir şey**
+yazmıyordu. §1'deki "birim testler yeşil" iddiası doğruydu, ama bir
+başarısızlık durumunda teşhis edilemez olduğu fark edilmemişti.

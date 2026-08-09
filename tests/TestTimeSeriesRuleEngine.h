@@ -7,6 +7,7 @@ class TestTimeSeriesRuleEngine : public QObject
     Q_OBJECT
 
 private slots:
+    void disabledRuleIsParsedButNeverEvaluated();
     void ruleDoesNotMatchAnItemWithADifferentOrEmptyRole();
     void thresholdBoundaryIsExclusiveForStrictLessThan();
     void gateRejectsAnEventOutsideTheWindowOnEitherSide();

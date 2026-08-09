@@ -124,11 +124,23 @@ QVector<RawSample> TraceBuffer::rawWindow(int item, double t0, double t1) const
     const quint64 oldest = (m_totalCount > quint64(m_capacity)) ? (m_totalCount - quint64(m_capacity)) : 0;
     const quint64 available = m_totalCount - oldest;
 
-    for (quint64 k = 0; k < available; ++k) {
-        const int slot = slotFor(oldest + k);
+    // Binary-search the first ordinal with time >= t0, then walk forward until
+    // t1. Times are monotonic in insertion order, so this really is O(result),
+    // unlike the previous full-buffer scan (which the doc comment already
+    // claimed was O(range) but was not — at 4 Hz the rule engine was walking
+    // all 120k slots per item, per evaluation).
+    quint64 lo = oldest, hi = oldest + available;   // hi is one-past-the-end
+    while (lo < hi) {
+        const quint64 mid = lo + (hi - lo) / 2;
+        if (m_times.at(slotFor(mid)) < t0) lo = mid + 1;
+        else hi = mid;
+    }
+
+    for (quint64 k = lo; k < oldest + available; ++k) {
+        const int slot = slotFor(k);
         const double t = m_times.at(slot);
-        if (t < t0 || t > t1)
-            continue;
+        if (t > t1)
+            break;
         out.append({t, m_series.at(item).at(slot)});
     }
     return out;

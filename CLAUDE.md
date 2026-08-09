@@ -387,6 +387,27 @@ emit errorReceived(QJsonObject);
 - **UART olayları ana thread'de VARIŞ anında damgalanır** — firmware zaman
   damgası değildir. USB-CDC + DMA gecikmesi birkaç ms kayma yaratır; UI'da
   kesikli çizgiyle ve tooltip ile açıkça belirtilir.
+- **Olay ekseni ile örnek ekseni TEK bir orijini paylaşır.** Örnek zaman
+  damgaları `DebugLinkWorker`'ın soket bağlanınca başlayan saatinden gelir;
+  `TraceEventLog` ise link açıldığında sıfırlanır — yani doğal olarak
+  handshake süresi kadar GERİDEDİR. Bu yüzden `TraceEventLog::reset()`
+  **daima** `DebugLink::sessionElapsedAtOpen()` ile çağrılır. Sıfırdan
+  başlatılırsa iki eksen kayar (H723ZG'de ölçülen: 61 ms) ve bu tek başına
+  `watch_rules.json`'daki ±50 ms'lik olay kapısını her zaman reddettirir.
+  Denetim kaydı: [`docs/variable_watcher_review.md`](docs/variable_watcher_review.md) K-2.
+- **`WatchSampler`'ın `ok` bayrağı yok sayılamaz.** Başarısız okuma 0.0
+  döndürür ve bu gerçek bir sıfırdan ayırt edilemez; çağıran son geçerli
+  değeri korumak zorundadır, yoksa yanlış alarm üretir (review K-4).
+- **gdbserver `-e` (persistent) ile başlatılmaz.** Persistent modda sunucu
+  biz ayrıldıktan sonra da dinlemeye devam eder, dolayısıyla onu bizim
+  öldürmemiz gerekir; Windows'ta `QProcess::terminate()` konsol sürecine
+  ulaşamadığı için bu fiilen `TerminateProcess()` olur ve ST-Link'in USB
+  ucunu **fiziksel çıkar-tak gerektirecek** şekilde kilitler
+  (`DEV_USB_COMM_ERR`, tüm ST araçlarını etkiler). `-e` olmadan sunucu biz
+  detach edince kendiliğinden ve temiz kapanır. Hazır olma tespiti bu yüzden
+  TCP yoklamasıyla değil, sunucunun kendi "Waiting for debugger connection"
+  satırıyla yapılır (yoklama bağlantısı persistent olmayan sunucuyu
+  kapatırdı). Review K-3.
 - **3000 Hz örnekleme UI thread'ine sinyal başına taşınmaz:** worker en fazla
   30 Hz'de toplu `WatchSampleBatch` yayar. Oturum istatistikleri (min/max/
   ortalama/stddev) halka arabelleğinden bağımsız, artımlı (Welford) tutulur —
@@ -422,8 +443,13 @@ emit errorReceived(QJsonObject);
   durum (2026-08):** `WatchPresetMatcher` adres aralığını doğru çözer ve
   `WatchPlanBuilder::buildRegionScans()` okuma planını doğru kurar, ama bu
   ikisi arasındaki bayt-tarama DECODE adımı henüz `WatchSampler`'a
-  bağlanmadı — RegionScan kalemleri şu an `0.0/ok=false` döner. Detay:
-  `docs/variable_watcher_findings.md` Bölüm 17.3.
+  bağlanmadı — RegionScan kalemleri şu an `0.0/ok=false` döner. Bunun
+  sonucu olarak `watch/watch_rules.json`'daki iki `stackWatermark` kuralı
+  `"enabled": false` ile **kapatılmıştır**: hiçbir kalem `role=stackWatermark`
+  taşıyamayacağı için etkin bırakmak, gerçekleşemeyecek bir tespit vaat
+  etmek olurdu. RegionScan decode'u yazıldığında ikisi birlikte açılır.
+  Detay: `docs/variable_watcher_findings.md` Bölüm 17.3 ve
+  `docs/variable_watcher_review.md`.
 
 ---
 

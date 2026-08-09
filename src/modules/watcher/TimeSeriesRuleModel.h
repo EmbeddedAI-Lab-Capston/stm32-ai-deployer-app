@@ -44,6 +44,10 @@ struct TsGate
 
 struct TsRule
 {
+    // false = parsed but never evaluated. Lets watch_rules.json ship a rule
+    // whose preconditions do not exist yet without pretending it can fire.
+    bool    enabled = true;
+
     QString id, severity, message;
     QString appliesToRole;          // matches WatchItem::role
     QString appliesToLabelRegex;    // or matches WatchItem::label

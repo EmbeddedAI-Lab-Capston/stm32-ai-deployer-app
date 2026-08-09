@@ -82,6 +82,8 @@ QStringList splitEventLine(const QString &rest)
 bool TracePlayer::load(const QString &path)
 {
     m_lastError.clear();
+    m_loadWarning.clear();
+    m_skippedRows = 0;
     m_board.clear(); m_elfPath.clear(); m_model.clear(); m_started.clear();
     m_targetRateHz = 0;
     m_actualHz = 0.0;
@@ -189,8 +191,12 @@ bool TracePlayer::load(const QString &path)
         m_lastError = QStringLiteral("Gecerli bir izleme kaydi bulunamadi (bos veya bozuk dosya)");
         return false;
     }
+    // NOT m_lastError: the load SUCCEEDED. Callers check lastError() only on
+    // failure, so putting it there meant the user was never told that rows had
+    // been dropped. Surfaced separately instead.
+    m_skippedRows = malformedRows;
     if (malformedRows > 0)
-        m_lastError = QStringLiteral("%1 satir atlandi (bozuk)").arg(malformedRows);
+        m_loadWarning = QStringLiteral("%1 satir bozuk oldugu icin atlandi").arg(malformedRows);
 
     return true;
 }

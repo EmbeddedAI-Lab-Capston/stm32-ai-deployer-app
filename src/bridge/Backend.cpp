@@ -3766,12 +3766,20 @@ QVariantList Backend::watchPlotFrame(int columns, double windowSec)
         double frameMax = -std::numeric_limits<double>::infinity();
         QVariantList points;
         points.reserve(columns * 3);
+        // TraceBuffer holds RAW decoded values; the lane is labelled with the
+        // item's unit, so the plotted numbers must be scaled to match it (same
+        // rule as WatchProfile/exportWatchCsv). A negative scale flips min/max.
+        const auto scaled = [&it](double raw) { return raw * it.scale + it.offset; };
         for (const PlotColumn &c : cols) {
             points << c.t;
             if (c.hasData) {
-                points << c.vmin << c.vmax;
-                frameMin = qMin(frameMin, c.vmin);
-                frameMax = qMax(frameMax, c.vmax);
+                const double a = scaled(c.vmin);
+                const double b = scaled(c.vmax);
+                const double lo = qMin(a, b);
+                const double hi = qMax(a, b);
+                points << lo << hi;
+                frameMin = qMin(frameMin, lo);
+                frameMax = qMax(frameMax, hi);
             } else {
                 points << std::numeric_limits<double>::quiet_NaN()
                        << std::numeric_limits<double>::quiet_NaN();
@@ -3868,8 +3876,12 @@ QVariantMap Backend::watchValuesAt(double t) const
         const bool hasValue = !std::isnan(v);
 
         QVariantMap m;
-        m[QStringLiteral("value")]     = hasValue ? QVariant(v) : QVariant();
-        m[QStringLiteral("formatted")] = hasValue ? ValueCodec::format(v, it) : QStringLiteral("—");
+        // "value" stays RAW (it is what the trace holds); "scaledValue" is what
+        // the plot axis and the unit label show. Both are given explicitly so a
+        // caller never has to guess which convention it is looking at.
+        m[QStringLiteral("value")]       = hasValue ? QVariant(v) : QVariant();
+        m[QStringLiteral("scaledValue")] = hasValue ? QVariant(v * it.scale + it.offset) : QVariant();
+        m[QStringLiteral("formatted")]   = hasValue ? ValueCodec::format(v, it) : QStringLiteral("—");
         out[it.id] = m;
     }
     return out;
@@ -3993,13 +4005,20 @@ bool Backend::exportWatchCsv(const QString &path)
 {
     if (!m_watcher) return false;
 
+    const QList<WatchItem> &items = m_watcher->items();
+    const TraceBuffer &buf = m_watcher->buffer();
+    if (items.isEmpty() || buf.sampleCount() == 0) {
+        // Writing 800 rows of empty cells and reporting success is worse than
+        // refusing: the user ends up with a file that looks like a real export.
+        emit statusMessage(tr("Disa aktarilacak veri yok - once bir izleme oturumu calistirin."));
+        return false;
+    }
+
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
         return false;
     QTextStream out(&f);
 
-    const QList<WatchItem> &items = m_watcher->items();
-    const TraceBuffer &buf = m_watcher->buffer();
     const double t0 = buf.firstTime();
     const double t1 = buf.lastTime();
 

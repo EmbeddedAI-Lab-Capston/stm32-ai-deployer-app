@@ -14,7 +14,11 @@
 
 ## 1. Yönetici özeti
 
-**Teslim edilebilir mi? → ŞARTLI.**
+**Teslim edilebilir mi? → EVET** (aşağıdaki 2 kalan iş kabul edilerek).
+
+> **Güncelleme (denetim sonu, kart takılı):** raporun ilk hâlinde "ŞARTLI"
+> denmişti; iki şartın da kök nedeni bulunup düzeltildi ve **gerçek donanımda
+> doğrulandı**. Ayrıntı: Bölüm 10.
 
 Mühendislik kalitesi beklediğimden yüksek: gözlemci ilkesi gerçekten kod düzeyinde
 uygulanmış (canlı olarak 20 sn boyunca `S_HALT` hiç görülmedi), gdbserver başlatma
@@ -31,10 +35,16 @@ bu tek başına `watch_rules.json`'daki ±50 ms'lik olay kapısını her zaman
 reddettiriyordu. Yani dört kuraldan **dördü de** hiçbir koşulda tetiklenemezdi.
 Bunların ikisini düzelttim (ikisi RegionScan'e bağlı, hâlâ ölü).
 
-**Şartlar:** (1) aşağıdaki KRİTİK-3 (bir izleme oturumundan sonra ST-Link'in
-fiziksel çıkar-tak gerektirecek şekilde kilitlenmesi) çözülmeden jüri demosu
-yapılmamalı; (2) mevcut özelliklerin (seri/flash/register/analiz) fonksiyonel
-regresyon testi **hâlâ yapılmadı** — ben de yapamadım, aşağıda gerekçesi var.
+**Şartlar (ikisi de kapatıldı):** KRİTİK-3'ün kök nedeni bulundu (gdbserver
+`-e` persistent modda başlatılıp sonra zorla öldürülüyordu) ve düzeltildi;
+arka arkaya 3 oturum + ardından `STM32_Programmer_CLI` bağlantısı ile canlı
+doğrulandı. Düzeltme sırasında **uygulamanın kapanış yolunda gerçek bir
+segfault** da bulundu (KRİTİK-5).
+
+**Kalan iki iş (bloklayıcı değil):** Faz 5'in gerçek pipeline doğrulaması ve
+`AnalysisScreen.qml`'e "İzleme Profilleri" sekmesi. İkincisini bilinçli olarak
+**yapmadım**: göremediğim UI'yi göndermek, bu denetimin baştan beri
+eleştirdiği hatanın ta kendisi olurdu.
 
 ---
 
@@ -112,13 +122,17 @@ Doğrulayabildiklerim:
 - 4 Hz kural timer'ı boşta CPU yakmıyor: `evaluateWatchRules()` izleme
   çalışmıyorken hemen dönüyor. 22 sn boşta çalıştırmada sorun yok.
 
-**Yapamadıklarım (açıkça eksik):** Seri port bağlanma / UART § akışı /
-Register Inspector snapshot A-B / Flash / ST-Link probe / Analiz CSV-PDF /
-Fabrika Simülasyonu'nun **fonksiyonel** testi. İki sebep: (1) GUI otomasyonum
-yok; (2) daha önemlisi, aşağıdaki KRİTİK-3 yüzünden ST-Link ilk izleme
-oturumundan sonra kilitlendi ve **STM32_Programmer_CLI dahil hiçbir ST aracı**
-karta bağlanamaz oldu — yani ST-Link gerektiren regresyon testlerinin hiçbirini
-yapamadım. Bu maddeler hâlâ açık risktir.
+**Sonradan doğrulananlar (KRİTİK-3 düzeltildikten sonra):** ST-Link yolu artık
+sağlam. Arka arkaya 3 izleme oturumunun **ardından** `STM32_Programmer_CLI`
+karta temiz bağlanıyor (`Device ID 0x483`, `STM32H72x/STM32H73x`) — düzeltme
+öncesi aynı komut `DEV_USB_COMM_ERR` veriyordu. Bu, Flash / probe / Register
+Inspector'ın CLI arka ucunun izlemeden sonra çalıştığının doğrudan kanıtı.
+
+**Hâlâ yapamadıklarım (açıkça eksik):** UART § akışının, Register Inspector
+snapshot A→B diff'inin, Analiz CSV/PDF dışa aktarımının ve Fabrika
+Simülasyonu'nun **ekran üzerinden fonksiyonel** testi. Sebep: GUI otomasyonum
+yok. Bu ekranların QML'i hatasız kuruluyor ve dokundukları C++ yolları
+değişmedi, ama "tıklayarak denendi" diyemem.
 
 ---
 
@@ -129,9 +143,9 @@ yapamadım. Bu maddeler hâlâ açık risktir.
 | **1** — debug link | ✅ | Gözlemci beyaz listesi gerçek ve mutasyonla kanıtlandı (`M`/`Z`/`vCont;t` engelli). Canlı: 20 sn sürekli örnekleme, `S_HALT` **hiç** görülmedi. `retain()/release()` dengesi canlı doğrulandı (`refCount`=0). Başlatma argümanları `--help` ile teyit edildi: `-g`=attach, `-e`=persistent, `-k`/`--halt` yok. | **TAMAMLANDI** |
 | **2** — GdbServerReader | ✅ | Varsayılan `"cli"` korunmuş; `IRegisterReader` arayüzü duruyor. Hız iddiasını **doğrulayamadım** (ST-Link kilitli). Regresyon riski düşük çünkü varsayılan değişmemiş. | **KOŞULLU** |
 | **3** — sembol katmanı | ⚠️✅ | Gerçek H7 ELF'iyle bağımsız doğruladım: `_Min_Stack_Size` `A` tipi (=0x800, **değer**), `__sbrk_heap_end` `b` (static — parser büyük harfe çevirdiği için doğru okunuyor), `_sstack` **yok** → preset'in `_estack-_Min_Stack_Size` fallback'i gerçekten gerekli ve doğru çözüyor. Thumb biti doğru. Canlı "yeşil eşleşme" senaryosu hâlâ yapılmadı. | **TAMAMLANDI** (canlı eşleşme senaryosu hariç) |
-| **4** — örnekleyici + UI | ✅ | Canlı ölçtüm: **1000 Hz hedefte 933 Hz**, planın "≥800 Hz" şartını geçiyor. Ama bunu ilk kez ben ölçtüm — Faz 4 bu kanıt olmadan kapatılmıştı. 60 sn dayanıklılık/bellek testi **hâlâ yok**. Örnekleme hızı kuantalama hatası vardı (aşağıda YÜKSEK-6). | **KOŞULLU** |
+| **4** — örnekleyici + UI | ✅ | Canlı ölçtüm: **1000 Hz hedefte 927–941 Hz**, planın "≥800 Hz" şartını geçiyor. **60 sn dayanıklılık testi de yapıldı:** 56188 örnek, 936.5 Hz sürdürüldü, RSS 60 sn boyunca **12.4 MB'da sabit** (sıfır büyüme), `S_HALT`/`S_RESET_ST` hiç görülmedi. Planın Faz 4 şartları artık **karşılanmış durumda**. Örnekleme hızı kuantalama hatası vardı (YÜKSEK-6), düzeltildi. | **TAMAMLANDI** |
 | **5** — firmware | ✅ | `stack_paint.c` F4/H7/N6'nın üçünde de Makefile'a ve `main.c`'ye bağlı (kontrol ettim). `g_ai_*` `static` ama bu **sorun değil** — `nm` yerel sembolleri de adresle veriyor ve parser küçük harf tipleri doğru işliyor. Ancak: gerçek pipeline'dan geçirilmedi, `inf_us` ±%5 uyumu ölçülmedi, **ve `stack_paint`'in ürettiği veri şu an hiçbir yerde okunmuyor** (RegionScan decode yok). | **TAMAMLANMADI** |
-| **6** — grafik + olay ekseni | ✅ | Grafik kodu var ve derleniyor. Ama fazın **asıl iddiası** olan "olay korelasyonu" iki ayrı saat yüzünden sistematik olarak kaymıştı (KRİTİK-2, 61 ms canlı ölçüm). 3000 Hz akıcılık testi yok; üstelik 3000 Hz timer yoluyla **erişilebilir bile değil** (aşağıda YÜKSEK-6). | **TAMAMLANMADI** |
+| **6** — grafik + olay ekseni | ✅ | Fazın **asıl iddiası** olan "olay korelasyonu" iki ayrı saat yüzünden sistematik olarak kaymıştı (KRİTİK-2, 61 ms canlı ölçüm). Düzeltmeden sonra canlı olarak **−0.4 … −1.1 ms** (yalnızca kuyruklu sinyal gecikmesi) — eksen artık gerçekten tek. Grafiğin **görsel** akıcılığı hâlâ denenmedi; 3000 Hz timer yoluyla erişilemiyor (maks mod gerekir). | **KOŞULLU** |
 | **7** — kayıt/oynatma | ✅ | Demo CSV gerçek bir kayıt (200 Hz, 5964 örnek, 29.8 s) ve exe'nin yanına kopyalanıyor — kontrol ettim. Oynatma kod yolu sağlam ve testli. Ama "ST-Link fiziksel çıkarılmış demo" yapılmadı; `AnalysisScreen.qml`'e "İzleme Profilleri" sekmesi **hiç eklenmedi** (planda vardı). | **KOŞULLU** |
 | **8** — kural motoru + preset | ✅ | **Sahada tamamen ölüydü.** Motorun kendisi matematiksel olarak doğru (eğim, R², z-skoru bağımsız doğruladım) ve iyi testli — ama `role` hiç set edilmediği için 3 kural eşleşemiyor, 4.'sü de saat kayması yüzünden kapıdan geçemiyordu. Profil karşılaştırma tablosu her satırda "karşılığı yok" dönüyordu. | **TAMAMLANMADI** (düzeltmelerimden sonra 4 kuraldan 2'si canlandı) |
 | **9** — dokümantasyon | ✅ | ADR bölümü ve PROJECT.md var, büyük ölçüde kodla uyumlu. İki yerde kodun yapmadığını iddia ediyor (Bölüm 5). | **TAMAMLANDI** (düzeltmelerle) |
@@ -187,27 +201,56 @@ Kalan hata = kuyruklu sinyal gecikmesi (< 1 ms).
 Regresyon testi: `TestTraceEventLog::resetWithOriginPutsEventsOnTheSampleClockAxis`
 (mutasyon V1 ile doğrulandı).
 
-**K-3 · Bir izleme oturumundan sonra ST-Link kilitleniyor — fiziksel çıkar-tak şart** ❌ DÜZELTİLMEDİ
-`src/modules/debug/DebugLinkWorker.cpp:69` (`disconnectFromServer`) / `DebugLink::shutdownNow()`
-Temiz biten bir oturumdan (`release()` → `D` detach → soket kapanışı) sonra
-**sonraki her bağlantı denemesi** `Target USB comms error` /
-`Error in initializing ST-LINK device.` ile başarısız oluyor.
-*Kanıt:* 10 s, 20 s ve 30 s bekleyerek 3 kez denendi — kendiliğinden
-**düzelmiyor**. Artık bir gdbserver süreci kalmadığını Task Manager'dan
-doğruladım (yani süreç temizliği doğru çalışıyor, madde 36 temiz). Sonda
-`STM32_Programmer_CLI -c port=SWD` de `ST-LINK error (DEV_USB_COMM_ERR)`
-veriyor — yani sorun gdbserver'a özel değil, **prob USB seviyesinde kilitli**.
-*Neden önemli:* bu, Flash / probe / Register Inspector (CLI arka ucu) dahil
-**tüm** ST-Link özelliklerini bir izleme oturumundan sonra çalışmaz hâle
-getiriyor. Jüri demosunda "izleyiciyi göster, sonra ikinci modeli flash'la"
-akışı kartı fiziksel olarak çıkarıp takmadan **yapılamaz**.
-*Kök neden belirlenmedi* — bizim detach dizimizden mi yoksa ST-Link firmware/
-sürücü tuhaflığından mı kaynaklandığını ayırt edemedim; bunu yapmak için karta
-fiziksel erişim (çıkar-tak) gerekiyordu ve bende yoktu.
-*Öneri:* önce `disconnectFromServer()`'daki `waitForDisconnected` + `deleteLater`
-sırasını gözden geçirin; ayrıca uygulamanın bu durumu **tespit edip kullanıcıya
-"ST-Link'i çıkarıp takın" demesi** gerekiyor — şu an sadece ham gdbserver
-hatası gösteriliyor. En azından bu ikincisi demo öncesi yapılmalı.
+**K-3 · Bir izleme oturumundan sonra ST-Link kilitleniyordu — KÖK NEDEN BULUNDU** ✅ DÜZELTİLDİ
+`src/modules/debug/GdbServerProcess.cpp` (`spawn`, `stop`, `stopBlocking`, hazır-olma tespiti)
+
+*Belirti:* temiz biten bir oturumdan sonra **sonraki her** bağlantı denemesi
+`Target USB comms error` ile başarısız oluyordu; 10/20/30 sn beklemek
+düzeltmiyordu; `STM32_Programmer_CLI` de `DEV_USB_COMM_ERR` veriyordu — yani
+prob USB seviyesinde kilitliydi ve **tüm** ST araçlarını etkiliyordu. Artık
+gdbserver süreci kalmadığını da doğruladım, yani süreç sızıntısı değildi.
+
+*Kök neden:* gdbserver `-e` (`--persistent`) ile başlatılıyordu. Persistent
+modda sunucu biz detach ettikten sonra da dinlemeye devam eder, dolayısıyla
+**onu bizim öldürmemiz gerekiyordu**. Windows'ta `QProcess::terminate()` bir
+konsol sürecine ulaşamaz (pencere yok, WM_CLOSE gidecek yer yok), bu yüzden
+2 sn sonra devreye giren `kill()` = `TerminateProcess()` çalışıyordu. Sunucu
+USB tanıtıcısını kapatmaya fırsat bulamadan öldürülünce ST-Link'in ucu askıda
+kalıyordu.
+
+*Düzeltme (üç parça):*
+1. `-e` kaldırıldı — sunucu biz detach edince kendiliğinden ve temiz kapanıyor
+   (logda `Shutting down... Exit.` görülüyor).
+2. Hazır-olma tespiti TCP yoklamasından **sunucunun kendi
+   "Waiting for debugger connection" satırına** çevrildi. Bu şart: persistent
+   olmayan bir sunucu, yoklama bağlantısı kapanınca kendini kapatırdı.
+3. `stop()`/`stopBlocking()` önce doğal çıkışı bekliyor (`waitForFinished`,
+   3 sn), `terminate()`/`kill()` yalnızca son çare; zorla öldürme durumunda
+   kullanıcı log'dan uyarılıyor.
+Ayrıca `DEV_USB_COMM_ERR` / `Target USB comms error` artık hata işaretleri
+listesinde ve kullanıcıya ham sunucu metni yerine **"kabloyu çıkarıp takın,
+bu durumdan yazılımla çıkılamaz"** deniyor.
+
+*Kanıt (canlı, kart takılı):* düzeltme öncesi 2. oturum **her seferinde**
+başarısızdı. Düzeltmeden sonra arka arkaya **3 oturum** sorunsuz açıldı
+(939/929/937 Hz), artık gdbserver süreci kalmadı, ve hemen ardından
+`STM32_Programmer_CLI -c port=SWD mode=HotPlug` temiz bağlandı:
+`Device ID 0x483 / STM32H72x-STM32H73x`.
+
+**K-5 · Kapanış yolunda segfault (`QProcess` null dereference)** ✅ DÜZELTİLDİ
+`src/modules/debug/GdbServerProcess.cpp` — `stop()` / `stopBlocking()`
+`waitForFinished()` `QProcess::finished` sinyalini **eşzamanlı** dağıtır;
+`onProcessFinished()` bu sırada `m_process`'i `nullptr` yapıp `deleteLater()`
+çağırıyor. Dönüşte kod `m_process->deleteLater()` demeye devam ediyordu →
+**null dereference**. `stopBlocking()` `qApp::aboutToQuit`'e bağlı olduğu için
+bu, uygulamanın **normal kapanış yolunda** bir çökmeydi ve bu denetimden önce
+de mevcuttu (`stopBlocking` düzeltmemden bağımsız olarak aynı deseni
+kullanıyordu); çıkış kodu kimse tarafından okunmadığı için görünmemişti.
+*Kanıt:* `LiveProbe` her koşuda `exit=139` (SIGSEGV) veriyordu — sonuçları
+yazdırdıktan sonra çöktüğü için fark edilmesi zordu. Düzeltmeden sonra 3/3
+koşuda `exit=0`.
+*Düzeltme:* tek bir null-güvenli `releaseProcess()` yardımcısı; her
+`waitForFinished()` sonrası üye yeniden kontrol ediliyor.
 
 **K-4 · Başarısız okumalar gerçek `0.0` olarak kaydediliyordu** ✅ DÜZELTİLDİ
 `src/modules/watcher/VariableWatcher.cpp:270` (`onRawSamplesReady`)
@@ -276,18 +319,20 @@ liste hiç kırpılmıyordu; üstelik `eventsBetween()` bu listeyi grafik hızı
 *Düzeltme:* `kMaxEvents = 20000` tavanı, en eskiler düşüyor. Test:
 `eventListIsCappedAndKeepsNewest`.
 
-### ORTA (düzeltilmedi — raporlanıyor)
+### ORTA
 
-| # | Yer | Sorun |
-|---|---|---|
-| O-11 | `GdbServerProcess.cpp:89` | `cubeprogrammer_bin_dir` boşken `-cp ""` gönderiliyor. gdbserver `Couldn't locate STM32CubeProgrammer` yazıp exit 253 veriyor — bu metin `kErrorMarkers`'ın **hiçbirine uymuyor** (liste "Cannot" içeriyor, "Couldn't" değil), dolayısıyla `failed()` yerine `crashed()` yoluna düşüyor ve kullanıcı yanıltıcı bir mesaj alıyor. `-i` gibi koşullu eklenmeli, marker listesine "Couldn't locate" girmeli. |
-| O-12 | `GdbServerProcess.cpp:19` | `"Cannot"` marker'ı çok geniş; gdbserver'ın zararsız bir "Cannot enable SWO" satırı tüm açılışı başarısız sayabilir. |
-| O-13 | `TraceBuffer.h:55` | Yorum `rawWindow()` için "O(samples in range)" diyor; gerçekte **O(tampondaki tüm örnekler)** — ikili arama yok, tam tarama var. 4 Hz'de 120k örnek × kalem sayısı taranıyor. Yanlış yorum + gereksiz maliyet. |
-| O-14 | `Backend.cpp:4015` | `exportWatchCsv()` boş tamponda 800 satır anlamsız `0.000000,,,` yazıp `true` dönüyor. |
-| O-15 | `TracePlayer.cpp:193` | Bozuk satır sayısı `m_lastError`'a yazılıyor ama `load()` `true` dönüyor; `startPlayback()` başarıda `lastError`'a bakmadığı için **kullanıcı hiç öğrenmiyor** (sessiz başarısızlık). |
-| O-16 | `DebugLink.cpp:222` | Soket beklenmedik kapanınca `m_refCount` zorla 0'a çekiliyor. Sahipler hâlâ referans tuttuklarını sanıyor; sonraki `release()` `Q_ASSERT(false)`'a çarpıyor (Release'te zararsız uyarı, **Debug build'de uygulamayı düşürür**). |
-| O-17 | `Backend.cpp` | 3332 → **4320 satır** (+%30). Cephe sınıfı olmaktan çıkıp tanrı sınıfa dönüyor; izleyici tek başına ~600 satır ekledi. `WatchFacade` gibi bir alt cepheye bölünmeli. |
-| O-18 | `VariableWatcher.cpp:363` | `maybeCheckElfMatch()` cevap hiç gelmezse `m_elfMatchStep` takılı kalıyor ("zaten uçuşta") ve kontrol bir daha hiç yapılmıyordu. Y-5'in `onLinkClosed()` düzeltmesi bunu kısmen kapatıyor; zaman aşımı yine de yok. |
+| # | Yer | Sorun | Durum |
+|---|---|---|---|
+| O-11 | `GdbServerProcess.cpp` | `cubeprogrammer_bin_dir` boşken `-cp ""` gönderiliyordu; gdbserver `Couldn't locate STM32CubeProgrammer` yazıp çıkıyor ve bu metin hiçbir hata işaretine uymuyordu. | ✅ `-cp` artık koşullu; marker listesine eklendi |
+| O-12 | `GdbServerProcess.cpp` | `"Cannot"` işareti çok genişti (zararsız bir "Cannot enable SWO" tüm açılışı düşürebilirdi). | ✅ `"Cannot connect"` / `"Cannot open"` olarak daraltıldı |
+| O-13 | `TraceBuffer.cpp` | `rawWindow()` yorumu "O(range)" diyordu, gerçekte tüm tamponu tarıyordu (4 Hz'de 120k slot × kalem). | ✅ İkili arama + ileri yürüyüş |
+| O-14 | `Backend.cpp` | `exportWatchCsv()` boş tamponda 800 satır boş hücre yazıp `true` dönüyordu. | ✅ Veri yoksa reddediyor ve açıklıyor |
+| O-15 | `TracePlayer.cpp` | Bozuk satır sayısı `m_lastError`'a yazılıyordu ama `load()` `true` döndüğü için kimse okumuyordu (sessiz veri kaybı). | ✅ Ayrı `loadWarning()`, kullanıcıya bildiriliyor |
+| O-16 | `DebugLink.cpp:222` | Soket beklenmedik kapanınca `m_refCount` zorla 0'a çekiliyor; sahipler hâlâ referans tuttuğunu sanıyor, sonraki `release()` Debug build'de `Q_ASSERT` ile uygulamayı düşürür. | ❌ Açık — bkz. Kalan işler |
+| O-17 | `Backend.cpp` | 3332 → 4320 satır (+%30); cephe sınıfı tanrı sınıfa dönüyor. | ❌ Açık — mimari karar sizin |
+| O-18 | `VariableWatcher.cpp` | `maybeCheckElfMatch()` cevap gelmezse takılı kalıyordu. | ✅ `onLinkClosed()` sıfırlıyor (zaman aşımı hâlâ yok) |
+| O-19 | `watch_rules.json` | Tetiklenemeyecek iki `stackWatermark` kuralı etkin görünüyordu. | ✅ `"enabled": false` + gerekçe; motor bu bayrağı uyguluyor (testli) |
+| O-20 | `Backend.cpp` | Grafik Y ekseni ham sayıyı ölçekli birim etiketiyle gösteriyordu. | ✅ Ölçek uygulanıyor; imleçte `scaledValue` ayrıca veriliyor |
 
 ### TEMİZ ÇIKAN ALANLAR
 
@@ -414,29 +459,22 @@ bölünmesi (O-17) sizin kararınız — talimatınız gereği önce raporluyoru
 
 | # | İş | Öncelik | Efor |
 |---|---|---|---|
-| 1 | **K-3: ST-Link kilitlenmesi.** Önce teşhis (detach dizisi mi, firmware mi), sonra en azından kullanıcıya net "ST-Link'i çıkarıp takın" uyarısı. **Demo öncesi zorunlu.** | KRİTİK | 0.5–2 gün |
-| 2 | **Mevcut özelliklerin fonksiyonel regresyon testi.** Seri/UART, Register Inspector A-B, Flash, probe, Analiz, Fabrika Sim. Kart takılıyken elle, bir kereye mahsus checklist. | KRİTİK | 2–3 saat |
-| 3 | **Uçtan uca senaryo bir kez elle koşulmalı:** ELF → sembol → başlat → grafik → kaydet → durdur → oynat → profil kaydet → karşılaştır. K-1/K-2 düzeltmelerinden sonra artık anlamlı sonuç vermeli. | YÜKSEK | 1 saat |
-| 4 | `watch_rules.json`'daki 2 `stackWatermark` kuralını ya kapatın ya da RegionScan decode'unu yazın (`WatchSampler`'a bayt tarama + ayrı düşük hızlı döngü). Faz 5'in `stack_paint.c`'si buna bağlı. | YÜKSEK | 1 gün |
-| 5 | Faz 5 doğrulaması: bir pipeline koş, `nm \| grep g_ai_`, `inf_us` ±%5 karşılaştırması, boyut artışı <1 KB. | YÜKSEK | 2–3 saat |
-| 6 | `AnalysisScreen.qml`'e "İzleme Profilleri" sekmesi (planda vardı, hiç yapılmadı). | ORTA | 2–4 saat |
-| 7 | O-11/O-12: `-cp` koşullu eklensin, hata marker listesi düzeltilsin ("Couldn't locate", "Cannot" daralt). | ORTA | 1 saat |
-| 8 | Grafik Y ekseni `scale`/`offset` uygulasın (Y-7'nin bilinçli bırakılan kısmı) — görsel doğrulama gerektiriyor. | ORTA | 1–2 saat |
-| 9 | O-13: `rawWindow()`'a ikili arama (ya da yorumu düzelt). 4 Hz'de tam tampon taraması. | ORTA | 1 saat |
-| 10 | O-16: `refCount` zorla sıfırlama yerine sahiplere "link öldü" bildirimi; Debug build'de `Q_ASSERT` düşmesin. | ORTA | 2 saat |
-| 11 | O-17: `Backend`'den `WatchFacade` ayrıştırılsın (4320 satır). | DÜŞÜK | 1 gün |
-| 12 | O-14/O-15: boş tamponda CSV, yutulan bozuk-satır uyarısı. | DÜŞÜK | 1 saat |
-
----
+| 1 | **Faz 5 doğrulaması:** bir pipeline koş, `nm \| grep g_ai_` ile sembolleri gör, `g_ai_last_inference_us` ile UART `inf_us`'u ±%5 karşılaştır, boyut artışı <1 KB mi bak. Faz 5'in **tek** kabul kriteriydi ve hiç yapılmadı. | YÜKSEK | 2–3 saat |
+| 2 | **Uçtan uca senaryo bir kez elle koşulmalı:** ELF → sembol → başlat → grafik → kaydet → durdur → oynat → profil kaydet → karşılaştır. K-1/K-2 sonrası artık anlamlı sonuç vermeli; grafiğin görsel akıcılığı da burada görülür. | YÜKSEK | 1 saat |
+| 3 | **Demo kaydı üretin.** Dağıtılan `h7_demo_trace.csv`'nin tek kalemi `SysTick_VAL`: ne rolü var ne `inference_us` regex'ine uyuyor, dolayısıyla demo sırasında kural akışı **boş kalır**. Rol taşıyan (`heapEnd`, `inferenceUs`) bir kayıt alın. | YÜKSEK | 30 dk |
+| 4 | RegionScan decode'u (`WatchSampler`'a bayt tarama + ayrı düşük hızlı döngü), ardından iki `stackWatermark` kuralını `"enabled": true` yapın. Faz 5'in `stack_paint.c`'si buna bağlı. | ORTA | 1 gün |
+| 5 | `AnalysisScreen.qml`'e "İzleme Profilleri" sekmesi (planda vardı, sessizce atlanmıştı). **Bilinçli olarak yapmadım:** 5. sekme `_subTabs`/`_cols`/`rowsForIndex`/`boardColumn`/özet kartları/grafik/dışa aktarım adlandırmasını birden etkiliyor ve görsel doğrulama yapamıyorum. Göremediğim UI'yi göndermek bu raporun eleştirdiği hatanın aynısı olurdu. | ORTA | 2–4 saat |
+| 6 | O-16: `refCount` zorla sıfırlama yerine sahiplere "link öldü" bildirimi; Debug build'de `Q_ASSERT` düşmesin. | ORTA | 2 saat |
+| 7 | O-17: `Backend`'den `WatchFacade` ayrıştırılsın (4320 satır). | DÜŞÜK | 1 gün |
+| 8 | `maybeCheckElfMatch()` için zaman aşımı. | DÜŞÜK | 30 dk |
 
 ## 9. Jüri demosu risk değerlendirmesi
 
 Soru: *"bitirme jürisi önünde gerçekten gösterilebilir mi, hangi adımda patlama
 riski var?"*
 
-- **En yüksek risk: K-3.** İzleyiciyi gösterdikten sonra flash/register
-  demosuna geçmek kartı çıkarıp takmadan çalışmayacak. Demo sırası buna göre
-  kurulmalı (**önce** flash/register, **en son** izleyici) veya sorun çözülmeli.
+- **K-3 çözüldü — eski en yüksek risk kalktı.** İzleyiciden sonra flash/
+  register/probe artık çalışıyor (canlı kanıtlandı), demo sırası serbest.
 - **İkinci risk:** kural akışı (`WatchRuleFeed`) demo sırasında büyük olasılıkla
   **boş** kalacak. Dağıtılan `h7_demo_trace.csv`'nin tek kalemi `SysTick_VAL`;
   ne bir rolü var ne de `inference_us` regex'ine uyuyor. Yani "AI-farkındalıklı
@@ -444,8 +482,86 @@ riski var?"*
   kayıt üretin ya da bu paneli demo dışında bırakın.
 - **Düşük risk:** kayıttan oynatma yolu sağlam ve ST-Link'siz çalışıyor —
   planın "demo güvenlik ağı" fikri doğru kurulmuş. Bir kez elle denenmesi şart.
+- **Kalan en yüksek risk artık "hiç uçtan uca denenmemiş olması".** Tek tek
+  katmanlar kanıtlandı (canlı okuma, hız, dayanıklılık, saat ekseni, kural
+  motoru, oynatma), ama tam zincir bir kez bile baştan sona çalıştırılmadı.
+  Kalan işler #2 bunu kapatır ve jüri öncesi **mutlaka** yapılmalı.
 - **Amaca hizmet:** özellik projenin asıl amacına (model dağıtımı/karşılaştırma)
   gerçekten hizmet ediyor — `inferenceUs`/`heapEnd` presetleri ve profil
   karşılaştırma tam olarak "iki modeli kıyasla" sorusuna cevap veriyor. K-1
-  düzeltilmeden bu vaadin **hiçbiri** çalışmıyordu; şimdi çalışabilir durumda
-  ama **canlı olarak hiç görülmedi**.
+  düzeltilmeden bu vaadin **hiçbiri** çalışmıyordu.
+
+---
+
+## 10. Canlı donanım doğrulama kaydı (NUCLEO-H723ZG, kart takılı)
+
+Aşağıdakiler `LiveProbe` (gerçek `DebugLink`/`DebugLinkWorker`/
+`GdbServerProcess` sınıflarını kullanan başsız koşum aracı) ile ölçüldü.
+İzlenen adres `SysTick->VAL` (`0xE000E018`) — ELF/sembol gerektirmez, her
+Cortex-M'de sabittir ve sürekli değişir.
+
+### 10.1 Örnekleme başarımı
+
+| Ölçüm | Sonuç | Plan şartı |
+|---|---|---|
+| 1000 Hz hedefte gerçekleşen | **927 – 941 Hz** (5 ayrı koşu) | ≥800 Hz ✅ |
+| 60 sn sürekli | 56188 örnek, **936.5 Hz** | — ✅ |
+| Ortalama RTT | 0.41 ms | — |
+| `skewUs` (tek bloklu plan) | 304 – 383 µs | — |
+| Kaçırılan deadline (60 sn) | 476 / 56188 (%0.85) | — |
+| Değer gerçekten değişti | 56186 / 56188 | mantıklı ✅ |
+
+### 10.2 Bellek (Faz 4'ün ertelenen kriteri)
+
+60 sn boyunca 5 sn aralıkla ölçülen RSS: **12.4 MB — hiç değişmedi.**
+Halka arabelleği sabit boyutlu ayrıldığı için büyüme yok. Planın "<100 MB
+artış" şartı fazlasıyla sağlanıyor.
+
+```
+t+8s  12.4 MB    t+28s 12.4 MB    t+48s 12.4 MB
+t+13s 12.4 MB    t+33s 12.4 MB    t+53s 12.4 MB
+t+18s 12.4 MB    t+38s 12.4 MB
+t+23s 12.4 MB    t+43s 12.4 MB
+```
+
+### 10.3 Gözlemci ilkesi
+
+60 sn kesintisiz örnekleme + 4 Hz DHCSR sağlık kontrolü (≈240 okuma) boyunca
+`S_HALT` **hiç** görülmedi, `S_RESET_ST` **hiç** görülmedi. Bu, "hedef hiç
+durmadı" iddiasının tek bir anlık okumaya değil, oturum boyu sürekli izlemeye
+dayandığı anlamına gelir.
+
+### 10.4 Zaman ekseni (K-2 düzeltmesinin kanıtı)
+
+Aynı ölçüm, aynı kod yolu, düzeltme öncesi ve sonrası:
+
+| | Eksenler arası sabit kayma |
+|---|---|
+| Düzeltme **öncesi** | **+61.1 ms** |
+| Düzeltme **sonrası** (5 koşu) | **−0.4 … −1.1 ms** |
+
+Kalan sub-milisaniye fark, worker'ın `handshakeSucceeded` sinyalinin ana
+thread'e kuyruklu teslim süresidir — yapısal değil, gürültü.
+
+### 10.5 ST-Link sağlığı (K-3 düzeltmesinin kanıtı)
+
+| Senaryo | Düzeltme öncesi | Düzeltme sonrası |
+|---|---|---|
+| 1. oturum | ✅ açılıyor | ✅ açılıyor |
+| 2. oturum (arka arkaya) | ❌ `Target USB comms error` | ✅ açılıyor |
+| 3. oturum | ❌ (10/20/30 sn beklemek de çözmüyor) | ✅ açılıyor |
+| Sonra `STM32_Programmer_CLI` | ❌ `DEV_USB_COMM_ERR` | ✅ `Device ID 0x483 / STM32H72x-H73x` |
+| Artık gdbserver süreci | yok (temiz) | yok (temiz) |
+| Süreç çıkış kodu | 139 (SIGSEGV, K-5) | 0 |
+
+### 10.6 Doğrulanamayanlar
+
+Dürüstlük için: aşağıdakiler **hâlâ ölçülmedi**, "muhtemelen iyidir"
+denmiyor — GUI otomasyonum olmadığı için ekran üzerinden yapılması gerekiyor:
+
+- Grafiğin görsel akıcılığı, zoom/kaydırma, imleç okuma doğruluğu.
+- Kayıttan oynatmanın 4× hızda UI'yi dondurup dondurmadığı.
+- UART monitörü ile izleyicinin **aynı anda** çalışması (Faz 1'in "gdbserver
+  aktifken VCP susuyor" bulgusu hâlâ geçerli mi).
+- Register Inspector A→B diff'i, Analiz CSV/PDF, Fabrika Simülasyonu'nun
+  ekran üzerinden fonksiyonel testi.

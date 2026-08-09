@@ -362,3 +362,32 @@ void TestTimeSeriesRuleEngine::gateRejectsAnEventOutsideTheWindowOnEitherSide()
     // 200 ms after -> outside on the late side, rejected.
     QCOMPARE(TimeSeriesRuleEngine::evaluate({rule}, items, buf, buf.lastTime(), {evAt(0.399)}).size(), 0);
 }
+
+// A rule marked "enabled": false in watch_rules.json must parse but never
+// produce a violation — that is how a rule whose preconditions do not exist
+// yet (e.g. the stackWatermark rules, which need RegionScan sampling) can ship
+// without pretending it can fire.
+void TestTimeSeriesRuleEngine::disabledRuleIsParsedButNeverEvaluated()
+{
+    const QByteArray json = R"({
+        "rules": [
+            { "id": "off", "enabled": false, "appliesToRole": "stackWatermark",
+              "type": "threshold", "op": "<", "value": 512, "message": "m" },
+            { "id": "on", "appliesToRole": "stackWatermark",
+              "type": "threshold", "op": "<", "value": 512, "message": "m" }
+        ]
+    })";
+    const QVector<TsRule> rules = TimeSeriesRuleEngine::loadRulesFromJson(json);
+    QCOMPARE(rules.size(), 2);              // both parsed
+    QVERIFY(!rules.at(0).enabled);
+    QVERIFY(rules.at(1).enabled);
+
+    TraceBuffer buf;
+    buf.configure(1, 100);
+    appendSample(buf, 0.0, 100.0);          // under the threshold
+
+    const QList<WatchItem> items = { makeItem("i1", "stackFree", "stackWatermark") };
+    const auto violations = TimeSeriesRuleEngine::evaluate(rules, items, buf, buf.lastTime(), {});
+    QCOMPARE(violations.size(), 1);         // only the enabled one fired
+    QCOMPARE(violations.first().ruleId, QStringLiteral("on"));
+}

@@ -70,6 +70,7 @@ QVector<TsRule> TimeSeriesRuleEngine::loadRulesFromJson(const QByteArray &json, 
         if (r.id.isEmpty())
             continue;   // malformed entry — skip silently, never crash the whole load
 
+        r.enabled             = o.value(QStringLiteral("enabled")).toBool(true);
         r.severity            = o.value(QStringLiteral("severity")).toString(QStringLiteral("info"));
         r.message              = o.value(QStringLiteral("message")).toString();
         r.appliesToRole        = o.value(QStringLiteral("appliesToRole")).toString();
@@ -104,6 +105,9 @@ QVector<TsRuleViolation> TimeSeriesRuleEngine::evaluate(const QVector<TsRule> &r
     QVector<TsRuleViolation> out;
 
     for (const TsRule &rule : rules) {
+        if (!rule.enabled)
+            continue;
+
         for (int i = 0; i < items.size(); ++i) {
             const WatchItem &item = items.at(i);
             if (!item.enabled || !itemMatchesRule(item, rule))

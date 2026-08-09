@@ -1,9 +1,11 @@
 {
   "_schemaVersion": 1,
   "_comment": "Deterministic, windowed rules for the Variable Watcher. Separate from svd/rules.json (instantaneous register state) on purpose — see CLAUDE.md.",
+  "_note_disabled": "Rules with \"enabled\": false are parsed but never evaluated. The two stackWatermark rules are disabled because RegionScan items are not sampled yet (WatchSampler has no byte-scan decode step), so no item can ever carry role=stackWatermark. Shipping them as active would promise detection that cannot happen. Re-enable them together with the RegionScan decode work — see docs/variable_watcher_review.md.",
   "rules": [
     {
       "id": "stack_headroom_critical",
+      "enabled": false,
       "severity": "error",
       "appliesToRole": "stackWatermark",
       "type": "threshold", "op": "<", "value": 512, "sustainMs": 1000,
@@ -26,10 +28,11 @@
     },
     {
       "id": "watermark_downward_trend",
+      "enabled": false,
       "severity": "warning",
       "appliesToRole": "stackWatermark",
       "type": "drift", "windowMs": 60000, "minSlopePerSec": -4.0, "minR2": 0.5,
-      "message": "{label}: stack bosluğu {windowSec} s'de {slope} B/s azaliyor — limite tirmanma"
+      "message": "{label}: stack boslugu {windowSec} s'de {slope} B/s azaliyor — limite tirmanma"
     }
   ]
 }

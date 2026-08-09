@@ -51,9 +51,10 @@ public:
     QVector<PlotColumn> decimate(int item, double t0, double t1, int columns) const;
     const WatchStats &stats(int item) const;
 
-    // Raw (undecimated) samples in [t0, t1] — Faz 8 rule engine. Cost is
-    // O(samples in range), fine for the few-second windows rules use; NOT
-    // meant for the full-buffer/plot-frame case (use decimate() there).
+    // Raw (undecimated) samples in [t0, t1] — Faz 8 rule engine. Binary-search
+    // for the window start, then a forward walk: O(log n + samples returned),
+    // which is what the few-second rule windows need. NOT meant for the
+    // full-buffer/plot-frame case (use decimate() there).
     QVector<RawSample> rawWindow(int item, double t0, double t1) const;
 
     // Cursor read (plan Bolum 9.4 watchValuesAt): value of the sample whose
