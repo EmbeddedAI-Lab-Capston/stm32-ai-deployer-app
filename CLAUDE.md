@@ -53,7 +53,9 @@ zamanlı izlemek ve modelleri karşılaştırmalı olarak analiz etmek.
 | Grafikler        | Qt Charts modülü                |
 | Ayar depolama    | QSettings                       |
 | Süreç yönetimi   | QProcess — ST-Link CLI çağrısı  |
+| Debug bağlantısı | `ST-LINK_gdbserver.exe` + GDB RSP (QTcpSocket) — Register Inspector'ın GDB arka ucu + Değişken İzleyici |
 | Thread mimarisi  | QThread + Worker pattern        |
+| Birim test       | Qt Test (`tests/`, `ctest`)     |
 | Platform         | Windows 10/11 (yalnızca)        |
 
 > **Not:** Aktif UI tamamen QML'dir. `Backend` (`src/bridge/Backend.*`) QML ↔
@@ -108,14 +110,46 @@ stm32-ai-deployer-app/
 │       │   └── PacketParser.h / .cpp ← § JSON protokol parser
 │       ├── analysis/
 │       │   └── AnalysisManager.h / .cpp ← SQLite (tek esnek tablo)
-│       └── simulation/
-│           └── FactorySimulator.h / .cpp ← Fabrika demo veri motoru
+│       ├── simulation/
+│       │   └── FactorySimulator.h / .cpp ← Fabrika demo veri motoru
+│       ├── registers/                ← Register Inspector (SvdCatalog, RuleEngine,
+│       │                                RegisterInspector, CliRegisterReader,
+│       │                                GdbServerReader, RegisterAdvisor …)
+│       ├── debug/                    ← DebugLink modülü (Register Inspector +
+│       │   ├── DebugLinkTypes.h        Değişken İzleyici'nin PAYLAŞTIĞI tek ST-Link)
+│       │   ├── GdbRspCodec.h / .cpp  ← RSP çerçeveleme + gözlemci beyaz listesi
+│       │   ├── GdbServerProcess.h / .cpp ← ST-LINK_gdbserver.exe süreç yönetimi
+│       │   ├── DebugLinkWorker.h / .cpp ← QThread worker (QTcpSocket)
+│       │   └── DebugLink.h / .cpp    ← Ana thread cephesi, retain()/release()
+│       └── watcher/                  ← Değişken İzleyici (Faz 1-8)
+│           ├── SymbolModel.h · NmSymbolParser.h/.cpp ← nm çıktısı ayrıştırma
+│           ├── ElfSymbolSource.h/.cpp ← arm-none-eabi-nm QProcess sarmalayıcı
+│           ├── ElfTargetMatcher.h/.cpp ← ELF↔hedef VTOR/vektör tablosu eşleşmesi
+│           ├── WatchModel.h · ValueCodec.h/.cpp ← WatchItem/WatchStats + decode/format
+│           ├── WatchPlanBuilder.h/.cpp ← okuma isteklerini birleştirir
+│           ├── TraceBuffer.h/.cpp    ← halka arabellek + decimate + rawWindow
+│           ├── WatchSampler.h/.cpp   ← bir örneğin ham yanıtlarını decode eder
+│           ├── VariableWatcher.h/.cpp ← ana orkestratör (örnekleme+kayıt+oynatma)
+│           ├── TraceEventLog.h/.cpp  ← ortak zaman ekseni olayları
+│           ├── TraceRecorder.h/.cpp · TracePlayer.h/.cpp ← CSV kayıt/oynatma
+│           ├── WatchProfile.h/.cpp   ← analysis_records "watch_profile" satırları
+│           ├── TimeSeriesRuleModel.h · TimeSeriesRuleEngine.h/.cpp ← Faz 8 kural motoru
+│           └── WatchPresetMatcher.h/.cpp ← AI-farkındalıklı preset eşleştirme
+│
+├── src/quick/
+│   └── TracePlot.h / .cpp           ← QQuickPaintedItem, piksel-sütunu min/max grafik
 │
 ├── qml/                              ← AKTİF UI — tamamı burada
 │   ├── Main.qml · Theme.qml · MockData.qml
-│   ├── screens/                     ← Dashboard/Board/Flash/Monitor/Benchmark/Analysis
+│   ├── screens/                     ← Dashboard/Board/Flash/Monitor/Benchmark/Analysis/
+│   │                                   Register/Watch
 │   ├── components/                  ← AppButton/Card/DataTable/Terminal/TitleBar …
-│   ├── dialogs/                     ← SettingsDialog/PipelineWizard/AboutDialog
+│   │   └── watch/                   ← WatchItemTable/WatchToolbar/WatchLinkStatus/
+│   │                                   TracePlotView/WatchEventLane/WatchRecordingBar/
+│   │                                   WatchPlaybackBanner/WatchRuleFeed
+│   ├── dialogs/                     ← SettingsDialog/PipelineWizard/AboutDialog/
+│   │                                   SymbolPickerDialog/WatchItemDialog/
+│   │                                   ProfileCompareDialog
 │   └── factory/                     ← FactorySimWindow/Dashboard/Map/ZoneDetail/NodeDetail
 │
 ├── resources/
@@ -135,14 +169,25 @@ stm32-ai-deployer-app/
 │   │   └── PDM_MIC/                 ← SAI PDM mikrofon (KWS)
 │   └── ai_glue/
 │       ├── ai_runner.c / .h         ← X-CUBE-AI inference wrapper
-│       └── uart_report.c / .h       ← Protokol v1.0 UART raporlama
+│       ├── uart_report.c / .h       ← Protokol v1.0 UART raporlama
+│       └── stack_paint.c / .h       ← Stack watermark boyama (0xA5A5A5A5)
+│
+├── watch/                            ← Değişken İzleyici veri dosyaları (§ aşağıda)
+│   ├── README.md · watch_rules.json · watch_presets.json
+│   └── demo/h7_demo_trace.csv       ← Gerçek H7 kaydı, ST-Link'siz demo için
+│
+├── tests/                            ← Qt Test, saf sınıflar (donanım/QObject bağımlılığı yok)
+│   ├── CMakeLists.txt · main.cpp
+│   └── Test*.h / .cpp                ← bkz. docs/variable_watcher_plan.md Bölüm 13
 │
 └── docs/
     ├── PROJECT.md                   ← Tüm mimari, uçtan uca (ana referans)
     ├── protocol_v1.md               ← UART protokol referansı
     ├── n6_kaldigimiz_yer.md         ← STM32N6 boot/flash geçmişi + güncel durum
     ├── factory_simulation_plan.md   ← Fabrika Sim. orijinal tasarım planı (tarihi)
-    └── lstm_stm32_export.md         ← LSTM → X-CUBE-AI uyumlu TFLite export rehberi
+    ├── lstm_stm32_export.md         ← LSTM → X-CUBE-AI uyumlu TFLite export rehberi
+    ├── register_inspector_plan.md / _findings.md ← Register Inspector tasarım + doğrulama
+    └── variable_watcher_plan.md / _findings.md   ← Değişken İzleyici tasarım + doğrulama
 ```
 
 ---
@@ -231,6 +276,28 @@ emit errorReceived(QJsonObject);
 - Gerçek donanım olmadan 5 bölge / 20 düğüm / ~68 sensörlü fabrikayı simüle eder
 - Detay: [`docs/PROJECT.md`](docs/PROJECT.md) Bölüm 8
 
+### Modül 6 — DebugLink (`src/modules/debug/`)
+- Register Inspector'ın GDB arka ucu (`GdbServerReader`) VE Değişken
+  İzleyici'nin **PAYLAŞTIĞI TEK** ST-Link bağlantısı — `retain()`/`release()`
+  referans sayımlı, public `open()`/`close()` yok
+- `GdbRspCodec`: RSP çerçeveleme + gözlemci beyaz listesi (`isAllowedOutgoing()`)
+- `GdbServerProcess`: `ST-LINK_gdbserver.exe` süreç yönetimi (QProcess)
+- `DebugLinkWorker`: ana thread'i asla bloklamayan `QThread` + `QTcpSocket`
+- 4 Hz DHCSR sağlık kontrolü: `S_RETIRE_ST` canlılık, `S_HALT` durma,
+  `S_RESET_ST` → `targetReset` olayı
+
+### Modül 7 — VariableWatcher (`src/modules/watcher/`)
+- "STM Studio benzeri" canlı değişken izleme — hedef ASLA durdurulmaz/
+  yazılmaz (gözlemci ilkesi)
+- Sembol katmanı (`nm` çıktısı) → `WatchPlanBuilder` (okuma birleştirme) →
+  `WatchSampler` (decode) → `TraceBuffer` (halka arabellek + istatistik)
+- `TraceRecorder`/`TracePlayer`: CSV kayıt + "güvenli mod" (ST-Link'siz) oynatma
+- `TimeSeriesRuleEngine`: pencereli deterministik kural motoru (eşik/z-skoru/
+  drift) — `src/modules/registers/RuleEngine.h` ile **karıştırılmaz**
+- `WatchPresetMatcher`: AI-farkındalıklı otomatik izleme listesi (`watch/watch_presets.json`)
+- Detay ve kalıcı mimari kararlar: yukarıdaki "Değişken İzleyici — Kalıcı
+  Mimari Kararları" bölümü + [`docs/variable_watcher_plan.md`](docs/variable_watcher_plan.md)
+
 ---
 
 ## Register Inspector — Kalıcı Mimari Kararları
@@ -255,6 +322,108 @@ emit errorReceived(QJsonObject);
   karıştırılmaz.
 - Araç gözlemci: register YAZMA yok, canlı polling yok, snapshot modeli
   korunur.
+
+---
+
+## Değişken İzleyici — Kalıcı Mimari Kararları
+
+> Bu bölüm bir karar kaydıdır (ADR benzeri) — Değişken İzleyici üzerinde
+> çalışan her oturumda geçerlidir, unutulmamalı/çiğnenmemelidir.
+
+- **Gözlemci ilkesi mutlaktır:** hedef ASLA durdurulmaz, reset edilmez,
+  breakpoint konmaz, belleğe YAZILMAZ. Giden GDB RSP paketleri
+  `GdbRspCodec::isAllowedOutgoing()` beyaz listesiyle kod düzeyinde sınırlıdır
+  (`qSupported`, `QStartNoAckMode`, `QNonStop:1`, `vCont;c`, `m`, `qXfer:*:read`,
+  `D`). `?`, `Z/z`, `M/X`, `G/P`, `vCont;t|s`, `k`, `\x03` gönderimi engellidir.
+  gdbserver `-k` / `--halt` ile başlatılmaz. Bu, Register Inspector'daki
+  "araç gözlemci" kuralının aynısının canlı okuma yoluna uygulanmasıdır.
+- **Canlılık ve reset tespiti tek DHCSR (0xE000EDF0) okumasından, 4 Hz'de:**
+  `S_RETIRE_ST` (bit 24) **birincil canlılık göstergesidir** — mimari düzeyde
+  "komut emekliye ayrıldı" kanıtıdır ve DWT'nin açık olmasını gerektirmez;
+  `DWT_CYCCNT` canlılık için KULLANILMAZ (başkasının firmware'inde DWT kapalı
+  olabilir, sayaç donuk görünür ve araç yanlışlıkla "hedef durdu" derdi).
+  `S_HALT` (bit 17) set ise örnekleme durur ve kullanıcı uyarılır.
+  `S_RESET_ST` (bit 25) set ise zaman eksenine `kind="targetReset"` olayı
+  düşülür ve örnekleme **devam eder** — adresler geçerli kalır, ama değerler
+  süreksiz sıçradığı için kullanıcı görünür biçimde uyarılır. Üç bit de
+  sticky/okununca-temizlenir; sağlık okuması kendi `MemoryRequest`'idir
+  (~%0.2 bant maliyeti) ve örnekleme durunca o da durur.
+- **Yüklenen ELF ile karttaki firmware'in eşleştiği VTOR + vektör tablosu
+  üzerinden doğrulanır** (`VTOR` → tablo[0]==`_estack`, tablo[1]==`Reset_Handler|1`);
+  eşleşmezse değerler gösterilir ama **görünür uyarı** verilir ve kullanıcının
+  açık onayı istenir — **sessizce yanlış veri gösterilmez**. Sert blok değildir,
+  çünkü vektör tablosunu RAM'e taşıyan meşru firmware yanlış alarm üretebilir.
+- **Tek ST-Link, tek sahip:** `Backend` içindeki açık hakem (`m_stlinkOwner`)
+  flash / pipeline / probe / register / watch arasında hakemlik eder. Sahiplik
+  hata mesajlarında ada göre bildirilir. STM32_Programmer_CLI bağlantı hatasında
+  bile exit code 0 döndüğü için çıkış koduna değil, çıktıdaki hata işaretlerine
+  bakılır (`HexDumpParser::errorMarkers` deseni).
+- **Aile-özel hiçbir şey C++'a hardcode edilmez:** RAM bölgeleri ELF
+  sembollerinden ve gdbserver'ın `qXfer:memory-map:read` çıktısından gelir;
+  kart-özel debug ayarları `svd/boards.json` içindeki `debug` bloğundadır;
+  izleme presetleri `watch/watch_presets.json`'dadır. Turnusol testi: yeni kart
+  eklemek = `.svd` + `boards.json` kaydı + linker template; TEK SATIR C++
+  değişmemeli. (Cortex-M mimari sabitleri — DHCSR adresi gibi — aile-özel
+  değildir ve bu kuralın istisnası sayılmaz.)
+- **`nm` `A` tipi sembollerin "adresi" aslında DEĞERİdir** (`_Min_Stack_Size`,
+  `_Min_Heap_Size`). `Symbol::addressIsValue` ile işaretlenir; izleme listesine
+  adres olarak eklenmesi engellidir. Yalnızca preset ifadelerinde sayı olarak
+  kullanılır.
+- **Ham zaman serisi veritabanına yazılmaz.** `analysis_records` 1 saniye
+  çözünürlüklüdür ve 15 TEXT sütunludur; 500–3000 Hz seri için uygunsuzdur.
+  Ham seri dosyaya (CSV v1 başlıklı biçim), yalnızca özet profil DB'ye
+  (`kind = "watch_profile"`).
+- **Anomali tespiti yalnızca deterministiktir:** eşik (`sustainMs` ile),
+  kayan pencere z-skoru, doğrusal trend/drift (R² kapısıyla) ve olay
+  korelasyon kapısı. ML tabanlı anomali tespiti YAPILMAZ — ground truth yok,
+  savunulamaz. Her ihlal, hangi sayının hangi eşiği nasıl aştığını `detail`
+  alanında taşır.
+- **İki kural motoru birleştirilmez:** `RuleEngine` anlık register durumunu
+  (`svd/rules.json`), `TimeSeriesRuleEngine` pencere üzerindeki davranışı
+  (`watch/watch_rules.json`) değerlendirir. Mevcut `RuleEngine` değiştirilmez.
+- **İsimler karıştırılmaz:** Register Inspector = "Snapshot A / Snapshot B /
+  A→B farkı". Değişken İzleyici = "Oturum / Profil / Profil Karşılaştırma".
+  İzleyici UI'sinde A/B harfleri kullanılmaz.
+- **UART olayları ana thread'de VARIŞ anında damgalanır** — firmware zaman
+  damgası değildir. USB-CDC + DMA gecikmesi birkaç ms kayma yaratır; UI'da
+  kesikli çizgiyle ve tooltip ile açıkça belirtilir.
+- **3000 Hz örnekleme UI thread'ine sinyal başına taşınmaz:** worker en fazla
+  30 Hz'de toplu `WatchSampleBatch` yayar. Oturum istatistikleri (min/max/
+  ortalama/stddev) halka arabelleğinden bağımsız, artımlı (Welford) tutulur —
+  eski örnekler düşse bile oturum istatistiği doğru kalır. Grafiğe basılan
+  nokta sayısı örnekleme hızından değil piksel genişliğinden gelir
+  (min/max zarf decimation).
+- **`IRegisterReader` arayüzü korunur:** `GdbServerReader` ikinci gerçeklemedir;
+  `CliRegisterReader` silinmez. `registers/read_backend` **varsayılanı kalıcı
+  olarak `"cli"`'dır**; `"gdb"` Ayarlar'dan opt-in seçilir. Ayar `"gdb"` olsa
+  bile etkin arka uç her snapshot'ta çözümlenir: gdbserver yolu yoksa veya
+  `retain()` başarısızsa sessizce CLI'ya düşülür ve **uygulama çalışması başına
+  bir kez** (snapshot başına değil) uyarı verilir. Gerekçe: çalışır durumdaki
+  Register Inspector'a süreç/port riskini varsayılan olarak eklemeyiz; hız
+  kazancı konfordur, doğruluk değil.
+- **`DebugLink` referans sayımlıdır; public `open()`/`close()` YOKTUR.** Tek
+  ST-Link'i iki sahip (Register Inspector + Değişken İzleyici) paylaştığı için
+  yalnızca `retain()`/`release()` vardır ve her `retain()` tam olarak bir
+  `release()` ile eşleşir — hata ve iptal yolları dahil. **Başarısız `retain()`
+  sayaç tüketmez; o durumda `release()` çağrılmaz.** "Her ihtimale karşı
+  release()" yanlıştır ve sayacı negatife düşürür (`Q_ASSERT` ile yakalanır).
+- **Zaman damgası sözleşmesi bağlayıcıdır:** `times[k]`, o örneğin **ilk** `m`
+  paketi sokete yazılmadan hemen önce alınır; `skewUs` ise o örneğin **son**
+  cevabı ayrıştırılana kadar geçen süredir. Anlamı: "bu değerler
+  `[t, t + skewUs/1e6]` penceresinde okundu." Çok bloklu planlar eşzamanlı
+  değildir ve bu, UI'da `skewUs` olarak **gösterilir**, gizlenmez.
+- **Demo güvenliği birinci sınıf yoldur:** kayıttan oynatma modu canlı yolun
+  aynı sinyal zincirini kullanır; uygulamayla birlikte dağıtılan
+  `watch/demo/h7_demo_trace.csv` sayesinde ekran ST-Link olmadan tam çalışır.
+  Oynatma sırasında göz ardı edilemez bir banner gösterilir.
+- **Stack watermark yalnızca bu pipeline ile derlenmiş firmware'de geçerlidir**
+  (startup'ta 0xA5A5A5A5 boyama gerekir). Başka bir ELF izlenirken watermark
+  kalemi "kullanılamıyor" olarak gösterilir; sahte değer üretilmez. **Bilinen
+  durum (2026-08):** `WatchPresetMatcher` adres aralığını doğru çözer ve
+  `WatchPlanBuilder::buildRegionScans()` okuma planını doğru kurar, ama bu
+  ikisi arasındaki bayt-tarama DECODE adımı henüz `WatchSampler`'a
+  bağlanmadı — RegionScan kalemleri şu an `0.0/ok=false` döner. Detay:
+  `docs/variable_watcher_findings.md` Bölüm 17.3.
 
 ---
 
@@ -372,6 +541,34 @@ sıralı hücre listesini (tipsiz, `kind`'a göre anlam kazanır) tutar.
 "benchmark/deployed_model_path"
 "benchmark/deployed_output_dir"
 "benchmark/deployed_sensor_type"
+
+// ST-LINK_gdbserver.exe tam yolu (Register Inspector GDB arka ucu + Değişken İzleyici)
+"tools/gdbserver_path"
+
+// arm-none-eabi-nm.exe tam yolu (Değişken İzleyici sembol katmanı)
+"tools/arm_nm_path"
+
+// STM32_Programmer_CLI.exe'yi içeren dizin (gdbserver'ın -cp argümanı)
+"tools/cubeprogrammer_bin_dir"
+
+// Register Inspector okuma arka ucu tercihi: "cli" | "gdb"
+// VARSAYILAN KALICI OLARAK "cli" — "gdb" yalnızca Ayarlar'dan opt-in
+"registers/read_backend"
+
+// gdbserver TCP portu; 0 = otomatik boş port seç
+"watch/gdb_port"
+
+// Son yüklenen ELF yolu (Değişken İzleyici)
+"watch/last_elf_path"
+
+// Kart adı -> [WatchItem] JSON eşlemesi
+"watch/items"
+
+// Varsayılan örnekleme hızı (Hz), varsayılan 200
+"watch/target_rate_hz"
+
+// Yeni izleme kayıtları için önerilen klasör
+"watch/record_dir"
 ```
 
 > Tam ve güncel anahtar tanımları için tek doğruluk kaynağı:
@@ -391,6 +588,7 @@ sıralı hücre listesini (tipsiz, `kind`'a göre anlam kazanır) tutar.
 | 4.6   | X-CUBE-AI CLI entegrasyonu | ✅ Tamamlandı |
 | 4.8   | Template Framework + Pipeline Wizard | ✅ Tamamlandı |
 | —     | QML arayüze geçiş + Fabrika Simülasyonu | ✅ Tamamlandı (aktif geliştirme) |
+| —     | Register Inspector + Değişken İzleyici | ✅ Tamamlandı |
 | 5     | Veritabanı ve kayıt     | ⏳ Bekliyor  |
 | 6     | Canlı dashboard         | ⏳ Bekliyor  |
 | 7     | Model karşılaştırma     | ⏳ Bekliyor  |
@@ -435,6 +633,12 @@ cmake --build build --target clean
 | `docs/PROJECT.md`          | Ana mimari referansı — güncel durumu yansıtır |
 | `docs/protocol_v1.md`      | UART protokol referansı                     |
 | `docs/n6_kaldigimiz_yer.md` | STM32N6 boot/flash geçmişi + güncel durum   |
+| `src/modules/debug/GdbRspCodec.h` | RSP çerçeveleme + gözlemci beyaz listesi (`isAllowedOutgoing()`) |
+| `src/modules/debug/DebugLink.h` | Paylaşılan ST-Link — `retain()`/`release()` sözleşmesi |
+| `src/modules/watcher/ElfTargetMatcher.h` | ELF ↔ hedef eşleşmesi (VTOR + vektör tablosu) |
+| `watch/watch_rules.json`   | `TimeSeriesRuleEngine` kuralları (pencereli, deterministik) |
+| `watch/watch_presets.json` | AI-farkındalıklı otomatik izleme listesi     |
+| `docs/variable_watcher_plan.md` / `_findings.md` | Değişken İzleyici tasarım + canlı doğrulama sonuçları |
 
 ---
 

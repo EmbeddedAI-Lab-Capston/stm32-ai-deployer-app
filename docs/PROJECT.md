@@ -111,8 +111,12 @@ PacketParser (§{JSON} protokol)
    - `SerialManager` — seri port yönetimi (kendi thread'ini açar)
    - `FlashManager` — flash işlemleri
    - `AnalysisManager` — SQLite veritabanı
+   - `RegisterInspector` + `RegisterAdvisor` — Register Inspector (bkz. Bölüm 16.x, `docs/register_inspector_plan.md`)
+   - `DebugLink` — Register Inspector'ın GDB arka ucu ile Değişken İzleyici'nin
+     **PAYLAŞTIĞI TEK** ST-Link bağlantısı (`retain()`/`release()` referans sayımlı)
+   - `VariableWatcher(debugLink)` — Değişken İzleyici orkestratörü (bkz. Bölüm 16)
 4. `AppSettings`'ten son baud ve programmer CLI yolu geri yüklenir (yoksa otomatik tespit).
-5. `Backend` cephesi, yukarıdaki yöneticileri sararak oluşturulur.
+5. `Backend` cephesi, yukarıdaki yöneticileri (`registers`/`advisor`/`debugLink`/`watcher` dahil) sararak oluşturulur.
 6. `FactorySimulator` bağımsız demo motoru oluşturulur.
 7. QML motoru başlatılır; `appState`, `backend`, `factorySim` **context property** olarak QML'e enjekte edilir.
 8. `STM32AiDeployer` QML modülünden `Main` yüklenir.
@@ -546,6 +550,13 @@ CMake özellikleri:
 | `src/modules/flash/PipelineRunner.*` | Uçtan uca dağıtım orkestrasyonu |
 | `src/modules/flash/XCubeAIRunner.*` | stedgeai CLI sarmalayıcı |
 | `src/modules/simulation/FactorySimulator.*` | Fabrika demo veri motoru |
+| `src/modules/registers/RegisterInspector.*` | Register Inspector orkestratörü (snapshot/diff/kural) |
+| `src/modules/debug/DebugLink.*` | Paylaşılan ST-Link — `retain()`/`release()` sözleşmesi, GDB RSP |
+| `src/modules/debug/GdbRspCodec.*` | RSP çerçeveleme + gözlemci beyaz listesi — **değiştirme** |
+| `src/modules/watcher/VariableWatcher.*` | Değişken İzleyici ana orkestratörü (örnekleme/kayıt/oynatma) |
+| `src/modules/watcher/ElfTargetMatcher.*` | ELF ↔ hedef eşleşmesi (VTOR + vektör tablosu) |
+| `src/modules/watcher/TimeSeriesRuleEngine.*` | Pencereli deterministik kural motoru (Faz 8) |
+| `src/quick/TracePlot.*` | Piksel-sütunu min/max zarf grafik motoru (`QQuickPaintedItem`) |
 | `qml/Main.qml` | QML giriş noktası, sekme/ekran yönetimi |
 | `qml/Theme.qml` | Merkezi tema/renk tanımları |
 | `resources/style.qss` | Widgets stil dosyası (yalnızca `SplashScreen` için) |
@@ -553,6 +564,142 @@ CMake özellikleri:
 | `docs/n6_kaldigimiz_yer.md` | STM32N6 boot/flash geçmişi ve güncel durum |
 | `docs/factory_simulation_plan.md` | FactorySimulator'ın orijinal tasarım planı (tarihi referans) |
 | `docs/lstm_stm32_export.md` | LSTM modellerini X-CUBE-AI ile uyumlu TFLite'a export etme rehberi |
+| `docs/register_inspector_plan.md` / `_findings.md` | Register Inspector tasarım + canlı doğrulama sonuçları |
+| `docs/variable_watcher_plan.md` / `_findings.md` | Değişken İzleyici tasarım + canlı doğrulama sonuçları |
+| `watch/watch_rules.json` / `watch_presets.json` | Kural motoru + AI preset veri dosyaları |
+
+---
+
+## 16. Değişken İzleyici
+
+STM Studio benzeri, gözlemci ilkeli (hedef asla durdurulmaz/yazılmaz) canlı
+değişken izleme özelliği. Tam tasarım kararları ve gerekçeleri
+[`docs/variable_watcher_plan.md`](variable_watcher_plan.md); faz faz canlı
+donanım doğrulama sonuçları [`docs/variable_watcher_findings.md`](variable_watcher_findings.md).
+Kalıcı mimari kararlar (unutulmaması gereken kurallar) `CLAUDE.md`'nin
+"Değişken İzleyici — Kalıcı Mimari Kararları" bölümünde.
+
+### 16.1 Mimari şema
+
+```
+qml/screens/WatchScreen.qml
+  ├─ WatchToolbar (bağlan, ELF yükle, sembol/adres ekle, hız, başlat/durdur)
+  ├─ WatchRecordingBar (kayıt, oynatma, dışa aktarma, profil, preset)
+  ├─ SplitView
+  │    ├─ TracePlotView → TracePlot (QQuickPaintedItem, C++ çizim)
+  │    ├─ WatchItemTable
+  │    └─ WatchRuleFeed (Faz 8 ihlal akışı)
+  └─ WatchLinkStatus / WatchPlaybackBanner
+        │ Q_INVOKABLE / Q_PROPERTY (Backend cephesi)
+        ▼
+   Backend ──── VariableWatcher (ana thread orkestratör)
+                  ├─ ElfSymbolSource (QProcess: arm-none-eabi-nm)
+                  ├─ WatchPlanBuilder → TraceBuffer (halka arabellek)
+                  ├─ TraceRecorder / TracePlayer (CSV kayıt/oynatma)
+                  └─ DebugLink * (paylaşılan — sahibi DEĞİL, yalnızca kullanır)
+                          │
+                     DebugLinkWorker (QThread) ── QTcpSocket ── ST-LINK_gdbserver.exe ── ST-Link ── hedef MCU
+```
+
+`DebugLink`, Register Inspector'ın `GdbServerReader` arka ucuyla **aynı**
+nesnedir (`main.cpp`'de bir kez oluşturulur, hem `RegisterInspector`'a hem
+`VariableWatcher`'a verilir) — `retain()`/`release()` referans sayımı iki
+tüketiciyi güvenle paylaştırır.
+
+### 16.2 Thread modeli
+
+- **Ana thread:** `Backend`, `VariableWatcher`, `TraceBuffer`, `TraceEventLog`,
+  `TimeSeriesRuleEngine`, QML/UI.
+- **`DebugLinkWorker` (QThread):** `QTcpSocket` ile GDB RSP soket I/O'sunun
+  tamamı — ana thread asla bloklanmaz. Komutlar `DebugLink`'ten worker'a
+  queued sinyallerle (`requestConnect`, `requestReadRanges`,
+  `requestStartSampling`, ...) geçer; yanıtlar aynı şekilde geri döner.
+- **`ElfSymbolSource`:** `arm-none-eabi-nm` için ayrı bir `QProcess`
+  (senkron bloklamaz, sinyal tabanlı).
+- Örnekler worker'dan ana thread'e **≤30 Hz** toplu (`WatchSampleBatch`)
+  gelir — 3000 Hz'de bile UI thread'i sinyal-başına-örnek yükünden korunur.
+
+### 16.3 GDB RSP el sıkışma sırası (`DebugLink::retain()`)
+
+1. `ST-LINK_gdbserver.exe` başlatılır (`GdbServerProcess`, `-cp <CubeProgrammer bin>`).
+2. `DebugLinkWorker` TCP ile bağlanır (`localhost:<port>`).
+3. `qSupported` → sunucu yetenekleri (özellikle `PacketSize`) öğrenilir.
+4. `QStartNoAckMode` — ack/nack protokolü kapatılır (verim için).
+5. `QNonStop:1` — hedefi durdurmadan komut göndermeye izin veren mod.
+6. DHCSR (`0xE000EDF0`) okunur → `S_HALT==0` doğrulanır (hedef çalışıyor).
+7. `opened()` sinyali yayılır; `maxReadBytes()` `PacketSize`'tan türetilir.
+
+Giden komutlar **yalnızca** `GdbRspCodec::isAllowedOutgoing()` beyaz
+listesindeki paketlerdir (bkz. `CLAUDE.md` ADR bölümü) — bu, "araç gözlemci"
+ilkesinin kod seviyesinde uygulanmasıdır.
+
+### 16.4 Veri akışı (canlı örnekleme)
+
+```
+DebugLinkWorker (4 Hz sağlık + N Hz veri, aynı soket üzerinde ayrık istekler)
+  → DebugLink::rawSamplesReady(replies, t, skewUs)
+  → VariableWatcher::onRawSamplesReady() — ≤30 Hz / 512 örnek gate
+  → WatchSampler::decodeSample() — ham decode (scale/offset YOK)
+  → TraceBuffer::append() — halka arabellek + WatchStats (Welford, artımlı)
+       ├─ (kayıt aktifse) TraceRecorder::appendBatch() — CSV'ye akış
+       └─ (izleniyorsa) Backend::watchPlotFrame() — TracePlot için decimate()
+```
+
+Y ekseni ölçekleme (`scale`/`offset`) yalnızca **görüntüleme** anında
+(`ValueCodec::format`) veya profil DB'ye yazılırken (`WatchProfile::buildRows`)
+uygulanır — ham veri hep ham kalır.
+
+### 16.5 CSV kayıt biçimi (v1 — tek doğruluk kaynağı `TraceRecorder.cpp`)
+
+```
+# stm32-ai-deployer watch trace v1
+# board=STM32H7 elf=<yol> model=<ad> started=<ISO8601>
+# targetHz=<int> items=<n>
+# item,<index>,<label>,<adresHex>,<tip>,<biçim>,<scale>,<offset>,<birim>,<rol>
+t,0,1,...
+<t>,<v0>,<v1>,...
+...
+# summary,actualHz=<...>,samples=<...>,durationS=<...>
+# event,<t>,<kind>,"<metin>",<severity>
+```
+
+Planın örneğinden kasıtlı bir sapma: `actualHz` ve olaylar oturum bitene
+kadar bilinemez, bu yüzden başlıkta tahmini bir sayı yerine veri
+satırlarından **sonra** bir özet/olay bloğu var — başlık her zaman doğru,
+veri bloğu hep bitişik.
+
+### 16.6 Kural motoru (Faz 8)
+
+`TimeSeriesRuleEngine` **saf** bir sınıftır (dosya/soket bağımlılığı yok) —
+`watch/watch_rules.json`'dan yüklenen `TsRule` listesini `TraceBuffer`
+penceresi üzerinde değerlendirir: `Threshold` (opsiyonel `sustainMs` süresince
+sürekli), `ZScore` (kayan pencere ortalama/std sapma), `Drift` (doğrusal
+regresyon, `R²` kapılı). Opsiyonel olay-korelasyon kapısı (`TsGate`) bir
+ihlali yalnızca yakın zamanda ilgili bir olay varsa raporlar. `svd/rules.json`
++ `RuleEngine` (anlık register durumu) ile **karıştırılmaz** — ayrı dosya,
+ayrı motor, ayrı soru.
+
+### 16.7 Dosya haritası
+
+| Katman | Dosyalar |
+|---|---|
+| Bağlantı | `src/modules/debug/*` (`GdbRspCodec`, `GdbServerProcess`, `DebugLinkWorker`, `DebugLink`) |
+| Sembol | `src/modules/watcher/{SymbolModel,NmSymbolParser,ElfSymbolSource,ElfTargetMatcher}.*` |
+| Örnekleme | `src/modules/watcher/{WatchModel,ValueCodec,WatchPlanBuilder,TraceBuffer,WatchSampler,VariableWatcher}.*` |
+| Zaman ekseni + grafik | `src/modules/watcher/TraceEventLog.*`, `src/quick/TracePlot.*` |
+| Kayıt/oynatma/profil | `src/modules/watcher/{TraceRecorder,TracePlayer,WatchProfile}.*` |
+| Kural motoru + preset | `src/modules/watcher/{TimeSeriesRuleModel.h,TimeSeriesRuleEngine,WatchPresetMatcher}.*` |
+| Veri dosyaları | `watch/{watch_rules.json,watch_presets.json,README.md,demo/h7_demo_trace.csv}` |
+| QML | `qml/screens/WatchScreen.qml`, `qml/components/watch/*`, `qml/dialogs/{SymbolPickerDialog,WatchItemDialog,ProfileCompareDialog}.qml` |
+| Testler | `tests/Test{TraceBuffer,TraceEventLog,TraceRecorderPlayer,WatchProfile,TimeSeriesRuleEngine,WatchPresetMatcher,WatchPlanBuilder}.*` |
+
+### 16.8 Bilinen sınır
+
+Stack watermark (RegionScan) için adres aralığı çözümü tam (`WatchPresetMatcher`)
+ve okuma planı doğru kuruluyor (`WatchPlanBuilder::buildRegionScans`), ama
+taranan baytları bir "N bayt boş" değerine çeviren decode adımı henüz
+`WatchSampler`'a bağlanmadı — ayrı, odaklı bir iş olarak ertelendi. Detay:
+`docs/variable_watcher_findings.md` Bölüm 17.3.
 
 ---
 
