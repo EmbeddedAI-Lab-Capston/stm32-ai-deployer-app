@@ -1,7 +1,10 @@
 #include "TestTraceBuffer.h"
 #include "modules/watcher/TraceBuffer.h"
 
+#include <QElapsedTimer>
 #include <QTest>
+
+#include <cmath>
 
 namespace {
 WatchSampleBatch makeBatch(int count, double tStart, double dt, double valueStart = 0.0)
@@ -64,4 +67,47 @@ void TestTraceBuffer::decimateOnEmptyBufferDoesNotCrash()
     QCOMPARE(cols.size(), 20);
     for (const PlotColumn &c : cols)
         QVERIFY(!c.hasData);
+}
+
+void TestTraceBuffer::valueAtFindsClosestSample()
+{
+    TraceBuffer buf;
+    buf.configure(1, 1000);
+    buf.append(makeBatch(1000, 0.0, 0.01));   // t = 0, 0.01, 0.02, ... value = t/0.01
+
+    // Exact hit
+    QCOMPARE(buf.valueAt(0, 5.0 * 0.01), 5.0);
+    // Closer to sample 5 (t=0.05) than sample 6 (t=0.06)
+    QCOMPARE(buf.valueAt(0, 0.054), 5.0);
+    // Closer to sample 6
+    QCOMPARE(buf.valueAt(0, 0.056), 6.0);
+    // Clamped to the nearest edge sample when querying outside the range
+    QCOMPARE(buf.valueAt(0, -10.0), 0.0);
+    QCOMPARE(buf.valueAt(0, 1000.0), 999.0);
+}
+
+void TestTraceBuffer::valueAtOnEmptyBufferReturnsNan()
+{
+    TraceBuffer buf;
+    buf.configure(1, 1000);
+    QVERIFY(std::isnan(buf.valueAt(0, 0.0)));
+
+    TraceBuffer unconfigured;
+    QVERIFY(std::isnan(unconfigured.valueAt(0, 0.0)));
+}
+
+void TestTraceBuffer::decimatePerfUnder20MsFor1eSamples800Columns()
+{
+    TraceBuffer buf;
+    const int n = 1000000;
+    buf.configure(1, n);
+    buf.append(makeBatch(n, 0.0, 0.000001));
+
+    QElapsedTimer timer;
+    timer.start();
+    const QVector<PlotColumn> cols = buf.decimate(0, buf.firstTime(), buf.lastTime(), 800);
+    const qint64 elapsedMs = timer.elapsed();
+
+    QCOMPARE(cols.size(), 800);
+    QVERIFY2(elapsedMs < 20, qPrintable(QString("decimate() took %1 ms, expected < 20 ms").arg(elapsedMs)));
 }

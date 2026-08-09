@@ -25,6 +25,18 @@ WatchValueType guessTypeFromSize(quint64 size, bool hasSize)
     default: return WatchValueType::U32;
     }
 }
+
+// Distinct accent hues from qml/Theme.qml, cycled by insertion order so each
+// new watch item gets a visually distinguishable plot colour by default
+// (plan Bolum 9.3's "line colour assigned from Theme").
+const QStringList &plotPalette()
+{
+    static const QStringList kPalette = {
+        QStringLiteral("#4F8BFF"), QStringLiteral("#3FD0C9"), QStringLiteral("#3FB950"),
+        QStringLiteral("#D8A23A"), QStringLiteral("#F0616D"), QStringLiteral("#A371F7"),
+    };
+    return kPalette;
+}
 }
 
 VariableWatcher::VariableWatcher(DebugLink *link, QObject *parent)
@@ -82,6 +94,7 @@ QString VariableWatcher::addSymbol(const QString &symbolName)
     item.kind    = WatchItemKind::Scalar;
     item.type    = guessTypeFromSize(found->size, found->hasSize);
     item.source  = QStringLiteral("elf:%1").arg(symbolName);
+    item.color   = plotPalette().at(m_items.size() % plotPalette().size());
 
     m_items.append(item);
     emit itemsChanged();
@@ -121,6 +134,7 @@ QString VariableWatcher::addAddress(quint64 addr, WatchValueType t, const QStrin
     item.kind    = WatchItemKind::Scalar;
     item.type    = t;
     item.source  = QStringLiteral("manual");
+    item.color   = plotPalette().at(m_items.size() % plotPalette().size());
 
     m_items.append(item);
     emit itemsChanged();
@@ -146,6 +160,7 @@ void VariableWatcher::updateItem(const QString &id, const QVariantMap &props)
         if (props.contains(QStringLiteral("unit")))     item.unit    = props.value(QStringLiteral("unit")).toString();
         if (props.contains(QStringLiteral("enabled")))  item.enabled = props.value(QStringLiteral("enabled")).toBool();
         if (props.contains(QStringLiteral("color")))    item.color   = props.value(QStringLiteral("color")).toString();
+        if (props.contains(QStringLiteral("laneIndex"))) item.laneIndex = props.value(QStringLiteral("laneIndex")).toInt();
 
         emit itemsChanged();
         return;
@@ -422,6 +437,7 @@ void VariableWatcher::saveItems(const QString &boardName)
         o[QStringLiteral("enabled")]     = it.enabled;
         o[QStringLiteral("source")]      = it.source;
         o[QStringLiteral("color")]       = it.color;
+        o[QStringLiteral("laneIndex")]   = it.laneIndex;
         arr.append(o);
     }
     AppSettings().setWatchItemsJson(boardName, QJsonDocument(arr).toJson(QJsonDocument::Compact));
@@ -449,6 +465,7 @@ void VariableWatcher::loadItems(const QString &boardName)
         it.enabled     = o.value(QStringLiteral("enabled")).toBool(true);
         it.source      = o.value(QStringLiteral("source")).toString();
         it.color       = o.value(QStringLiteral("color")).toString();
+        it.laneIndex   = o.value(QStringLiteral("laneIndex")).toInt(-1);
         m_items.append(it);
     }
     emit itemsChanged();

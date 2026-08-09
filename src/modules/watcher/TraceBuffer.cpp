@@ -2,6 +2,9 @@
 
 #include <QtGlobal>
 
+#include <cmath>
+#include <limits>
+
 namespace {
 constexpr qint64 kMemCeilingBytes = 64LL * 1024 * 1024;
 }
@@ -110,6 +113,35 @@ QVector<PlotColumn> TraceBuffer::decimate(int item, double t0, double t1, int co
     }
 
     return out;
+}
+
+double TraceBuffer::valueAt(int item, double t) const
+{
+    if (item < 0 || item >= m_series.size() || m_capacity <= 0 || m_totalCount == 0)
+        return std::numeric_limits<double>::quiet_NaN();
+
+    const quint64 oldest = (m_totalCount > quint64(m_capacity)) ? (m_totalCount - quint64(m_capacity)) : 0;
+    const quint64 available = m_totalCount - oldest;
+    if (available == 0)
+        return std::numeric_limits<double>::quiet_NaN();
+
+    // First ordinal whose time is >= t (lower_bound over the ordinal range,
+    // times are monotonic non-decreasing in insertion order).
+    quint64 lo = oldest, hi = oldest + available - 1;
+    while (lo < hi) {
+        const quint64 mid = lo + (hi - lo) / 2;
+        if (m_times.at(slotFor(mid)) < t) lo = mid + 1;
+        else hi = mid;
+    }
+
+    quint64 best = lo;
+    if (lo > oldest) {
+        const double tPrev = m_times.at(slotFor(lo - 1));
+        const double tCur  = m_times.at(slotFor(lo));
+        if (std::abs(tPrev - t) <= std::abs(tCur - t))
+            best = lo - 1;
+    }
+    return m_series.at(item).at(slotFor(best));
 }
 
 const WatchStats &TraceBuffer::stats(int item) const

@@ -3,10 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import STM32AiDeployer
 
-// Değişken İzleyici (Variable Watcher) screen — this phase (Faz 4): table
-// only, no plot yet (that's Faz 6). Layout per plan
-// docs/variable_watcher_plan.md Bolum 7.7: toolbar top, table fills the
-// middle, link/rate status strip at the bottom.
+// Değişken İzleyici (Variable Watcher) screen. Layout per plan
+// docs/variable_watcher_plan.md Bolum 7.7/9.1: toolbar top, a resizable
+// split of the live plot (Faz 6) over the item table in the middle,
+// link/rate status strip at the bottom.
 Item {
     id: root
 
@@ -34,10 +34,23 @@ Item {
             onAddAddressRequested: addressDialog.open()
         }
 
-        WatchItemTable {
-            id: tbl
+        SplitView {
+            id: splitView
             Layout.fillWidth: true
             Layout.fillHeight: true
+            orientation: Qt.Vertical
+
+            TracePlotView {
+                id: plotView
+                SplitView.preferredHeight: 320
+                SplitView.minimumHeight: 140
+            }
+
+            WatchItemTable {
+                id: tbl
+                SplitView.fillHeight: true
+                SplitView.minimumHeight: 120
+            }
         }
 
         WatchLinkStatus {

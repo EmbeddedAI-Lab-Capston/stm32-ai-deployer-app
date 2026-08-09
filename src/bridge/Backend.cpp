@@ -1,6 +1,7 @@
 ﻿#include "Backend.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 #include <QSet>
@@ -2812,6 +2813,8 @@ void Backend::wireSerial()
                         m_state->setActiveBoard(board);
                     }
                 }
+                m_eventLog.addEvent(QStringLiteral("boot"),
+                                     tr("Boot: %1 / %2").arg(boot.card, boot.model), QStringLiteral("info"));
             });
 
     connect(m_serial, &SerialManager::inferenceReceived, this,
@@ -2833,6 +2836,12 @@ void Backend::wireSerial()
                         d.model.isEmpty() ? m_state->lastModelName() : d.model,
                         d.inf_us / 1000.0, static_cast<quint8>(d.acc_pct),
                         d.ram_b / 1024.0, d.label);
+                // Not rate-limited like the monitor log line above — Faz 6's
+                // event/trace correlation (plan Bolum 9.6 point 3) needs
+                // every inference arrival, not a throttled sample of them.
+                m_eventLog.addEvent(QStringLiteral("inference"),
+                                     tr("%1  %2 ms  label=%3").arg(d.model, QString::number(d.inf_us / 1000.0, 'f', 1), d.label),
+                                     QStringLiteral("info"));
             });
 
     connect(m_serial, &SerialManager::sensorReceived, this,
@@ -2871,11 +2880,15 @@ void Backend::wireSerial()
                                       .arg(s.state.isEmpty() ? "--" : s.state), "info");
                 if (m_state)
                     m_state->setSystemMetrics(static_cast<int>(s.uptime_s), s.temp_c, s.free_ram_b / 1024.0);
+                m_eventLog.addEvent(QStringLiteral("sys"),
+                                     tr("uptime=%1s state=%2").arg(s.uptime_s).arg(s.state), QStringLiteral("info"));
             });
 
     connect(m_serial, &SerialManager::errorReceived, this,
             [this](const ErrorData &e) {
                 appendMonitorLine(QString("[err %1] %2").arg(e.code).arg(e.msg), "err");
+                m_eventLog.addEvent(QStringLiteral("uartError"),
+                                     tr("[%1] %2").arg(e.code).arg(e.msg), QStringLiteral("error"));
             });
 }
 
@@ -2961,6 +2974,12 @@ void Backend::wireRegisters()
         emit registerModelChanged();
         emit registerChanged();
         emit registerSnapshotReady(slot);
+        const QString slotLabel = (slot == 0) ? QStringLiteral("A")
+                                 : (slot == 1) ? QStringLiteral("B")
+                                 : QString::number(slot);
+        m_eventLog.addEvent(QStringLiteral("snapshot"),
+                             tr("Snapshot %1 alindi").arg(slotLabel),
+                             QStringLiteral("info"));
     });
     connect(m_registers, &RegisterInspector::errorOccurred, this, [this](const QString &m) {
         emit statusMessage(m);
@@ -3410,6 +3429,17 @@ void Backend::wireWatcher()
     if (m_debugLink) {
         connect(m_debugLink, &DebugLink::stateChanged, this, &Backend::watchLinkChanged);
         connect(m_debugLink, &DebugLink::opened,       this, &Backend::watchLinkChanged);
+        // Faz 6: event times share one clock with sample times, both
+        // starting fresh at link-open (plan Bolum 9.5).
+        connect(m_debugLink, &DebugLink::opened, this, [this]() {
+            m_eventLog.reset();
+            m_plotYRange.clear();
+        });
+        connect(m_debugLink, &DebugLink::coreReset, this, [this]() {
+            m_eventLog.addEvent(QStringLiteral("targetReset"),
+                                 tr("Hedef reset edildi - bu noktadan sonraki degerler sureksizdir."),
+                                 QStringLiteral("warning"));
+        });
         connect(m_debugLink, &DebugLink::closed, this, [this]() {
             if (m_stlinkOwner == QStringLiteral("watch"))
                 releaseStLink(QStringLiteral("watch"));
@@ -3662,4 +3692,163 @@ void Backend::clearWatchData()
 void Backend::acknowledgeElfMismatch()
 {
     if (m_watcher) m_watcher->acknowledgeElfMismatch();
+}
+
+// ── Variable Watcher - Faz 6 (grafik + zaman ekseni) ────────────────────────
+
+QVariantList Backend::watchPlotFrame(int columns, double windowSec)
+{
+    QVariantList out;
+    if (!m_watcher) return out;
+
+    columns = qBound(1, columns, 800);
+    if (windowSec <= 0.0) windowSec = 1.0;
+
+    const double t1 = m_eventLog.now();
+    const double t0 = qMax(0.0, t1 - windowSec);
+
+    // dt since the previous call, for the Y-range shrink smoothing below.
+    double dt = 0.1;
+    if (m_plotFrameClock.isValid())
+        dt = qBound(0.001, m_plotFrameClock.restart() / 1000.0, 1.0);
+    else
+        m_plotFrameClock.start();
+
+    const QList<WatchItem> &items = m_watcher->items();
+    const TraceBuffer &buf = m_watcher->buffer();
+
+    // Resolve lane indices: an explicit item.laneIndex >= 0 wins (lets the
+    // user superimpose two items by giving them the same lane); otherwise
+    // each enabled item gets its own lane, in list order.
+    QVector<int> resolvedLane(items.size(), -1);
+    int autoLane = 0;
+    for (int i = 0; i < items.size(); ++i) {
+        if (!items.at(i).enabled) continue;
+        int lane = items.at(i).laneIndex;
+        if (lane < 0) lane = autoLane++;
+        else autoLane = qMax(autoLane, lane + 1);
+        resolvedLane[i] = lane;
+    }
+
+    for (int i = 0; i < items.size(); ++i) {
+        if (resolvedLane.at(i) < 0) continue;
+        const WatchItem &it = items.at(i);
+        const QVector<PlotColumn> cols = buf.decimate(i, t0, t1, columns);
+
+        double frameMin = std::numeric_limits<double>::infinity();
+        double frameMax = -std::numeric_limits<double>::infinity();
+        QVariantList points;
+        points.reserve(columns * 3);
+        for (const PlotColumn &c : cols) {
+            points << c.t;
+            if (c.hasData) {
+                points << c.vmin << c.vmax;
+                frameMin = qMin(frameMin, c.vmin);
+                frameMax = qMax(frameMax, c.vmax);
+            } else {
+                points << std::numeric_limits<double>::quiet_NaN()
+                       << std::numeric_limits<double>::quiet_NaN();
+            }
+        }
+
+        // Y auto-scale: grows instantly (never clips live data), shrinks
+        // with a ~1s exponential time constant so the plot doesn't jump
+        // around (plan Bolum 9.3).
+        if (!std::isinf(frameMin)) {
+            auto rangeIt = m_plotYRange.find(it.id);
+            if (rangeIt == m_plotYRange.end()) {
+                m_plotYRange.insert(it.id, qMakePair(frameMin, frameMax));
+            } else {
+                double &smoothMin = rangeIt->first;
+                double &smoothMax = rangeIt->second;
+                if (frameMin < smoothMin) smoothMin = frameMin;
+                if (frameMax > smoothMax) smoothMax = frameMax;
+                const double alpha = 1.0 - std::exp(-dt / 1.0);
+                if (frameMin > smoothMin) smoothMin += (frameMin - smoothMin) * alpha;
+                if (frameMax < smoothMax) smoothMax += (frameMax - smoothMax) * alpha;
+            }
+        }
+        const QPair<double, double> range = m_plotYRange.value(it.id, qMakePair(0.0, 1.0));
+        double yMin = range.first, yMax = range.second;
+        if (yMax <= yMin) yMax = yMin + 1.0;   // avoid a degenerate/zero-height lane
+
+        QVariantMap series;
+        series[QStringLiteral("id")]        = it.id;
+        series[QStringLiteral("label")]     = it.label;
+        series[QStringLiteral("color")]     = it.color;
+        series[QStringLiteral("unit")]      = it.unit;
+        series[QStringLiteral("points")]    = points;
+        series[QStringLiteral("yMin")]      = yMin;
+        series[QStringLiteral("yMax")]      = yMax;
+        series[QStringLiteral("laneIndex")] = resolvedLane.at(i);
+        out.append(series);
+    }
+    return out;
+}
+
+QVariantList Backend::watchEvents(double fromT, double toT) const
+{
+    QVariantList out;
+    const QVector<TraceEvent> evs = m_eventLog.eventsBetween(fromT, toT);
+    for (const TraceEvent &e : evs) {
+        QVariantMap m;
+        m[QStringLiteral("t")]        = e.t;
+        m[QStringLiteral("kind")]     = e.kind;
+        m[QStringLiteral("text")]     = e.text;
+        m[QStringLiteral("severity")] = e.severity;
+        out.append(m);
+    }
+    return out;
+}
+
+QVariantMap Backend::watchItemStats(const QString &id) const
+{
+    QVariantMap out;
+    if (!m_watcher) return out;
+
+    const QList<WatchItem> &items = m_watcher->items();
+    for (int i = 0; i < items.size(); ++i) {
+        if (items.at(i).id != id) continue;
+        const WatchItem &it = items.at(i);
+        const WatchStats &st = m_watcher->buffer().stats(i);
+        const bool hasValue = st.count > 0;
+
+        out[QStringLiteral("count")]  = qulonglong(st.count);
+        out[QStringLiteral("min")]    = st.min;
+        out[QStringLiteral("max")]    = st.max;
+        out[QStringLiteral("mean")]   = st.mean;
+        out[QStringLiteral("stddev")] = st.stddev();
+        out[QStringLiteral("last")]   = st.last;
+        out[QStringLiteral("minFormatted")]  = hasValue ? ValueCodec::format(st.min, it)  : QStringLiteral("—");
+        out[QStringLiteral("maxFormatted")]  = hasValue ? ValueCodec::format(st.max, it)  : QStringLiteral("—");
+        out[QStringLiteral("meanFormatted")] = hasValue ? ValueCodec::format(st.mean, it) : QStringLiteral("—");
+        out[QStringLiteral("lastFormatted")] = hasValue ? ValueCodec::format(st.last, it) : QStringLiteral("—");
+        break;
+    }
+    return out;
+}
+
+QVariantMap Backend::watchValuesAt(double t) const
+{
+    QVariantMap out;
+    if (!m_watcher) return out;
+
+    const QList<WatchItem> &items = m_watcher->items();
+    const TraceBuffer &buf = m_watcher->buffer();
+    for (int i = 0; i < items.size(); ++i) {
+        const WatchItem &it = items.at(i);
+        const double v = buf.valueAt(i, t);
+        const bool hasValue = !std::isnan(v);
+
+        QVariantMap m;
+        m[QStringLiteral("value")]     = hasValue ? QVariant(v) : QVariant();
+        m[QStringLiteral("formatted")] = hasValue ? ValueCodec::format(v, it) : QStringLiteral("—");
+        out[it.id] = m;
+    }
+    return out;
+}
+
+double Backend::watchSessionNow() const
+{
+    return m_eventLog.now();
 }

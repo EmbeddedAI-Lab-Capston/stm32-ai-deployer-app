@@ -20,6 +20,8 @@ find_package(Qt6 REQUIRED COMPONENTS
     QuickWidgets
     Concurrent
     Network
+    Qml
+    QmlIntegration
     Test
 )
 
@@ -138,6 +140,11 @@ set(PROJECT_SOURCES
     src/modules/watcher/WatchSampler.cpp
     src/modules/watcher/VariableWatcher.h
     src/modules/watcher/VariableWatcher.cpp
+    src/modules/watcher/TraceEventLog.h
+    src/modules/watcher/TraceEventLog.cpp
+
+    src/quick/TracePlot.h
+    src/quick/TracePlot.cpp
 
     src/modules/simulation/FactorySimulator.h
     src/modules/simulation/FactorySimulator.cpp
@@ -223,6 +230,8 @@ qt_add_qml_module(STM32AiDeployer
         qml/components/watch/WatchItemTable.qml
         qml/components/watch/WatchLinkStatus.qml
         qml/components/watch/WatchToolbar.qml
+        qml/components/watch/TracePlotView.qml
+        qml/components/watch/WatchEventLane.qml
         qml/factory/FactorySimWindow.qml
         qml/factory/FactoryDashboard.qml
         qml/factory/FactoryMap.qml
@@ -246,10 +255,13 @@ target_link_libraries(STM32AiDeployer PRIVATE
     Qt6::QuickWidgets
     Qt6::Concurrent
     Qt6::Network
+    Qt6::Qml
+    Qt6::QmlIntegration
 )
 
 target_include_directories(STM32AiDeployer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/quick
 )
 
 set_target_properties(STM32AiDeployer PROPERTIES

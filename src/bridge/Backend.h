@@ -8,7 +8,10 @@
 #include <QVariantMap>
 #include <QHash>
 #include <QDateTime>
+#include <QElapsedTimer>
+#include <QMap>
 #include "modules/flash/PipelineConfig.h"
+#include "modules/watcher/TraceEventLog.h"
 
 class AppState;
 class SerialManager;
@@ -290,6 +293,24 @@ public:
     // cagrilmadan ornekleme baslamaz.
     Q_INVOKABLE void acknowledgeElfMismatch();
 
+    // ── Variable Watcher - Faz 6 (grafik + zaman ekseni) ─────────────────
+    // Frame for TracePlot: [{ id, label, color, unit, points, yMin, yMax,
+    // laneIndex }], one entry per ENABLED item, decimated over
+    // [now-windowSec, now]. Y auto-scale grows instantly (never clips live
+    // data) but shrinks with ~1s smoothing (plan Bolum 9.3 — "grafik
+    // ziplamaz"). columns is clamped to [1,800] (plan Bolum 9.4 payload cap).
+    Q_INVOKABLE QVariantList watchPlotFrame(int columns, double windowSec);
+    // Events in [fromT, toT] of the shared session clock (TraceEventLog).
+    Q_INVOKABLE QVariantList watchEvents(double fromT, double toT) const;
+    // Full WatchStats for one item, formatted with ValueCodec (same as the
+    // table columns) plus raw numeric fields for programmatic use.
+    Q_INVOKABLE QVariantMap  watchItemStats(const QString &id) const;
+    // Cursor read: nearest-sample value per item at time t (session clock).
+    Q_INVOKABLE QVariantMap  watchValuesAt(double t) const;
+    // Seconds elapsed on the shared session clock "now" (TraceEventLog) -
+    // the upper bound TracePlotView should use for a live-scrolling window.
+    Q_INVOKABLE double       watchSessionNow() const;
+
 signals:
     void toolPathsChanged();
     void scanningChanged();
@@ -363,6 +384,11 @@ private:
     RegisterAdvisor   *m_advisor = nullptr;
     DebugLink         *m_debugLink = nullptr;
     VariableWatcher   *m_watcher = nullptr;
+    TraceEventLog      m_eventLog;   // Faz 6 shared timeline; reset() on watch link open
+    // Per-item smoothed plot Y-range (Bolum 9.3 "kucculme 1s yumusatmayla").
+    // Keyed by WatchItem::id; grows instantly, shrinks exponentially.
+    QMap<QString, QPair<double, double>> m_plotYRange;
+    QElapsedTimer      m_plotFrameClock;   // dt between watchPlotFrame() calls, for the shrink smoothing
     QString            m_stlinkOwner;   // "" | "watch" (flash/pipeline/probe/register keep their own flags)
     int                m_registerViewSlot = 0;   // which slot registerModel shows
 

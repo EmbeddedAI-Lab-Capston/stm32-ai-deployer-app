@@ -42,6 +42,11 @@ public:
     QVector<PlotColumn> decimate(int item, double t0, double t1, int columns) const;
     const WatchStats &stats(int item) const;
 
+    // Cursor read (plan Bolum 9.4 watchValuesAt): value of the sample whose
+    // timestamp is closest to t. NaN if the item/buffer is empty or out of
+    // range. Binary search over insertion order — times are monotonic.
+    double valueAt(int item, double t) const;
+
 private:
     int slotFor(quint64 ordinal) const { return int(ordinal % quint64(m_capacity)); }
 

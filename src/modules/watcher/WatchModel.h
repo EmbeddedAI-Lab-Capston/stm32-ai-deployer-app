@@ -30,6 +30,7 @@ struct WatchItem
     bool           enabled = true;
     QString        source;        // "elf:<symbol>" | "manual"
     QString        color;         // line colour assigned from Theme
+    int            laneIndex = -1; // Faz 6 plot lane; -1 = auto (own lane, in list order)
 };
 
 // Independent of the ring buffer, accumulated online (Welford) — session

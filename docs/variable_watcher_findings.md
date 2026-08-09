@@ -544,3 +544,104 @@ flaşladığında doğal olarak doğrulanabilir.
 
 **Faz 5 tamamlandı** (firmware kodu yazıldı, gerçek çapraz-derleyiciyle
 doğrulandı; canlı reflaş gerektiren adımlar gerekçeli olarak ertelendi).
+
+---
+
+## 15. Faz 6 — Grafik + zaman ekseni + olay korelasyonu
+
+### 15.0 Değişiklikler
+
+- `src/quick/TracePlot.h/.cpp` (yeni): `QQuickPaintedItem` — piksel-sütunu
+  başına min/max zarfı çizen ~200 satırlık çizim motoru (Qt Charts değil,
+  plan Bölüm 9.2'nin gerekçesiyle). Şeritli (lane) yerleşim, her şerit
+  bağımsız Y ölçeği, NaN'lı sütunlarda çizgide gerçek bir boşluk (enterpole
+  edilmiş sahte veri değil), olay çizgileri (targetReset kalın turuncu düz,
+  diğerleri kesikli), imleç çizgisi.
+- `src/modules/watcher/TraceEventLog.h/.cpp` (yeni, saf sınıf): ortak zaman
+  ekseninde olay tutan halka — `reset()` ile izleme linki açıldığında
+  örnek zamanlarıyla AYNI orijine sıfırlanır.
+- `TraceBuffer::valueAt(item, t)` (yeni): imleç okuması için en yakın
+  örneği ikili aramayla bulur.
+- `WatchItem`'a `laneIndex` alanı eklendi (varsayılan -1 = otomatik/kendi
+  şeridi); `VariableWatcher::addSymbol/addAddress` artık her yeni kaleme
+  `qml/Theme.qml`'deki 6 belirgin vurgu renginden birini sırayla atıyor.
+- `Backend`: `watchPlotFrame(columns, windowSec)`, `watchEvents(t0,t1)`,
+  `watchItemStats(id)`, `watchValuesAt(t)`, `watchSessionNow()` eklendi.
+  Y ekseni otomatik ölçekleme: büyüme anında (canlı veri asla kırpılmaz),
+  küçülme ~1 sn üstel yumuşatmayla (plan Bölüm 9.3). Olay kaynakları
+  bağlandı: `inferenceReceived`/`sysReceived`/`bootReceived`/`errorReceived`
+  (SerialManager), `registerSnapshotReady` (Backend'in kendi sinyali),
+  `DebugLink::coreReset` → `kind="targetReset"`. `DebugLink::opened`
+  olayında `TraceEventLog::reset()` çağrılıyor (örnek/olay zamanları aynı
+  orijinden başlasın diye).
+- `qml/components/watch/TracePlotView.qml` (yeni): eksen+lejant+imleç+zoom
+  sarmalayıcı, 25 Hz `Timer` ile `backend.watchPlotFrame/watchEvents` çeker;
+  fare tekerleği pencere boyutunu (zoom) değiştirir.
+- `qml/components/watch/WatchEventLane.qml` (yeni): kompakt, tıklanabilir
+  olay şeridi — bir olaya tıklamak imleci o ana sabitler.
+- `WatchScreen.qml`: tablo artık dikey `SplitView` içinde grafikle birlikte
+  (grafik üstte, tablo altta, kullanıcı oranı ayarlayabilir).
+
+### 15.1 Derleme sırasında bulunan ve düzeltilen gerçek yapılandırma sorunu
+
+`QML_ELEMENT` ile işaretli `TracePlot`, projenin **ilk** `QML_ELEMENT`
+kullanımıydı ve iki gerçek eksik ortaya çıkardı (ikisi de derleme hatasıyla
+yakalandı, çalışma zamanına sızmadı):
+1. `qqmlintegration.h` başlığı `QtQmlIntegration` modülünde — `QtQml`'de
+   değil; `CMakeLists.txt`'e `Qml` ve `QmlIntegration` bileşenleri eklendi.
+2. Qt'nin ürettiği `stm32aideployer_qmltyperegistrations.cpp` dosyası
+   `#if __has_include(<TracePlot.h>)` ile **çıplak dosya adını** arıyor —
+   `src/quick/` alt dizini `target_include_directories`'e ayrı ayrı
+   eklenmeden bu koşul sessizce false oluyor ve `TracePlot` hiç
+   kaydolmuyordu (sonraki derleme hatası: "'TracePlot' was not declared").
+
+### 15.2 Test yöntemi — yine ekran otomasyonu olmadan
+
+**Donanımsız (gerçek testler, `ctest` içinde, kalıcı):**
+- `TraceBuffer::valueAt` — tam eşleşme, en-yakın-komşu (her iki yönde),
+  aralık-dışı sorgular en kenar örneğe kenetleniyor, boş buffer NaN
+  döndürüyor.
+- `TraceBuffer::decimate` performans testi: **1.000.000 örnek / 800 sütun
+  için ölçülen süre 20 ms kriterinin altında** (`QElapsedTimer` ile,
+  plan Bölüm 9.6 birebir).
+- `TraceEventLog`: olaylar varış sırasına göre zaman-sıralı, `eventsBetween`
+  aralığa göre doğru filtreliyor, `reset()` hem listeyi temizliyor hem
+  saati sıfırlıyor, boş log boş aralık döndürüyor.
+
+**`TracePlot::paint()` — gerçek çalıştırılmış bağımsız duman testi** (ana
+test paketine eklenmedi çünkü `Qt6::Quick`/`Gui` gerektiriyor, projenin
+"saf sınıf" testlerinin aksine gerçek bir `QQuickPaintedItem`; bu yüzden
+Faz 1-3'teki "probe" desenine benzer, ayrı bir CMake projesiyle derlenip
+`-platform offscreen` (ekran gerektirmez) ile fiilen çalıştırıldı, sadece
+derlenmedi): boş çerçeve, `laneCount=0`, `laneCount=3` boş veriyle,
+NaN-boşluklu gerçek çerçeve + olaylar + imleç, ve dejenere pencere
+(`windowEnd<=windowStart`) — **5/5 PASS, çökme yok**.
+
+**QML entegrasyon kontrolü:** Uygulama gerçek H7 donanımı bağlıyken
+başlatıldı; `qInstallMessageHandler` ile yakalanan `app_trace.log`
+`WatchScreen`/`TracePlotView`/`WatchEventLane`/`TracePlot` için **hiçbir
+hata veya uyarı içermiyor** (StackLayout tüm sekmeleri başlangıçta
+oluşturduğundan, İzleyici sekmesine tıklanmasa bile QML ağacı zaten
+kurulmuş oluyor — bağlama/referans hataları bu noktada yakalanırdı).
+
+**Ertelenen (canlı, kullanıcı elle test etmek isterse):** gerçek 3000 Hz/
+60 sn akıcılık, `uwTick` eğim doğrulaması, UART inference olaylarının
+grafikte hizalanması, imleç okuma doğruluğu — bunlar ekran etkileşimi
+gerektiriyor ve bu oturumda (kullanıcının "ekran görüntüsü at" isteğini
+geri çekip verimli test istemesi üzerine) koşulmadı.
+
+### 15.3 Faz 6 kabul kriterleri özeti
+
+| Kriter | Sonuç |
+|---|---|
+| `decimate()` 1e6/800 sütun < 20 ms | ✅ gerçek ölçüm |
+| `TracePlot::paint` boş `frame`/`laneCount=0` ile çökmez | ✅ gerçek çalıştırma, 5/5 PASS |
+| Backend API (`watchPlotFrame`/`watchEvents`/`watchItemStats`/`watchValuesAt`) | ✅ |
+| Olay kaynakları bağlı (inference/sys/boot/err/snapshot/targetReset) | ✅ |
+| Ortak zaman ekseni (event log, link açılışında senkron sıfırlanıyor) | ✅ |
+| QML ağacı hatasız kuruluyor (gerçek H7 bağlantısıyla) | ✅ |
+| Canlı 3000 Hz/60 sn + uwTick eğim + imleç doğrulama | ⏸️ ertelendi (kullanıcı isterse elle) |
+
+**Faz 6 tamamlandı** (bir gerçek CMake/QML_ELEMENT yapılandırma sorunu
+bulunup düzeltildi; tüm donanımsız kriterler gerçek testlerle/gerçek
+çalıştırmalarla doğrulandı, ekran otomasyonu kullanılmadı).

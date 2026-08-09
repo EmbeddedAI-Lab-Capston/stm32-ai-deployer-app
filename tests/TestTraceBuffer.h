@@ -11,4 +11,7 @@ private slots:
     void overflowCapsRingButStatsKeepGrowing();
     void decimateOutsideDataRangeHasNoDataNoCrash();
     void decimateOnEmptyBufferDoesNotCrash();
+    void valueAtFindsClosestSample();
+    void valueAtOnEmptyBufferReturnsNan();
+    void decimatePerfUnder20MsFor1eSamples800Columns();
 };
