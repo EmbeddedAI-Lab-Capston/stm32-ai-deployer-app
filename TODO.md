@@ -58,6 +58,15 @@ Ayrıca ~14 regresyon testi eklendi, mutasyon testiyle doğrulandı, 60 sn/
 **Sonuç: özellik teslim edilebilir durumda.** Aşağıdakiler bloklayıcı değil,
 ama jüri/demo öncesi yapılması önerilir.
 
+**2026-09-07 — Doğrulama ekosistemi kuruldu (Faz 1-3 tamamlandı).** UI'ı elle
+tıklayıp ekran görüntüsü almak yerine artık `--debug-bridge` ile açılan bir
+named-pipe kanalı (`DebugBridge`) ve `tools/uiprobe.ps1` sürücüsü var —
+`dump`/`props`/`navigate`/`click` ile ekran durumu metin olarak sorgulanabiliyor,
+`shot` ile tek komutla ekran görüntüsü alınabiliyor. Watch ekranı ve sekme
+çubuğu `objectName` ile isimlendirildi. Kullanım ve tasarım:
+[`docs/verification_ecosystem_plan.md`](docs/verification_ecosystem_plan.md).
+Faz 4 (QML birim testleri) opsiyonel/düşük öncelik olarak bekliyor.
+
 ---
 
 ## Kalan işler (öncelik sıralı)

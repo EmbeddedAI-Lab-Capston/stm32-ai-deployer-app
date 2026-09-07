@@ -91,7 +91,8 @@ stm32-ai-deployer-app/
 │   │   ├── AppSettings.h / .cpp     ← QSettings wrapper
 │   │   ├── AppState.h / .cpp        ← Merkezi çalışma zamanı durumu
 │   │   ├── ToolDetector.h / .cpp    ← GCC/Make/CLI otomatik tespit
-│   │   └── TemplateEngine.h / .cpp  ← {{PLACEHOLDER}} template sistemi
+│   │   ├── TemplateEngine.h / .cpp  ← {{PLACEHOLDER}} template sistemi
+│   │   └── DebugBridge.h / .cpp     ← Dev-only UI doğrulama kanalı (named pipe, --debug-bridge)
 │   │
 │   └── modules/
 │       ├── board/
@@ -180,6 +181,9 @@ stm32-ai-deployer-app/
 │   ├── CMakeLists.txt · main.cpp
 │   └── Test*.h / .cpp                ← bkz. docs/variable_watcher_plan.md Bölüm 13
 │
+├── tools/
+│   └── uiprobe.ps1                  ← DebugBridge PowerShell sürücüsü (bkz. aşağıda)
+│
 └── docs/
     ├── PROJECT.md                   ← Tüm mimari, uçtan uca (ana referans)
     ├── protocol_v1.md               ← UART protokol referansı
@@ -187,7 +191,8 @@ stm32-ai-deployer-app/
     ├── factory_simulation_plan.md   ← Fabrika Sim. orijinal tasarım planı (tarihi)
     ├── lstm_stm32_export.md         ← LSTM → X-CUBE-AI uyumlu TFLite export rehberi
     ├── register_inspector_plan.md / _findings.md ← Register Inspector tasarım + doğrulama
-    └── variable_watcher_plan.md / _findings.md   ← Değişken İzleyici tasarım + doğrulama
+    ├── variable_watcher_plan.md / _findings.md   ← Değişken İzleyici tasarım + doğrulama
+    └── verification_ecosystem_plan.md            ← DebugBridge/uiprobe UI doğrulama ekosistemi
 ```
 
 ---
@@ -654,6 +659,22 @@ cmake --build build --target clean
 
 **Tuzak:** `STM32AiDeployer.exe` çalışıyorsa link adımı "Permission denied"
 verir — önce Görev Yöneticisi'nden kapatın.
+
+### Doğrulama / UI kontrolü
+
+UI'ı elle tıklayıp ekran görüntüsü almak yerine, uygulamayı `--debug-bridge`
+ile açıp `tools/uiprobe.ps1` ile metin tabanlı sorgulayın (ucuz ve
+tekrarlanabilir; ekran görüntüsü yalnızca gerçekten görsel bir şey
+doğrulanacaksa kullanılır). Tasarım ve komut referansı:
+[`docs/verification_ecosystem_plan.md`](docs/verification_ecosystem_plan.md).
+
+```powershell
+Start-Process .\build\STM32AiDeployer.exe -ArgumentList "--debug-bridge","--no-splash"
+.\tools\uiprobe.ps1 navigate -Tab 7      # sekmeye geç (indeksler plan dosyasında)
+.\tools\uiprobe.ps1 dump -Filter "watch." # ekrandaki isimlendirilmiş öğeleri metin olarak listele
+.\tools\uiprobe.ps1 shot -Path C:\temp\x.png  # yalnızca görsel doğrulama gerektiğinde
+.\tools\uiprobe.ps1 quit
+```
 
 ---
 
