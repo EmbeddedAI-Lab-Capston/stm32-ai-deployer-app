@@ -53,18 +53,21 @@ Item {
 
             TracePlotView {
                 id: plotView
+                objectName: "watch.plot"
                 SplitView.preferredHeight: 320
                 SplitView.minimumHeight: 140
             }
 
             WatchItemTable {
                 id: tbl
+                objectName: "watch.itemTable"
                 SplitView.fillHeight: true
                 SplitView.minimumHeight: 120
             }
 
             WatchRuleFeed {
                 id: ruleFeed
+                objectName: "watch.ruleFeed"
                 SplitView.preferredHeight: 120
                 SplitView.minimumHeight: 80
             }

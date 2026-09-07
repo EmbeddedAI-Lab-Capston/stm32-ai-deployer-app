@@ -21,6 +21,7 @@ RowLayout {
     function rateLabel(hz) { return hz === 0 ? "Maks" : (hz + " Hz") }
 
     AppButton {
+        objectName: "watch.connectButton"
         text: (root._hasBackend && backend.watchLinkOpen) ? "Bağlantıyı Kapat" : "Bağlan"
         variant: (root._hasBackend && backend.watchLinkOpen) ? "secondary" : "primary"
         enabled: root._hasBackend
@@ -42,6 +43,7 @@ RowLayout {
         Layout.preferredWidth: 260
     }
     AppButton {
+        objectName: "watch.loadElfButton"
         text: "ELF Yükle…"
         variant: "secondary"
         enabled: root._hasBackend
@@ -56,12 +58,14 @@ RowLayout {
     Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: Theme.border }
 
     AppButton {
+        objectName: "watch.addSymbolButton"
         text: "Sembol Ekle"
         variant: "secondary"
         enabled: root._hasBackend
         onClicked: root.addSymbolRequested()
     }
     AppButton {
+        objectName: "watch.addAddressButton"
         text: "Adres Ekle"
         variant: "secondary"
         enabled: root._hasBackend
@@ -80,6 +84,7 @@ RowLayout {
     }
 
     AppButton {
+        objectName: "watch.startButton"
         text: (root._hasBackend && backend.watchRunning) ? "Durdur" : "Başlat"
         variant: (root._hasBackend && backend.watchRunning) ? "danger" : "primary"
         enabled: root._hasBackend && backend.watchLinkOpen
@@ -89,6 +94,7 @@ RowLayout {
         }
     }
     AppButton {
+        objectName: "watch.clearDataButton"
         text: "Veriyi Temizle"
         variant: "ghost"
         enabled: root._hasBackend

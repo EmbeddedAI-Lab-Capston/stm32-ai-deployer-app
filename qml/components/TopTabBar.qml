@@ -32,6 +32,7 @@ Rectangle {
         Repeater {
             model: root.tabs
             delegate: Item {
+                objectName: "tabbar.tab" + index
                 Layout.preferredHeight: root.height
                 Layout.preferredWidth: tabLabel.implicitWidth + Theme.spacingLg
 
