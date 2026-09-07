@@ -18,6 +18,13 @@ ApplicationWindow {
 
     readonly property int edge: 6   // resize border thickness
 
+    // Programmatic tab switch for the dev-only DebugBridge (C++ calls this by
+    // name). Mirrors exactly what TopTabBar.onSelected does.
+    function debugNavigate(index) {
+        tabBar.currentIndex = index
+        stack.currentIndex = index
+    }
+
     // ── Root frame (border so frameless window has an edge) ────────────────
     Rectangle {
         anchors.fill: parent

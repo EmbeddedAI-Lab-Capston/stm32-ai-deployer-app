@@ -47,6 +47,9 @@ set(PROJECT_SOURCES
     src/core/TemplateEngine.h
     src/core/TemplateEngine.cpp
 
+    src/core/DebugBridge.h
+    src/core/DebugBridge.cpp
+
     src/modules/board/BoardPresets.h
 
     src/modules/board/BoardManager.h

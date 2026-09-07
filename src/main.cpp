@@ -23,6 +23,7 @@
 #include "modules/debug/DebugLink.h"
 #include "modules/watcher/VariableWatcher.h"
 #include "bridge/Backend.h"
+#include "core/DebugBridge.h"
 #include "ui/SplashScreen.h"
 
 // Persistent trace log next to the executable: every qDebug()/qWarning()/QML
@@ -60,6 +61,19 @@ int main(int argc, char *argv[])
     app.setOrganizationName("Marmara University");
     app.setOrganizationDomain("marmara.edu.tr");
     app.setWindowIcon(QIcon(":/app_icon.png"));
+
+    // Dev-only switches. Both default to off, so a normal run is unchanged.
+    //   --no-splash          : show the main window immediately (automation)
+    //   --debug-bridge[=name]: open the DebugBridge named pipe
+    const QStringList args = QCoreApplication::arguments();
+    const bool noSplash = args.contains(QStringLiteral("--no-splash"));
+    QString debugPipe;
+    for (const QString &arg : args) {
+        if (arg == QLatin1String("--debug-bridge"))
+            debugPipe = QStringLiteral("stm32aid-debug");
+        else if (arg.startsWith(QLatin1String("--debug-bridge=")))
+            debugPipe = arg.section(QLatin1Char('='), 1);
+    }
 
     // QtQuick.Controls customisation requires a non-native style.
     QQuickStyle::setStyle("Basic");
@@ -168,21 +182,40 @@ int main(int argc, char *argv[])
 
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
 
-    // ── Splash screen (kept from the old app) ──────────────────────────────
-    auto *splash = new SplashScreen();
-    splash->show();
-    app.processEvents();
+    // ── Debug bridge (dev-only verification channel) ───────────────────────
+    if (!debugPipe.isEmpty()) {
+        auto *bridge = new DebugBridge(window, &app);
+        bridge->registerObject(QStringLiteral("appState"), appState);
+        bridge->registerObject(QStringLiteral("backend"), backend);
+        bridge->registerObject(QStringLiteral("factorySim"), factorySim);
+        bridge->listen(debugPipe);
+    }
 
-    QObject::connect(splash, &SplashScreen::done, &app, [splash, window]() {
+    // ── Splash screen (kept from the old app) ──────────────────────────────
+    if (noSplash) {
+        // Automation path: the 3.5s splash would leave the main window hidden,
+        // and a hidden window cannot be grabbed.
         if (window) {
             window->show();
             window->raise();
             window->requestActivate();
         }
-        splash->close();
-        splash->deleteLater();
-    });
-    splash->startClosingSequence(3500);
+    } else {
+        auto *splash = new SplashScreen();
+        splash->show();
+        app.processEvents();
+
+        QObject::connect(splash, &SplashScreen::done, &app, [splash, window]() {
+            if (window) {
+                window->show();
+                window->raise();
+                window->requestActivate();
+            }
+            splash->close();
+            splash->deleteLater();
+        });
+        splash->startClosingSequence(3500);
+    }
 
     return app.exec();
 }
