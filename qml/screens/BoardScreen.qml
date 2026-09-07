@@ -59,6 +59,26 @@ Item {
             if (_portIdx >= _portEntries.length) _portIdx = 0
         }
     }
+
+    // Multiple ST-Link probes can be plugged in at once (F4/H7/N6 side by
+    // side is the normal dev setup here) - refreshing the port list alone
+    // still leaves _portIdx pointing at whatever it was (index 0 by
+    // default), which is rarely the port for the board actually selected.
+    // backend.detectedStLinkPort() already does the real VID/PID/serial
+    // matching (src/bridge/Backend.cpp preferredSerialPortForBoard); this
+    // just picks the matching entry in the QML-side list.
+    function selectPortForActiveBoard() {
+        refreshPorts()
+        if (typeof backend === "undefined" || !backend) return
+        var preferred = backend.detectedStLinkPort()
+        if (!preferred || preferred.length === 0) return
+        for (var i = 0; i < _portEntries.length; ++i) {
+            if (_portEntries[i].portName === preferred) {
+                _portIdx = i
+                return
+            }
+        }
+    }
     function portLabels() {
         var out = []
         for (var i = 0; i < root._portEntries.length; ++i)
@@ -97,7 +117,7 @@ Item {
             _customBoards = backend.customBoards()
     }
     Component.onCompleted: {
-        refreshPorts()
+        selectPortForActiveBoard()
         refreshCustomBoards()
     }
 
@@ -113,6 +133,7 @@ Item {
             var idx = root._baudList.indexOf(String(baud))
             if (idx >= 0)
                 root._baudIdx = idx
+            root.selectPortForActiveBoard()
         }
     }
 
@@ -316,7 +337,7 @@ Item {
 
                                     AppButton {
                                         text: "Yenile"; iconText: "⟳"; variant: "secondary"
-                                        onClicked: root.refreshPorts()
+                                        onClicked: root.selectPortForActiveBoard()
                                     }
 
                                     AppButton {

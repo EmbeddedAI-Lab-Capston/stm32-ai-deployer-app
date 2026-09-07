@@ -54,6 +54,7 @@ namespace
 constexpr quint16 kStVendorId = 0x0483;
 constexpr quint16 kN657VcpProductId = 0x3754;
 constexpr quint16 kH7VcpProductId = 0x374E;
+constexpr quint16 kF4VcpProductId = 0x374B;
 constexpr int kN6DefaultBaud = 209700;
 
 QString boardSearchText(const BoardInfo &board)
@@ -84,6 +85,15 @@ bool boardLooksLikeH7(const BoardInfo &board)
         || text.contains("STM32H7")
         || text.contains("NUCLEO-H7")
         || text.contains("CORTEX-M7");
+}
+
+bool boardLooksLikeF4(const BoardInfo &board)
+{
+    const QString text = boardSearchText(board);
+    return text.contains("F407")
+        || text.contains("STM32F4")
+        || text.contains("NUCLEO-F4")
+        || text.contains("CORTEX-M4");
 }
 
 bool isStVcp(const QSerialPortInfo &info)
@@ -325,6 +335,13 @@ QSerialPortInfo preferredSerialPortForBoard(const BoardInfo &board, const QStrin
     if (boardLooksLikeH7(board)) {
         for (const QSerialPortInfo &info : ports) {
             if (hasProductId(info, kH7VcpProductId))
+                return info;
+        }
+    }
+
+    if (boardLooksLikeF4(board)) {
+        for (const QSerialPortInfo &info : ports) {
+            if (hasProductId(info, kF4VcpProductId))
                 return info;
         }
     }
@@ -659,8 +676,11 @@ QVariantList Backend::availablePortEntries() const
             role = "NUCLEO-N657 VCP";
             label = p.portName() + " (NUCLEO-N657 VCP)";
         } else if (hasProductId(p, kH7VcpProductId)) {
-            role = "ST-Link VCP";
-            label = p.portName() + " (ST-Link VCP)";
+            role = "STM32H7 VCP";
+            label = p.portName() + " (STM32H7 VCP)";
+        } else if (hasProductId(p, kF4VcpProductId)) {
+            role = "STM32F4 VCP";
+            label = p.portName() + " (STM32F4 VCP)";
         } else if (isStlink) {
             role = "ST-Link";
         }
