@@ -348,6 +348,7 @@ void VariableWatcher::onLinkClosed()
     // Any in-flight ELF match check is dead with the link; clear the guard so
     // a later reconnect can re-run it instead of being stuck "in flight".
     m_elfMatchStep = 0;
+    if (m_elfMatchTimeoutTimer) m_elfMatchTimeoutTimer->stop();
     setElfMatch(ElfMatchResult::Unknown, ElfMatchReport{});
 
     if (m_isPlayback || !m_running)
@@ -414,6 +415,32 @@ void VariableWatcher::maybeCheckElfMatch()
     m_elfMatchStep = 1;
     QVector<MemoryRequest> reqs{ MemoryRequest{ 1, 0xE000ED08ull, 4u } };   // VTOR
     m_link->readRanges(kElfMatchBatchId, reqs);
+    armElfMatchTimeout();
+}
+
+void VariableWatcher::armElfMatchTimeout()
+{
+    if (!m_elfMatchTimeoutTimer) {
+        m_elfMatchTimeoutTimer = new QTimer(this);
+        m_elfMatchTimeoutTimer->setSingleShot(true);
+        connect(m_elfMatchTimeoutTimer, &QTimer::timeout, this, &VariableWatcher::onElfMatchTimeout);
+    }
+    // A reply that never arrives (RSP request the server never answers, as
+    // opposed to the link outright closing — onLinkClosed() already handles
+    // that case) used to leave m_elfMatchStep stuck at a nonzero value
+    // forever, since maybeCheckElfMatch() refuses to start a second check
+    // while one looks "in flight". 5 s is generous for a single-block
+    // memory read; a real reply normally arrives within one RTT (<1 ms measured).
+    m_elfMatchTimeoutTimer->start(5000);
+}
+
+void VariableWatcher::onElfMatchTimeout()
+{
+    if (m_elfMatchStep == 0)
+        return;   // completed (or reset by onLinkClosed()) before the timer fired
+    m_elfMatchStep = 0;
+    setElfMatch(ElfMatchResult::Unknown, ElfMatchReport{});
+    emit errorOccurred(tr("ELF eslesme kontrolu zaman asimina ugradi - hedef yanit vermiyor olabilir"));
 }
 
 void VariableWatcher::onRangesRead(quint32 batchId, const QVector<MemoryReply> &replies)
@@ -428,6 +455,7 @@ void VariableWatcher::handleElfMatchReply(const QVector<MemoryReply> &replies)
     if (m_elfMatchStep == 1) {
         if (replies.isEmpty() || !replies.first().ok || replies.first().data.size() < 4) {
             m_elfMatchStep = 0;
+            if (m_elfMatchTimeoutTimer) m_elfMatchTimeoutTimer->stop();
             setElfMatch(ElfMatchResult::Unknown, ElfMatchReport{});
             return;
         }
@@ -438,11 +466,13 @@ void VariableWatcher::handleElfMatchReply(const QVector<MemoryReply> &replies)
         m_elfMatchStep = 2;
         QVector<MemoryRequest> reqs{ MemoryRequest{ 2, quint64(m_pendingVtor), 8u } };
         m_link->readRanges(kElfMatchBatchId, reqs);
+        armElfMatchTimeout();   // second round trip — reset the watchdog for it too
         return;
     }
 
     if (m_elfMatchStep == 2) {
         m_elfMatchStep = 0;
+        if (m_elfMatchTimeoutTimer) m_elfMatchTimeoutTimer->stop();
         if (replies.isEmpty() || !replies.first().ok || replies.first().data.size() < 8) {
             setElfMatch(ElfMatchResult::Unknown, ElfMatchReport{});
             return;

@@ -614,7 +614,7 @@ sıralı hücre listesini (tipsiz, `kind`'a göre anlam kazanır) tutar.
 | 4.6   | X-CUBE-AI CLI entegrasyonu | ✅ Tamamlandı |
 | 4.8   | Template Framework + Pipeline Wizard | ✅ Tamamlandı |
 | —     | QML arayüze geçiş + Fabrika Simülasyonu | ✅ Tamamlandı (aktif geliştirme) |
-| —     | Register Inspector + Değişken İzleyici | ✅ Tamamlandı |
+| —     | Register Inspector + Değişken İzleyici | ✅ Teslim edilebilir — bağımsız denetimden geçti, canlı donanımda doğrulandı; kalan küçük işler [`TODO.md`](TODO.md) |
 | 5     | Veritabanı ve kayıt     | ⏳ Bekliyor  |
 | 6     | Canlı dashboard         | ⏳ Bekliyor  |
 | 7     | Model karşılaştırma     | ⏳ Bekliyor  |
@@ -624,18 +624,26 @@ sıralı hücre listesini (tipsiz, `kind`'a göre anlam kazanır) tutar.
 
 ## Sık Kullanılan Komutlar
 
+> **Not:** Qt'nin kurulu olduğu kök dizin (`<QT_ROOT>`) makineden makineye
+> değişir (`C:\Qt`, `D:\Qt`, ...) — aşağıdaki komutlarda kendi kurulumunuza
+> göre değiştirin. CMake ve MinGW, Qt kurulumuyla birlikte `<QT_ROOT>\Tools\`
+> altına geliyor; asıl Qt kiti `<QT_ROOT>\<versiyon>\mingw_64` altında.
+
 ```powershell
-# CMake yolu (Qt ile birlikte gelir)
-$env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\mingw1310_64\bin;$env:PATH"
+# CMake + MinGW yolu (Qt ile birlikte gelir)
+$env:PATH = "<QT_ROOT>\Tools\CMake_64\bin;<QT_ROOT>\Tools\mingw1310_64\bin;$env:PATH"
 
 # Projeyi yapılandır
 cmake -B build -S . `
-  -DCMAKE_PREFIX_PATH="C:/Qt/6.11.0/mingw_64" `
+  -DCMAKE_PREFIX_PATH="<QT_ROOT>/<versiyon>/mingw_64" `
   -DCMAKE_BUILD_TYPE=Release `
   -G "MinGW Makefiles"
 
 # Derle
-cmake --build build
+cmake --build build -j
+
+# Test (Qt Test, saf sınıflar) — hata varsa --output-on-failure ile detay basar
+ctest --test-dir build --output-on-failure
 
 # Temizle
 cmake --build build --target clean
@@ -643,6 +651,9 @@ cmake --build build --target clean
 # Doğrudan çalıştır
 .\build\STM32AiDeployer.exe
 ```
+
+**Tuzak:** `STM32AiDeployer.exe` çalışıyorsa link adımı "Permission denied"
+verir — önce Görev Yöneticisi'nden kapatın.
 
 ---
 
@@ -656,6 +667,7 @@ cmake --build build --target clean
 | `src/modules/serial/PacketParser.h` | § protokol parser — değiştirme    |
 | `qml/Theme.qml`            | Merkezi QML tema/renk tanımları              |
 | `resources/style.qss`      | Yalnızca Widgets `SplashScreen` için stil    |
+| `TODO.md`                  | **"Nerede kaldık" — tek doğruluk kaynağı.** Dal durumu, kalan işler, bekleyen aşamalar |
 | `docs/PROJECT.md`          | Ana mimari referansı — güncel durumu yansıtır |
 | `docs/protocol_v1.md`      | UART protokol referansı                     |
 | `docs/n6_kaldigimiz_yer.md` | STM32N6 boot/flash geçmişi + güncel durum   |

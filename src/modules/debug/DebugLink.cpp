@@ -93,7 +93,21 @@ void DebugLink::retain()
 void DebugLink::release()
 {
     if (m_refCount <= 0) {
-        qWarning() << "DebugLink::release() called with refCount <= 0 — programming error, ignored";
+        if (m_state == DebugLinkState::Closed) {
+            // Benign, not a bug: the link already tore itself down on its own
+            // (onWorkerSocketClosed() force-resets the counter when the socket
+            // drops unexpectedly — cable pull, gdbserver crash) and this
+            // release() is an owner's normal teardown arriving after the fact.
+            // Every real caller (Backend::closeWatchLink(), GdbServerReader)
+            // calls release() unconditionally from its own cleanup with no way
+            // to know in advance that the link already died — that is
+            // literally what DebugLink::closed() is for. Asserting here used
+            // to crash any Debug build the first time a session dropped mid-use.
+            return;
+        }
+        // refCount already <=0 but the link still thinks it's open/opening —
+        // THIS is the actual double-release-without-matching-retain() bug.
+        qWarning() << "DebugLink::release() called with refCount <= 0 while state is not Closed — programming error, ignored";
         Q_ASSERT(false);
         return;
     }

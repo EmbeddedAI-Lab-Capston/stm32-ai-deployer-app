@@ -112,6 +112,7 @@ private slots:
     void onLinkClosed();
     void onCoreHalted();
     void onCoreReset();
+    void onElfMatchTimeout();
 
 private:
     void rebuildPlan();
@@ -120,6 +121,7 @@ private:
     void maybeCheckElfMatch();
     void handleElfMatchReply(const QVector<MemoryReply> &replies);
     void setElfMatch(ElfMatchResult result, const ElfMatchReport &report);
+    void armElfMatchTimeout();
 
     void appendPlaybackSample(int idx, WatchSampleBatch &batch);
     void endPlayback();
@@ -159,6 +161,7 @@ private:
     ElfMatchReport m_elfMatchReport;
     bool           m_mismatchAcknowledged = false;
     int            m_elfMatchStep = 0;     // 0=idle, 1=awaiting VTOR, 2=awaiting vector table
+    QTimer        *m_elfMatchTimeoutTimer = nullptr;   // guards against a reply that never arrives
     quint32        m_pendingVtor = 0;
 
     // Faz 7 — recording
