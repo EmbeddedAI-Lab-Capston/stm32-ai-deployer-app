@@ -10,6 +10,7 @@
 #include <QJsonParseError>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QMetaMethod>
 #include <QMetaObject>
 #include <QMetaProperty>
 #include <QMouseEvent>
@@ -198,6 +199,8 @@ QJsonObject DebugBridge::dispatch(const QJsonObject &request)
         return cmdNavigate(request);
     if (command == QLatin1String("click"))
         return cmdClick(request);
+    if (command == QLatin1String("invoke"))
+        return cmdInvoke(request);
     if (command == QLatin1String("quit")) {
         QMetaObject::invokeMethod(qApp, "quit", Qt::QueuedConnection);
         return QJsonObject{{QStringLiteral("ok"), true}};
@@ -352,5 +355,74 @@ QJsonObject DebugBridge::cmdClick(const QJsonObject &request)
     reply.insert(QStringLiteral("name"), name);
     reply.insert(QStringLiteral("x"), qRound(scenePos.x()));
     reply.insert(QStringLiteral("y"), qRound(scenePos.y()));
+    return reply;
+}
+
+// Calls a Q_INVOKABLE (or slot) by name on a registered object, with 0-4 JSON
+// args. Added on demand (2026-09-07) when re-triggering Backend::scanTools()
+// mid-session was the only way to verify a ToolDetector fix without a full
+// app relaunch — the same need will come up for other zero/few-arg actions,
+// so this stays generic rather than one method at a time.
+QJsonObject DebugBridge::cmdInvoke(const QJsonObject &request) const
+{
+    const QString objName = request.value(QStringLiteral("object")).toString();
+    const QString methodName = request.value(QStringLiteral("method")).toString();
+
+    QObject *target = m_objects.value(objName, nullptr);
+    if (!target)
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("error"), QStringLiteral("unknown object: ") + objName}};
+    if (methodName.isEmpty())
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("error"), QStringLiteral("method required")}};
+
+    QVariantList args;
+    const QJsonArray jsonArgs = request.value(QStringLiteral("args")).toArray();
+    for (const QJsonValue &value : jsonArgs)
+        args.append(value.toVariant());
+
+    if (args.size() > 4)
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("error"), QStringLiteral("at most 4 args supported")}};
+
+    const QMetaObject *meta = target->metaObject();
+    int foundIndex = -1;
+    for (int i = 0; i < meta->methodCount(); ++i) {
+        const QMetaMethod candidate = meta->method(i);
+        if (QString::fromLatin1(candidate.name()) == methodName
+            && candidate.parameterCount() == args.size()) {
+            foundIndex = i;
+            break;
+        }
+    }
+    if (foundIndex < 0)
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("error"),
+                            QStringLiteral("no method '%1' with %2 arg(s) on '%3'")
+                                .arg(methodName).arg(args.size()).arg(objName)}};
+
+    const QMetaMethod method = meta->method(foundIndex);
+
+    // JSON numbers always arrive as `double`; a target `int`/`bool`/... param
+    // needs an exact QMetaType match for QGenericArgument, so coerce here.
+    for (int i = 0; i < args.size(); ++i) {
+        const QMetaType targetType = method.parameterMetaType(i);
+        if (args[i].metaType() != targetType)
+            args[i].convert(targetType);
+    }
+
+    QGenericArgument genArgs[4];
+    for (int i = 0; i < args.size(); ++i)
+        genArgs[i] = QGenericArgument(args[i].typeName(), args[i].constData());
+
+    const bool invoked = method.invoke(target, Qt::DirectConnection,
+                                       genArgs[0], genArgs[1], genArgs[2], genArgs[3]);
+    if (!invoked)
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("error"), QStringLiteral("invoke failed")}};
+
+    QJsonObject reply{{QStringLiteral("ok"), true}};
+    reply.insert(QStringLiteral("object"), objName);
+    reply.insert(QStringLiteral("method"), methodName);
     return reply;
 }

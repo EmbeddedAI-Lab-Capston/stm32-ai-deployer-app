@@ -48,6 +48,7 @@ private:
     QJsonObject cmdProps(const QJsonObject &request) const;
     QJsonObject cmdNavigate(const QJsonObject &request);
     QJsonObject cmdClick(const QJsonObject &request);
+    QJsonObject cmdInvoke(const QJsonObject &request) const;
 
     QQuickWindow *m_window = nullptr;
     QLocalServer *m_server = nullptr;

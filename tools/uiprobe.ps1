@@ -11,13 +11,14 @@
       .\tools\uiprobe.ps1 dump -Filter Button
       .\tools\uiprobe.ps1 props -Object appState
       .\tools\uiprobe.ps1 click -Name watch.startButton
+      .\tools\uiprobe.ps1 invoke -Object backend -Method scanTools
       .\tools\uiprobe.ps1 log -Lines 30
       .\tools\uiprobe.ps1 quit
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("ping", "shot", "dump", "props", "navigate", "click", "quit", "log")]
+    [ValidateSet("ping", "shot", "dump", "props", "navigate", "click", "invoke", "quit", "log")]
     [string]$Command,
 
     [string]$Path,
@@ -27,6 +28,8 @@ param(
     [string]$Filter,
     [int]$MaxDepth = 12,
     [int]$Lines = 40,
+    [string]$Method,
+    [string[]]$MethodArgs = @(),
     [string]$Pipe = "stm32aid-debug",
     [string]$ExeDir = "C:\dev\stm32-ai-deployer-app\build"
 )
@@ -80,6 +83,19 @@ switch ($Command) {
     "click" {
         if (-not $Name) { Write-Output "ERROR: -Name required"; exit 1 }
         $request.name = $Name
+    }
+    "invoke" {
+        if (-not $Method) { Write-Output "ERROR: -Method required"; exit 1 }
+        $request.object = $Object
+        $request.method = $Method
+        # Best-effort typing: numbers and true/false become JSON number/bool,
+        # everything else stays a JSON string.
+        $request.args = @($MethodArgs | ForEach-Object {
+            if ($_ -match '^-?\d+(\.\d+)?$') { [double]$_ }
+            elseif ($_ -eq 'true') { $true }
+            elseif ($_ -eq 'false') { $false }
+            else { $_ }
+        })
     }
 }
 
