@@ -23,6 +23,39 @@ Rectangle {
         }
     }
 
+    // Mirrors `lines` into a real incremental ListModel instead of letting
+    // the ListView bind straight to the JS array. Backend's *Lines
+    // properties (monitorLines/pipelineLines/flashLines/...) rebuild and
+    // re-emit the WHOLE array on every single new line, including once the
+    // circular buffer caps out (Backend::kMaxMonitorLines = 500 -
+    // append-then-removeFirst()). Reassigning `model` to a new array
+    // instance on every update is a full model reset in Qt Quick, which
+    // fights the user's scroll position no matter what the ListView does
+    // afterward. ListModel.append()/remove() are genuine incremental ops
+    // Qt Quick diffs properly, so the view's own scroll-preserving behavior
+    // just works - no manual contentY math needed.
+    ListModel { id: _model }
+
+    onLinesChanged: {
+        const newLen = root.lines.length
+        const oldLen = _model.count
+        if (newLen < oldLen) {
+            // Cleared (or replaced with something unrelated) - rebuild.
+            _model.clear()
+            for (let i = 0; i < newLen; ++i)
+                _model.append(root.lines[i])
+        } else if (newLen > oldLen) {
+            // Pure growth (buffer not capped yet) - append what's new.
+            for (let j = oldLen; j < newLen; ++j)
+                _model.append(root.lines[j])
+        } else if (newLen > 0) {
+            // Same length: the circular buffer dropped the oldest line and
+            // appended a new one - mirror that exact op.
+            _model.remove(0)
+            _model.append(root.lines[newLen - 1])
+        }
+    }
+
     // Copies all terminal lines to system clipboard.
     function copyAll() {
         var parts = []
@@ -63,22 +96,15 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: Theme.spacingSm
         anchors.rightMargin: Theme.spacingSm + 28  // leave room for copy button
-        model: root.lines
+        model: _model
         clip: true
         spacing: 1
         boundsBehavior: Flickable.StopAtBounds
 
-        // `model: root.lines` is a plain JS array: every time a new line
-        // arrives, backend re-emits the whole list and this binding swaps in
-        // a brand-new array reference, which QML treats as a full model
-        // reset (no incremental insert). That reset was fighting the user's
-        // scroll position on every single line, making it impossible to
-        // read history while data was streaming in. Fix: only follow new
-        // content while the user hasn't scrolled away from the bottom
-        // (`pinnedToBottom`); otherwise keep their view visually still by
-        // shifting contentY by exactly however much content height changed.
+        // Follow new lines only while the user hasn't scrolled away from
+        // the bottom; a manual scroll (drag or wheel) away from the end
+        // suspends auto-follow until they scroll back or use "Sona Git".
         property bool pinnedToBottom: true
-        property real _prevContentHeight: 0
 
         onMovementEnded: pinnedToBottom = atYEnd
         onFlickEnded: pinnedToBottom = atYEnd
@@ -92,8 +118,8 @@ Rectangle {
             Text {
                 id: lineText
                 width: parent.width
-                text: modelData.text
-                color: root.lineColor(modelData.type)
+                text: model.text
+                color: root.lineColor(model.type)
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.fontXs
                 wrapMode: Text.WrapAnywhere
@@ -105,23 +131,16 @@ Rectangle {
                 acceptedButtons: Qt.RightButton
                 onClicked: (mouse) => {
                     if (mouse.button === Qt.RightButton) {
-                        _lineMenu.targetText = modelData.text
+                        _lineMenu.targetText = model.text
                         _lineMenu.popup()
                     }
                 }
             }
         }
 
-        onContentHeightChanged: {
-            if (pinnedToBottom) {
+        onCountChanged: {
+            if (pinnedToBottom)
                 positionViewAtEnd()
-            } else if (_prevContentHeight > 0) {
-                // Same content, just shifted by whatever got added/removed
-                // elsewhere in the list — keep the user's current lines in
-                // the same visual spot instead of snapping back to the top.
-                contentY += (contentHeight - _prevContentHeight)
-            }
-            _prevContentHeight = contentHeight
         }
     }
 
