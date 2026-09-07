@@ -71,3 +71,7 @@ $RECYCLE.BIN/
 STM32AiDeployer/
 *.tflite
 Models/
+
+# Temporary clone of the sibling capstone repo (models/reports source) — not
+# part of this project, kept locally only, never committed.
+stm32-h7-projects/
