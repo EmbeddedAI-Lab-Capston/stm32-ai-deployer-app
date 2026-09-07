@@ -68,6 +68,21 @@ Rectangle {
         spacing: 1
         boundsBehavior: Flickable.StopAtBounds
 
+        // `model: root.lines` is a plain JS array: every time a new line
+        // arrives, backend re-emits the whole list and this binding swaps in
+        // a brand-new array reference, which QML treats as a full model
+        // reset (no incremental insert). That reset was fighting the user's
+        // scroll position on every single line, making it impossible to
+        // read history while data was streaming in. Fix: only follow new
+        // content while the user hasn't scrolled away from the bottom
+        // (`pinnedToBottom`); otherwise keep their view visually still by
+        // shifting contentY by exactly however much content height changed.
+        property bool pinnedToBottom: true
+        property real _prevContentHeight: 0
+
+        onMovementEnded: pinnedToBottom = atYEnd
+        onFlickEnded: pinnedToBottom = atYEnd
+
         ScrollBar.vertical: ScrollBar { width: 8 }
 
         delegate: Item {
@@ -97,9 +112,16 @@ Rectangle {
             }
         }
 
-        onCountChanged: {
-            if (atYEnd || count <= 1)
+        onContentHeightChanged: {
+            if (pinnedToBottom) {
                 positionViewAtEnd()
+            } else if (_prevContentHeight > 0) {
+                // Same content, just shifted by whatever got added/removed
+                // elsewhere in the list — keep the user's current lines in
+                // the same visual spot instead of snapping back to the top.
+                contentY += (contentHeight - _prevContentHeight)
+            }
+            _prevContentHeight = contentHeight
         }
     }
 
@@ -174,7 +196,10 @@ Rectangle {
         MenuSeparator {}
         MenuItem {
             text: "Sona Git"
-            onTriggered: list.positionViewAtEnd()
+            onTriggered: {
+                list.pinnedToBottom = true
+                list.positionViewAtEnd()
+            }
         }
     }
 }
