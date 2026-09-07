@@ -74,11 +74,24 @@ Faz 4 (QML birim testleri) opsiyonel/düşük öncelik olarak bekliyor.
 Tam gerekçe ve efor tahmini için `docs/variable_watcher_review.md` Bölüm 8'e
 bakın — burası yalnızca özet, oradan senkron tutun:
 
-1. **YÜKSEK — Faz 5 doğrulaması.** Gerçek bir pipeline (.tflite → derle →
-   flash) koşturup `nm | grep g_ai_` ile sembollerin göründüğünü, UART
-   `inf_us` ile `g_ai_last_inference_us`'ın ±%5 uyuştuğunu, firmware boyut
-   artışının <1 KB olduğunu doğrulayın. Faz 5'in hiç yapılmamış **tek**
-   kabul kriteri.
+1. ~~**YÜKSEK — Faz 5 doğrulaması.**~~ **2026-09-07 tamamlandı.** Gerçek
+   pipeline (H7 + `Models/environmental/anomaly_cnn_int8.tflite` + BME280)
+   `Backend.runPipeline()` üzerinden koşturuldu, 5 adımın hepsi (analiz →
+   C kodu üretimi → proje hazırlama → derleme → flash) başarıyla bitti.
+   `arm-none-eabi-nm` ile `g_ai_last_inference_us` dahil 6 `g_ai_*` sembolü
+   ELF'te doğrulandı; kart gerçek donanımda (NUCLEO-H723ZG + GY-BME280) UART
+   üzerinden canlı `inf_us` (~926-941 µs) akıttı, uygulamanın Monitör
+   ekranında da görüldü. Ekran görüntüleri: `out/faz5_screenshots/`
+   (gitignored, silinmedi). **Not:** "±%5 uyuşma" kriteri yapı gereği
+   otomatik sağlanıyor — `AI_Runner_Infer()` `g_ai_last_inference_us`'ı ve
+   UART `inf_us`'ı aynı `elapsed_us` değerinden dolduruyor
+   (`templates/ai_glue/ai_runner.c`). "Firmware boyut artışı <1 KB" kriteri
+   bu ilk temiz derlemede kıyaslanacak bir önceki build olmadığı için test
+   edilmedi (mutlak boyut: text+data+bss = 88.016 bayt). Yol boyunca iki
+   gerçek eksik bulunup giderildi: `STM32Cube_FW_H7` SDK'sı hiçbir ST
+   kurulumuyla gelmiyordu (bkz. `docs/dev_machine_setup.md` §7) ve
+   `DebugBridge`'in liste kırpması baş yerine kuyruktan yapılacak şekilde
+   düzeltildi (asıl pipeline hatasını gizliyordu).
 2. **YÜKSEK — Uçtan uca senaryo elle koşulmalı.** ELF yükle → sembol ekle →
    başlat → grafik → kaydet → durdur → oynat → profil kaydet → karşılaştır.
    Katmanlar tek tek kanıtlandı, tam zincir hiç çalıştırılmadı.
