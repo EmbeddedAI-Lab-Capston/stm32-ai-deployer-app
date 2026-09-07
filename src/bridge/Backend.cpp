@@ -592,28 +592,38 @@ void Backend::scanTools()
     m_scanning = true;
     emit scanningChanged();
 
-    if (!m_detector)
+    if (!m_detector) {
         m_detector = new ToolDetector(this);
 
-    connect(m_detector, &ToolDetector::toolFound, this,
-            [this](const ToolInfo &info) {
-                if (!info.found) return;
-                AppSettings s;
-                if      (info.key == "tools/gcc_path")            s.setGccPath(info.path);
-                else if (info.key == "tools/make_path")           s.setMakePath(info.path);
-                else if (info.key == "programmer/cli_path")       s.setProgrammerCliPath(info.path);
-                else if (info.key == "tools/xcubeai_cli_path")    s.setXCubeAICliPath(info.path);
-                emit statusMessage(QString("âœ“ %1 bulundu").arg(info.name));
-            }, Qt::UniqueConnection);
+        // Qt::UniqueConnection is deliberately NOT used here: it silently
+        // fails to connect at all when the slot is a lambda (Qt requires a
+        // pointer-to-member-function for that connection type, and only
+        // warns - "unique connections require a pointer to member function"
+        // - instead of erroring, so this went unnoticed until live-tested
+        // 2026-09-07: gcc/make/stedgeai never got auto-detected because
+        // toolFound had zero listeners). Uniqueness isn't needed anyway
+        // since this whole block runs at most once per Backend instance,
+        // guarded by the m_detector null check above.
+        connect(m_detector, &ToolDetector::toolFound, this,
+                [this](const ToolInfo &info) {
+                    if (!info.found) return;
+                    AppSettings s;
+                    if      (info.key == "tools/gcc_path")            s.setGccPath(info.path);
+                    else if (info.key == "tools/make_path")           s.setMakePath(info.path);
+                    else if (info.key == "programmer/cli_path")       s.setProgrammerCliPath(info.path);
+                    else if (info.key == "tools/xcubeai_cli_path")    s.setXCubeAICliPath(info.path);
+                    emit statusMessage(QString("âœ“ %1 bulundu").arg(info.name));
+                });
 
-    connect(m_detector, &ToolDetector::detectionFinished, this,
-            [this](const QList<ToolInfo> &) {
-                AppSettings s; s.setToolsAutoDetected(true);
-                if (m_flash) m_flash->setCliPath(AppSettings().programmerCliPath());
-                m_scanning = false;
-                emit scanningChanged();
-                emit toolPathsChanged();
-            }, Qt::UniqueConnection);
+        connect(m_detector, &ToolDetector::detectionFinished, this,
+                [this](const QList<ToolInfo> &) {
+                    AppSettings s; s.setToolsAutoDetected(true);
+                    if (m_flash) m_flash->setCliPath(AppSettings().programmerCliPath());
+                    m_scanning = false;
+                    emit scanningChanged();
+                    emit toolPathsChanged();
+                });
+    }
 
     m_detector->detectAll();
 }

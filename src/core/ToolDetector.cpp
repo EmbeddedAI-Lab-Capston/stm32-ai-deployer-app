@@ -174,7 +174,25 @@ QString ToolDetector::detectXCubeAI()
             return QStringLiteral("stedgeai");
     }
 
-    // 2. Search in STM32Cube Repository packs
+    // 2. Standalone "ST Edge AI Core" install (ST's current recommended
+    //    route as of 2026 - a separate CLI-only installer, not routed
+    //    through STM32CubeMX/X-CUBE-AI). Layout:
+    //    C:/ST/STEdgeAI/<version>/Utilities/windows/stedgeai.exe
+    {
+        const QDir stEdgeAiDir(QStringLiteral("C:/ST/STEdgeAI"));
+        if (stEdgeAiDir.exists()) {
+            const QStringList versions = stEdgeAiDir.entryList(
+                QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::Reversed);
+            for (const QString &version : versions) {
+                const QString candidate = stEdgeAiDir.absoluteFilePath(
+                    version + "/Utilities/windows/stedgeai.exe");
+                if (fileExists(candidate)) return candidate;
+            }
+        }
+    }
+
+    // 3. Search in STM32Cube Repository packs (X-CUBE-AI installed via
+    //    STM32CubeMX's package manager)
     const QStringList baseDirs = {
         QDir::homePath() + "/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI",
         "C:/Users/Default/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI",
