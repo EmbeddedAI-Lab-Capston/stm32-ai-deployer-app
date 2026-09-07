@@ -3092,7 +3092,23 @@ void Backend::takeRegisterSnapshot(int slot, const QStringList &peripherals)
         emit statusMessage(QStringLiteral("ST-Link su anda %1 tarafindan kullaniliyor; snapshot iptal.").arg(m_stlinkOwner));
         return;
     }
-    const BoardInfo board = m_state->activeBoard();
+    BoardInfo board = m_state->activeBoard();
+    // board.stlinkSn is only populated by an actual live probe
+    // (probeStLinkBoard()) - empty for a board picked from the static
+    // preset list, which is the normal path. Both register readers
+    // (CliRegisterReader / GdbServerReader) fall back to "no specific
+    // probe requested" when it's empty, which is ambiguous the moment more
+    // than one ST-Link is connected (F4/H7/N6 side by side is the normal
+    // dev setup here) - same class of bug fixed in openWatchLink() above.
+    // Resolve it the same way: VID/PID match via the UART port list (an
+    // ST-Link's USB serial is identical across its VCP/debug/MSD
+    // interfaces), same as preferredSerialPortForBoard() already does for
+    // the serial connection.
+    if (board.stlinkSn.isEmpty()) {
+        const QSerialPortInfo preferred = preferredSerialPortForBoard(board);
+        if (!preferred.isNull() && !preferred.serialNumber().isEmpty())
+            board.stlinkSn = preferred.serialNumber();
+    }
     AppSettings().setRegisterPeripherals(board.name, peripherals);
     m_registers->takeSnapshot(slot, board, peripherals);
 }
