@@ -36,12 +36,18 @@ QString cleanTypeName(const QObject *object)
 QJsonValue clampValue(const QVariant &value)
 {
     if (value.typeId() == QMetaType::QVariantList) {
+        // Tail, not head: every list this hits so far (pipelineLines,
+        // monitorLines, flashLines, ...) is an accumulating log, where the
+        // most recent entries - not the first 20 written at app start - are
+        // what a caller actually wants when the list is too long to show in
+        // full.
         const QVariantList list = value.toList();
         QJsonArray array;
-        for (int i = 0; i < list.size() && i < 20; ++i)
+        const int start = qMax(0, list.size() - 20);
+        if (start > 0)
+            array.append(QStringLiteral("...(%1 earlier)").arg(start));
+        for (int i = start; i < list.size(); ++i)
             array.append(QJsonValue::fromVariant(list.at(i)));
-        if (list.size() > 20)
-            array.append(QStringLiteral("...(%1 more)").arg(list.size() - 20));
         return array;
     }
     if (value.typeId() == QMetaType::QString) {
