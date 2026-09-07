@@ -192,7 +192,8 @@ stm32-ai-deployer-app/
     ├── lstm_stm32_export.md         ← LSTM → X-CUBE-AI uyumlu TFLite export rehberi
     ├── register_inspector_plan.md / _findings.md ← Register Inspector tasarım + doğrulama
     ├── variable_watcher_plan.md / _findings.md   ← Değişken İzleyici tasarım + doğrulama
-    └── verification_ecosystem_plan.md            ← DebugBridge/uiprobe UI doğrulama ekosistemi
+    ├── verification_ecosystem_plan.md            ← DebugBridge/uiprobe UI doğrulama ekosistemi
+    └── dev_machine_setup.md                      ← Yeni makinede tekrar çıkabilecek kurulum tuzakları
 ```
 
 ---
@@ -628,6 +629,12 @@ sıralı hücre listesini (tipsiz, `kind`'a göre anlam kazanır) tutar.
 ---
 
 ## Sık Kullanılan Komutlar
+
+> **Yeni bir makinede kurulum yapıyorsan önce
+> [`docs/dev_machine_setup.md`](docs/dev_machine_setup.md)'ye bak** — proje
+> yolunda Türkçe karakter olması, `aqtinstall`'ın Qt 6.10+'ı kuramaması, eski
+> ST-Link sürücü eksikliği gibi her fresh kurulumda tekrar çıkabilecek
+> tuzaklar orada toplu.
 
 > **Not:** Qt'nin kurulu olduğu kök dizin (`<QT_ROOT>`) makineden makineye
 > değişir (`C:\Qt`, `D:\Qt`, ...) — aşağıdaki komutlarda kendi kurulumunuza
