@@ -203,7 +203,40 @@ QStringList XCubeAIRunner::buildArgs(const QString &command,
         "--model", modelPath,
         "--target", "stm32",
         "--output", outputDir,
+        // Suppresses stedgeai's interactive first-run telemetry-consent
+        // prompt ("Do you allow statistics..."), which QProcess can never
+        // answer — without this the pipeline hangs forever on first use on a
+        // fresh machine. Confirmed live 2026-09-07 with ST Edge AI Core
+        // v4.0.1: with --quiet the process exits cleanly instead of blocking
+        // on stdin.
+        "--quiet",
     };
+
+    if (command == "analyze") {
+        // No workspace dir is created/used at all, which also happens to
+        // sidestep the crash described below.
+        args << "--no-workspace";
+    } else {
+        // --workspace is pinned to a fixed OS temp dir instead of letting
+        // stedgeai derive one from the current working directory: on this
+        // project's own Windows path (a Turkish "ı" in "Yazılım"), stedgeai's
+        // console logger crashes trying to cp1252-encode that character when
+        // it prints the "workspace dir" summary line (TOOL ERROR, though the
+        // generated C files are written before the crash). Confirmed live
+        // 2026-09-07 with ST Edge AI Core v4.0.1.
+        args << "--workspace" << QDir::toNativeSeparators(
+            QDir::tempPath() + "/stm32aid_stedgeai_ws");
+
+        // stedgeai v4+ defaults to the new "st-ai" C API (STAI_NETWORK_*
+        // macros, stai_network_context runtime). This project's ai_glue
+        // templates (ai_runner.c / ai_config.h) are written against the
+        // older "legacy" API (AI_NETWORK_IN_1_SIZE etc.,
+        // ai_network_create_and_init/...). --c-api legacy makes even the
+        // newest stedgeai emit that older, template-compatible API —
+        // confirmed live 2026-09-07 against ST Edge AI Core v4.0.1
+        // (STM32CubeAI 12.0.1): headers/macros/functions all matched.
+        args << "--c-api" << "legacy";
+    }
 
     // Compression/weight quantization
     if (quantization == "INT8") {
@@ -212,9 +245,6 @@ QStringList XCubeAIRunner::buildArgs(const QString &command,
         args << "--compression" << "low";
     }
     // Float32 → no --compression flag (default is none)
-
-    if (command == "analyze")
-        args << "--no-workspace";
 
     return args;
 }
