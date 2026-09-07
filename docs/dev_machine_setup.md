@@ -141,6 +141,44 @@ stedgeai.exe generate --model <bir .tflite> --target stm32 --output <tmp> `
 
 ---
 
+## 7. `STM32Cube_FW_<aile>` HAL SDK'sı hiçbir ST kurulumuyla otomatik gelmiyor
+
+**Belirti:** Pipeline'ın 4/5 (derleme) adımında
+`✗ STM32Cube SDK bulunamadı. Beklenen konum:
+~/STM32Cube/Repository/STM32Cube_FW_H7_*` hatası.
+
+**Sebep:** `templates/base/<Aile>/Makefile` gerçek HAL driver kaynak
+dosyalarını (`Drivers/STM32H7xx_HAL_Driver`, `Drivers/CMSIS/...`) bekliyor —
+bunlar bu repodaki `templates/`'in içinde değil, ayrı bir ST paketi
+(`STM32Cube_FW_H7`/`_F4`/`_N6`). Ne STM32CubeIDE'nin kendisi ne de
+standalone `stedgeai` kurulumu bunu otomatik indirmiyor; normalde
+STM32CubeMX ile ilgili karta ait bir proje bir kez oluşturulduğunda
+`~/STM32Cube/Repository/`'ye iniyor — biz bunu hiç yapmadık.
+
+**Çözüm (GUI'siz, myST hesabı gerektirmez):** ST bu paketleri GitHub'da da
+herkese açık yayınlıyor. `PipelineRunner`'ın aradığı klasör deseni sadece
+`STM32Cube_FW_<Aile>_*` — versiyon numarası ne olursa olsun eşleşir. H7 için:
+
+```bash
+mkdir -p ~/STM32Cube/Repository
+cd ~/STM32Cube/Repository
+git clone --depth 1 --branch v1.13.0 --filter=blob:none --sparse \
+  https://github.com/STMicroelectronics/STM32CubeH7.git STM32Cube_FW_H7_V1.13.0
+cd STM32Cube_FW_H7_V1.13.0
+git sparse-checkout set Drivers
+git submodule update --init --depth 1 \
+  Drivers/CMSIS/Device/ST/STM32H7xx Drivers/STM32H7xx_HAL_Driver
+```
+
+`--filter=blob:none --sparse` + yalnızca `Drivers/` alt kümesi + yalnızca
+gerekli 2 submodule ile toplam ~100 MB'a iniyor (tam repo GB'larca —
+onlarca örnek proje ve orta katman içeriyor, hiçbiri gerekmiyor). F4/N6 için
+aynı desen, ilgili GitHub reposu (`STM32CubeF4`/`STM32CubeN6`) ve HAL
+driver/CMSIS submodule adlarıyla tekrarlanır — repo kökündeki
+`.gitmodules` dosyasına bakarak submodule yollarını doğrulayın.
+
+---
+
 ## Buraya girmeyenler (kod düzeyinde kalıcı olarak çözüldü, tekrar not almaya gerek yok)
 
 - `Backend::scanTools()`'taki `Qt::UniqueConnection` + lambda hatası (gcc/make/
