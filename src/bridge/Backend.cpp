@@ -3620,6 +3620,20 @@ void Backend::openWatchLink()
     }
     if (!acquireStLink(QStringLiteral("watch")))
         return;
+
+    // With more than one ST-Link connected (F4/H7/N6 side by side is the
+    // normal dev setup here), gdbserver needs to be told exactly which
+    // probe to use - left unset it either refuses ("Error in initializing
+    // ST-LINK device") or grabs an arbitrary one. Register Inspector's GDB
+    // backend already does this (GdbServerReader::setStlinkSerial); the
+    // watch link never did. An ST-Link's USB serial is identical across its
+    // VCP/debug/MSD interfaces, so the same board->port VID/PID matching
+    // used for the UART connection doubles as the SWD target lookup.
+    const QSerialPortInfo preferred =
+        preferredSerialPortForBoard(m_state ? m_state->activeBoard() : BoardInfo{});
+    if (!preferred.isNull() && !preferred.serialNumber().isEmpty())
+        m_debugLink->setStlinkSerial(preferred.serialNumber());
+
     m_debugLink->retain();
 }
 
