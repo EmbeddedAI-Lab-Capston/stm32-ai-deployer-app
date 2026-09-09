@@ -193,6 +193,7 @@ stm32-ai-deployer-app/
     ├── register_inspector_plan.md / _findings.md ← Register Inspector tasarım + doğrulama
     ├── variable_watcher_plan.md / _findings.md   ← Değişken İzleyici tasarım + doğrulama
     ├── verification_ecosystem_plan.md            ← DebugBridge/uiprobe UI doğrulama ekosistemi
+    ├── memory_telemetry_plan.md                  ← Faz 10 planı: bellekten sensör/peripheral telemetrisi (SIRADAKİ İŞ)
     └── dev_machine_setup.md                      ← Yeni makinede tekrar çıkabilecek kurulum tuzakları
 ```
 

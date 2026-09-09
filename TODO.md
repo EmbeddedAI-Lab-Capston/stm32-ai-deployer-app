@@ -69,6 +69,24 @@ Faz 4 (QML birim testleri) opsiyonel/düşük öncelik olarak bekliyor.
 
 ---
 
+## SIRADAKİ İŞ — Faz 10: bellek-öncelikli telemetri
+
+**Tam plan:** [`docs/memory_telemetry_plan.md`](docs/memory_telemetry_plan.md)
+— kendi kendine yeterli, adım adım, üç kart için (F4/H7/N6).
+
+Altı alt faz: sensör ham değerlerini bellekten okuma (seqlock ile) → RAM
+bütçesi → hız tutarlılık kontrolü → "model sığar mı" ön kontrolü → canlı
+peripheral/register izleme → otomatik çok-modelli süpürme.
+
+**Bu fazın çıkış noktası:** F4'ün ST-Link VCP'si hedef USART'a köprülü
+değil (harici adaptör kullanılmayacak — kullanıcı kararı), yani F4'te
+UART hiç yok. Ama projenin zaten asıl iddiası SWD üzerinden **canlı
+bellek okumak**; sensör verisini de oradan okuyunca F4 tam işlevsel hale
+geliyor ve UART bir bağımlılık olmaktan çıkıp (H7'de) çapraz doğrulama
+aracına dönüşüyor.
+
+---
+
 ## Kalan işler (öncelik sıralı)
 
 Tam gerekçe ve efor tahmini için `docs/variable_watcher_review.md` Bölüm 8'e
