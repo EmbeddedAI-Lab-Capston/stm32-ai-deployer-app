@@ -1,7 +1,7 @@
 {
   "_schemaVersion": 1,
   "_comment": "Deterministic, windowed rules for the Variable Watcher. Separate from svd/rules.json (instantaneous register state) on purpose — see CLAUDE.md.",
-  "_note_disabled": "Rules with \"enabled\": false are parsed but never evaluated. Both stackWatermark rules were disabled until 2026-09-09 because RegionScan items were never sampled (WatchSampler had no byte-scan decode step) - fixed then (WatchSampler::decodeRegionScan + Backend::applyWatchPresets no longer skips RegionScan suggestions), so both are enabled again. If a future change ever makes RegionScan sampling unavailable again, disable these the same way rather than letting them promise a detection that can't happen.",
+  "_note_disabled": "Rules with \"enabled\": false are parsed but never evaluated. Both stackWatermark rules were disabled until 2026-09-09 because RegionScan items were never sampled (WatchSampler had no byte-scan decode step) - fixed then (WatchSampler::decodeRegionScan + Backend::applyWatchPresets no longer skips RegionScan suggestions), so both are enabled again. If a future change ever makes RegionScan sampling unavailable again, disable these the same way rather than letting them promise a detection that can't happen. dma_stall_during_inference (added Faz 10.4, 2026-09-09) is disabled from day one: it assumes the sensor is read via DMA, but templates/sensors/BME280/bme280.c actually uses blocking HAL_I2C_Mem_Read (confirmed live on F4 - I2C1.DR genuinely varies with real bus bytes, I2C1 DMA streams read a constant 0 because they are never used). Enabling it against this firmware would misfire (0 forever, not because of a stall). Only enable it for a firmware build that genuinely DMAs the sensor read.",
   "rules": [
     {
       "id": "stack_headroom_critical",
@@ -31,6 +31,15 @@
       "appliesToRole": "stackWatermark",
       "type": "drift", "windowMs": 60000, "minSlopePerSec": -4.0, "minR2": 0.5,
       "message": "{label}: stack boslugu {windowSec} s'de {slope} B/s azaliyor — limite tirmanma"
+    },
+    {
+      "id": "dma_stall_during_inference",
+      "enabled": false,
+      "severity": "warning",
+      "appliesToLabelRegex": "DMA[0-9]+\\.S[0-9]+NDTR|DMA[0-9]+\\.CNDTR",
+      "type": "threshold", "op": "==", "value": 0, "sustainMs": 500,
+      "gate": { "eventKind": "inference", "withinMs": 1000 },
+      "message": "{label}: {windowSec} s boyunca DMA sayaci ilerlemedi — olasi transfer takilmasi"
     }
   ]
 }

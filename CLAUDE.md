@@ -153,7 +153,7 @@ stm32-ai-deployer-app/
 │   │                                   WatchPlaybackBanner/WatchRuleFeed/RamBudgetBar
 │   ├── dialogs/                     ← SettingsDialog/PipelineWizard/AboutDialog/
 │   │                                   SymbolPickerDialog/WatchItemDialog/
-│   │                                   ProfileCompareDialog
+│   │                                   ProfileCompareDialog/RegisterPickerDialog
 │   └── factory/                     ← FactorySimWindow/Dashboard/Map/ZoneDetail/NodeDetail
 │
 ├── resources/
@@ -470,6 +470,23 @@ emit errorReceived(QJsonObject);
   `VariableWatcher::updateItem()`'ın `guardBeginAddr`/`guardEndAddr` prop'larıyla
   aktarır; bu köprü unutulursa preset guard bilgisi sessizce kaybolur (Faz
   10.1'de canlı testte yakalanan gerçek hata).
+- **Canlı peripheral/register izleme (Faz 10.4) Register Inspector'ın SVD
+  kataloğunu YENİDEN KULLANIR, kendi register tanım seti tutmaz.**
+  `RegisterInspector::registersOfPeripheral()` her register için
+  `SvdRegister::hasReadSideEffect()`'i (register/field `readAction` VEYA
+  `write-only` access — Register Inspector'ın zaten sahip olduğu mantık)
+  döndürür; `Backend::addWatchRegister()` bu true iken
+  `acknowledgeReadAction=false` ile gelen isteği **eklemeden reddeder** —
+  Register Inspector'da bir kez okumak zararsızdır ama İzleyici'de 200
+  Hz'de okumak firmware davranışını değiştirebilir (aynı gözlemci ilkesi,
+  ELF uyuşmazlığındaki "görünür uyarı + açık onay" deseniyle). SVD'nin
+  `readAction` beyan etmediği register'lar (bazı ailelerin SVD'leri bunu
+  hiç doldurmaz — F4'ün I2C register'ları örneği, canlı doğrulandı) için
+  bu kontrol **sessizce eksik** kalır; bu bilinen bir SVD-kalitesi sınırı,
+  yeni bir istisna değil. Clock-off tespiti best-effort'tur —
+  yalnızca `takeSnapshot()` bu oturumda o kart için çalıştıysa doğru
+  (`RegisterInspector::hasClockInfo()`); çalışmadıysa "bilinmiyor" olarak
+  ele alınır, sessizce "açık" varsayılmaz.
 - **Demo güvenliği birinci sınıf yoldur:** kayıttan oynatma modu canlı yolun
   aynı sinyal zincirini kullanır; uygulamayla birlikte dağıtılan
   `watch/demo/h7_demo_trace.csv` sayesinde ekran ST-Link olmadan tam çalışır.

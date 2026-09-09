@@ -350,6 +350,20 @@ public:
     // window each time, per plan docs/memory_telemetry_plan.md Bolum 5.
     Q_INVOKABLE QVariantMap  inferenceRateCheck(double windowSec) const;
 
+    // Faz 10.4: live peripheral/register watching. The watch engine can
+    // already read any address at rate — this is purely the naming/browsing
+    // layer that connects it to the Register Inspector's SVD catalog.
+    // watchPeripheralList()/watchRegistersOf() need the catalog loaded first
+    // (call prepareRegisters(), same as RegisterScreen.qml does).
+    Q_INVOKABLE QStringList  watchPeripheralList() const;
+    Q_INVOKABLE QVariantList watchRegistersOf(const QString &peripheral) const;
+    // Returns the new item's id, or "" if refused (readAction present and
+    // acknowledgeReadAction is false, sampling running, or register/
+    // peripheral not found) — never adds a readAction register silently.
+    Q_INVOKABLE QString      addWatchRegister(const QString &peripheral,
+                                               const QString &registerName,
+                                               bool acknowledgeReadAction);
+
 signals:
     void toolPathsChanged();
     void scanningChanged();

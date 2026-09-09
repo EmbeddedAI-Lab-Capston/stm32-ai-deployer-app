@@ -193,6 +193,61 @@ zorlama" diyor, zorlanmadı. Eşik/uyarı mantığının kendisi
 261.424 B/12.824 B ayak izi) ama sentetik (gerçek olmayan, açıkça
 etiketlenmiş) bir "tiny test fixture" kart tanımına karşı doğrulandı.
 
+### Faz 10.4 — Canlı peripheral/register izleme: TAMAMLANDI (2026-09-09)
+
+`RegisterInspector::registersOfPeripheral()` (SVD'den register listesi —
+adres, access, `readAction`, `hasReadSideEffect`, açıklama, best-effort
+`clockKnown`/`clockEnabled`) + üç yeni `Backend` metodu
+(`watchPeripheralList`/`watchRegistersOf`/`addWatchRegister`) +
+`qml/dialogs/RegisterPickerDialog.qml` (`watch.registerPickerDialog`,
+peripheral arama + register listesi, `⚠` ikonu + "Yine de Ekle" onay
+bandı) + `WatchToolbar.qml`'e `watch.addRegisterButton`. **Gözlemci
+ilkesi kod düzeyinde zorunlu:** `hasReadSideEffect` (register-level
+`readAction` VEYA herhangi bir field'ın `readAction`'ı VEYA `write-only`
+access) true olan bir register, `acknowledgeReadAction=false` iken
+`Backend::addWatchRegister()` tarafından **eklenmeden reddediliyor** —
+canlı doğrulandı (`addWatchRegister("I2C1","ICR",false)` → `""` döndü,
+`watchItems` boş kaldı; `true` ile → gerçekten eklendi, doğru adres
+`0x4000541c`).
+
+**Canlı doğrulama (H7):** `I2C1.CR1` = gerçek `0x00000001` (PE biti seti —
+firmware I2C1'i gerçekten açmış), `DMA1.S0NDTR` = gerçek `0x00000000`
+(DMA hiç kullanılmıyor — aşağıya bkz.), 200.4 Hz / 0 kaçırılan. Ekran
+görüntüsü: `out/live_register_e2e/03_h7_canli_register_degerleri.png`.
+
+**Canlı doğrulama (F4, gerçek BME280 aktifken):** `I2C1.SR1` min/max
+`0x00/0x40` (durum bitleri gerçekten değişiyor), **`I2C1.DR` min=`0x2f`
+max=`0xed` ort=`0x7a`** — gerçek I2C veri hattındaki BME280 baytları canlı
+görüldü, plandaki DMA örneğinden çok daha ikna edici bir kanıt. Ekran
+görüntüsü: `out/live_register_e2e/04_f4_canli_grafik.png`.
+
+**N6:** SVD tarama/register listeleme çalışıyor (canlı bağlantı
+gerektirmiyor), ama Watch bağlantısı "Error in initializing ST-LINK
+device" ile başarısız oldu — bilinen N6 ST-Link kısıtı (§2.5), yeni bir
+hata değil.
+
+**Gerçek bulgu — plan'ın varsayımı yanlış çıktı, doğrulanmadan
+yazılmadı:** F4'ün SVD'sinde I2C register'larının HİÇBİRİNDE
+`readAction` yok (I2C3'ten `derivedFrom` — ham XML'de doğrulandı), yani
+plan'ın "I2C1.ISR reddedilmeli" örneği F4'te ÇALIŞMIYOR. H7'de de `ISR`
+değil `ICR` (write-only) reddediliyor. Board-özel farklılık gerçekten var
+— plan'ın kendi uyarısı ("tahmin etme, doğrula") haklı çıktı.
+
+**Kapsam sınırlaması (bilinçli, plan §6.3.5'in kendi izniyle):**
+`watch_presets.json`'a "AI veri yolu" register hazır-grubu **eklenmedi** —
+bu, `WatchPresetMatcher`'ın ELF sembol çözümleme modelini SVD register
+çözümlemesine de genişletmeyi gerektirir (ayrı bir alt-sistem). Manuel
+seçim (`RegisterPickerDialog`) zaten tam işlevsel ve bu fazın güvenlik
+kritik gereksinimini karşılıyor; preset kolaylığı ileride ayrı bir iş
+olarak eklenebilir.
+
+**Yeni kural (devre dışı, dürüstlük gereği):** `watch_rules.json`'a
+`dma_stall_during_inference` eklendi ama `"enabled": false` — çünkü
+`bme280.c` DMA değil `HAL_I2C_Mem_Read` (bloklayan) kullanıyor, yani
+`DMA1.S0NDTR` zaten hep `0` (kullanılmadığı için, takıldığı için değil);
+kural etkinleştirilirse yanlış alarm üretir. `TimeSeriesRuleEngine`'in
+`"op":"=="` desteği koddan doğrulandı (zaten vardı, `qFuzzyCompare` ile).
+
 ---
 
 ## Kalan işler (öncelik sıralı)

@@ -13,6 +13,7 @@ RowLayout {
 
     signal addSymbolRequested()
     signal addAddressRequested()
+    signal addRegisterRequested()
 
     readonly property bool _hasBackend: (typeof backend !== "undefined" && backend)
     readonly property var _rateOptions: [10, 50, 100, 200, 500, 1000, 0]   // 0 = max
@@ -70,6 +71,13 @@ RowLayout {
         variant: "secondary"
         enabled: root._hasBackend
         onClicked: root.addAddressRequested()
+    }
+    AppButton {
+        objectName: "watch.addRegisterButton"
+        text: "Register Ekle"
+        variant: "secondary"
+        enabled: root._hasBackend
+        onClicked: root.addRegisterRequested()
     }
 
     Item { Layout.fillWidth: true }

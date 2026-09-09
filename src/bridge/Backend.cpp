@@ -4411,6 +4411,55 @@ QVariantMap Backend::inferenceRateCheck(double windowSec) const
     return out;
 }
 
+QStringList Backend::watchPeripheralList() const
+{
+    return registerPeripheralList();   // same SVD catalog, same active board
+}
+
+QVariantList Backend::watchRegistersOf(const QString &peripheral) const
+{
+    if (!m_registers || !m_state) return {};
+    return m_registers->registersOfPeripheral(m_state->activeBoard(), peripheral);
+}
+
+QString Backend::addWatchRegister(const QString &peripheral, const QString &registerName,
+                                   bool acknowledgeReadAction)
+{
+    if (!m_registers || !m_state || !m_watcher) return QString();
+
+    const QVariantList regs = m_registers->registersOfPeripheral(m_state->activeBoard(), peripheral);
+    QVariantMap found;
+    for (const QVariant &v : regs) {
+        const QVariantMap m = v.toMap();
+        if (m.value(QStringLiteral("name")).toString() == registerName) { found = m; break; }
+    }
+    if (found.isEmpty()) {
+        emit statusMessage(tr("Register bulunamadi: %1.%2").arg(peripheral, registerName));
+        return QString();
+    }
+
+    // Gözlemci ilkesi (CLAUDE.md): okununca temizlenen/etkisi olan bir
+    // register asla sessizce 200 Hz'de izlemeye eklenmez — kullanicinin
+    // acik onayi sart (plan Bolum 6.2, ELF uyusmazligindaki desenle ayni).
+    if (found.value(QStringLiteral("hasReadSideEffect")).toBool() && !acknowledgeReadAction) {
+        emit statusMessage(tr("'%1.%2' okununca yan etkisi var (readAction) - onaysiz eklenemez")
+                                .arg(peripheral, registerName));
+        return QString();
+    }
+
+    const quint64 addr = found.value(QStringLiteral("addressValue")).toULongLong();
+    const QString label = peripheral + QStringLiteral(".") + registerName;
+    const QString id = m_watcher->addAddress(addr, WatchValueType::U32, label);
+    if (id.isEmpty()) return QString();
+
+    m_watcher->updateItem(id, QVariantMap{
+        {QStringLiteral("format"), QStringLiteral("hex")},
+        {QStringLiteral("role"),   QStringLiteral("peripheral")},
+        {QStringLiteral("source"), QStringLiteral("svd:%1.%2").arg(peripheral, registerName)},
+    });
+    return id;
+}
+
 QVariantList Backend::watchProfiles() const
 {
     QVariantList out;

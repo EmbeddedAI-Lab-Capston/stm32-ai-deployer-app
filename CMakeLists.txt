@@ -238,6 +238,7 @@ qt_add_qml_module(STM32AiDeployer
         qml/dialogs/AboutDialog.qml
         qml/dialogs/PipelineWizard.qml
         qml/dialogs/SymbolPickerDialog.qml
+        qml/dialogs/RegisterPickerDialog.qml
         qml/dialogs/WatchItemDialog.qml
         qml/screens/DashboardScreen.qml
         qml/screens/BoardScreen.qml

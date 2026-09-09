@@ -91,6 +91,36 @@ QStringList RegisterInspector::allPeripheralNames(const BoardInfo &board) const
     return names;
 }
 
+QVariantList RegisterInspector::registersOfPeripheral(const BoardInfo &board, const QString &peripheralName) const
+{
+    QVariantList out;
+    const SvdBoardMapping m = m_catalog.mappingForBoard(board);
+    if (!m.isValid())
+        return out;
+    const SvdDevice *dev = m_catalog.cachedDevice(m.svdFile);
+    if (!dev)
+        return out;
+    const SvdPeripheral *periph = dev->findPeripheral(peripheralName);
+    if (!periph)
+        return out;
+
+    for (const SvdRegister &r : periph->registers) {
+        QVariantMap e;
+        e[QStringLiteral("name")]             = r.name;
+        e[QStringLiteral("addr")]             = QStringLiteral("0x%1").arg(periph->addressOf(r), 0, 16);
+        e[QStringLiteral("addressValue")]     = QVariant::fromValue(periph->addressOf(r));
+        e[QStringLiteral("size")]             = r.sizeBits;
+        e[QStringLiteral("access")]           = r.access;
+        e[QStringLiteral("readAction")]       = r.readAction;
+        e[QStringLiteral("hasReadSideEffect")] = r.hasReadSideEffect();
+        e[QStringLiteral("description")]      = r.description;
+        e[QStringLiteral("clockKnown")]       = m_hasClockInfo;
+        e[QStringLiteral("clockEnabled")]     = m_hasClockInfo && m_clockEnabled.contains(periph->name);
+        out.append(e);
+    }
+    return out;
+}
+
 QStringList RegisterInspector::defaultPeripherals(const BoardInfo &board) const
 {
     const SvdBoardMapping m = m_catalog.mappingForBoard(board);
@@ -242,6 +272,7 @@ void RegisterInspector::onReadFinished(const RegisterReadResult &result)
         m_clockEnabled = m_builder.clockEnabledPeripherals(*dev, m_rccValues,
                                                            m_pendingMapping.rccOverrides);
         m_gateable     = m_builder.rccGateablePeripherals(*dev, m_pendingMapping.rccOverrides);
+        m_hasClockInfo = true;
 
         // Block read excludes RCC — its values already came from the gating read.
         QStringList blockSel;

@@ -37,6 +37,7 @@ Item {
             Layout.fillHeight: false
             onAddSymbolRequested: symbolPicker.open()
             onAddAddressRequested: addressDialog.open()
+            onAddRegisterRequested: registerPicker.open()
         }
 
         WatchRecordingBar {
@@ -89,4 +90,5 @@ Item {
 
     SymbolPickerDialog { id: symbolPicker }
     WatchItemDialog { id: addressDialog }
+    RegisterPickerDialog { id: registerPicker }
 }

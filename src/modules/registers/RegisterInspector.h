@@ -14,6 +14,7 @@
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QVariant>
 
 class IRegisterReader;
 class CliRegisterReader;
@@ -53,6 +54,21 @@ public:
     QStringList allPeripheralNames(const BoardInfo &board) const;
     QStringList defaultPeripherals(const BoardInfo &board) const;
     QString supportLevel(const BoardInfo &board) const;   // stable/experimental/unsupported
+
+    // Faz 10.4: register-level browsing for the Variable Watcher's "Register
+    // Ekle" picker. Each entry: {name, addr (hex string), addressValue
+    // (quint64), size, access, readAction (raw SVD string, may be empty),
+    // hasReadSideEffect (bool - the actual gate, covers write-only too),
+    // description, clockKnown, clockEnabled}. Empty if the SVD isn't loaded
+    // or the peripheral doesn't exist — never guesses.
+    QVariantList registersOfPeripheral(const BoardInfo &board, const QString &peripheralName) const;
+
+    // Best-effort clock-gating info: only accurate after takeSnapshot() has
+    // run for the active board THIS session (the RCC gating read populates
+    // it) — a peripheral absent from this set is NOT necessarily clock-off,
+    // it may simply be unknown. Check hasClockInfo() before trusting it.
+    const QSet<QString> &clockEnabledPeripherals() const { return m_clockEnabled; }
+    bool hasClockInfo() const { return m_hasClockInfo; }
 
     // Take a snapshot into slot 0(A) or 1(B). Loads the SVD first if needed.
     void takeSnapshot(int slot, const BoardInfo &board, const QStringList &peripherals);
@@ -122,6 +138,7 @@ private:
 
     QHash<quint64, quint32> m_rccValues;
     QSet<QString>           m_clockEnabled;
+    bool                    m_hasClockInfo = false;   // true once the RCC gating read has run at least once
     QSet<QString>           m_gateable;
 
     // svdFile -> boardName for parses requested only to populate the peripheral
