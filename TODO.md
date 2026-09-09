@@ -118,10 +118,19 @@ bakın — burası yalnızca özet, oradan senkron tutun:
    hata değil, `AI Presetlerini Uygula` akışının amaçlanan kullanım şekli
    olduğunun doğrulanması (madde 3'teki demo kaydı eksikliğiyle aynı kök
    neden — rol etiketleme).
-3. **YÜKSEK — Demo kaydı üretin.** Dağıtılan `watch/demo/h7_demo_trace.csv`
-   yalnızca `SysTick_VAL` içeriyor; rolü yok, `inference_us` regex'ine
-   uymuyor → demo sırasında kural akışı (`WatchRuleFeed`) boş görünür. Rol
-   taşıyan (`heapEnd`, `inferenceUs`) yeni bir kayıt alın.
+3. ~~**YÜKSEK — Demo kaydı üretin.**~~ **2026-09-09 tamamlandı.** Eski
+   `watch/demo/h7_demo_trace.csv` yalnızca `SysTick_VAL` içeriyordu (rolsüz).
+   Yeni kayıt gerçek H7'de alındı: Watch (GDB) ve UART aynı anda bağlıyken,
+   `AI Presetlerini Uygula` ile 6 rol-etiketli kalem (`inferenceUs` dahil,
+   `g_ai_last_inference_us` etiketi zaten `inference_us` regex'ine uyuyor) ~33 s
+   / 200 Hz / 6562 örnek kaydedildi — UART'tan gelen gerçek `inf` paketleri
+   sayesinde kayda **704 gerçek `inference` olayı** gömüldü, yani
+   `inference_time_outlier` kuralının `gate: {eventKind:"inference"}` şartı
+   artık demo oynatımında da sağlanabiliyor (bu çalışmada donanım çok kararlı
+   olduğu için z-skoru eşiğini aşan bir aykırılık çıkmadı — bu beklenen/dürüst
+   bir sonuç, zorlanmadı). Oynatma canlı UI'da doğrulandı: banner görünüyor,
+   birim/rol etiketleri (`0.926 ms` vb.) doğru taşınıyor. Header'daki `elf=`
+   alanı commit'e gitmeden kişisel makine yolundan temizlendi.
 4. **ORTA — RegionScan (stack watermark) canlı decode'u.** `WatchSampler`'a
    bayt-tarama decode adımı yazılmadı; bu yüzden `watch/watch_rules.json`'daki
    iki `stackWatermark` kuralı `"enabled": false` ile kapalı duruyor. Bağlı:
