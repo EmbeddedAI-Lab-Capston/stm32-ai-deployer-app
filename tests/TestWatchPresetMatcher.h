@@ -13,4 +13,6 @@ private slots:
     void regionScanFallsBackToSecondAlternativeWhenFirstMissing();
     void regionScanUsesAbsoluteSymbolAsValueNotAddress();
     void regionScanSkippedWhenNoAlternativeResolves();
+    void offsetBytesIsAddedToSymbolAddress();
+    void guardSymbolsResolveIntoWatchItemGuardAddresses();
 };

@@ -32,6 +32,12 @@ struct WatchItem
     QString        source;        // "elf:<symbol>" | "manual"
     QString        color;         // line colour assigned from Theme
     int            laneIndex = -1; // Faz 6 plot lane; -1 = auto (own lane, in list order)
+
+    // Seqlock guard (0 = unguarded). When both are set, WatchSampler reads
+    // these two u32s and marks the sample ok=false if they are NOT EQUAL —
+    // meaning the host caught the firmware mid-write (torn read).
+    quint64        guardBeginAddr = 0;
+    quint64        guardEndAddr   = 0;
 };
 
 // Independent of the ring buffer, accumulated online (Welford) — session

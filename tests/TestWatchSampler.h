@@ -15,4 +15,7 @@ private slots:
     void regionScanMismatchReportsOffsetOfFirstBadWord();
     void regionScanMismatchAcrossChunkBoundary();
     void regionScanFailedChunkReportsNotOk();
+    void guardsMatchingDecodesNormally();
+    void guardsMismatchedReportsNotOk();
+    void guardChunkFailedReportsNotOk();
 };

@@ -171,7 +171,9 @@ stm32-ai-deployer-app/
 │   └── ai_glue/
 │       ├── ai_runner.c / .h         ← X-CUBE-AI inference wrapper
 │       ├── uart_report.c / .h       ← Protokol v1.0 UART raporlama
-│       └── stack_paint.c / .h       ← Stack watermark boyama (0xA5A5A5A5)
+│       ├── stack_paint.c / .h       ← Stack watermark boyama (0xA5A5A5A5)
+│       └── telemetry.c / .h         ← Seqlock korumalı TelemetryBlock (Faz 10.1,
+│                                       sensör ham değerleri — UART gerekmez)
 │
 ├── watch/                            ← Değişken İzleyici veri dosyaları (§ aşağıda)
 │   ├── README.md · watch_rules.json · watch_presets.json
@@ -445,6 +447,26 @@ emit errorReceived(QJsonObject);
   cevabı ayrıştırılana kadar geçen süredir. Anlamı: "bu değerler
   `[t, t + skewUs/1e6]` penceresinde okundu." Çok bloklu planlar eşzamanlı
   değildir ve bu, UI'da `skewUs` olarak **gösterilir**, gizlenmez.
+- **Yığın (stack) üzerindeki yerel değişkenlerin (`float input[]`,
+  `AI_InferenceResult result` gibi) sabit adresi yoktur, İzleyici bunları
+  göremez.** Bu yüzden Faz 10.1'de `templates/ai_glue/telemetry.h/.c`
+  eklendi: `main.c`'deki döngü, `AI_Runner_Infer()`'dan hemen sonra ham
+  sensör değerlerini + inference sonucunu **seqlock korumalı** bir global
+  `TelemetryBlock`'a (`g_telemetry`) kopyalar. Seqlock zorunlu, çünkü host
+  asenkron örneklerken firmware yazmanın ortasında yakalanabilir:
+  `Telemetry_BeginWrite()` bir sayacı (`seq_begin`) artırır, alanlar yazılır,
+  `Telemetry_EndWrite()` `seq_end`'i `seq_begin`'e eşitler; host tüm bloğu
+  tek SWD okumasında alır ve **`seq_begin != seq_end` ise örneği atar**
+  (`WatchItem::guardBeginAddr/guardEndAddr` → `WatchPlanBuilder` guard
+  adreslerini değerle AYNI bloğa dahil eder → `WatchSampler::decodeSample()`
+  kapıyı uygular). Struct alan offset'leri **üç kartta da aynı** (92 bayt,
+  padding yok — `gdb ptype /o TelemetryBlock` ile ayrı ayrı doğrulandı,
+  tahmin edilmedi) çünkü tüm alanlar zaten 4 bayt hizalı. Preset'ten
+  (`watch/watch_presets.json`) guard adresi eklerken **her iki guard da
+  çözülmeli** — `Backend::applyWatchPresets()` bunları yeni kaleme
+  `VariableWatcher::updateItem()`'ın `guardBeginAddr`/`guardEndAddr` prop'larıyla
+  aktarır; bu köprü unutulursa preset guard bilgisi sessizce kaybolur (Faz
+  10.1'de canlı testte yakalanan gerçek hata).
 - **Demo güvenliği birinci sınıf yoldur:** kayıttan oynatma modu canlı yolun
   aynı sinyal zincirini kullanır; uygulamayla birlikte dağıtılan
   `watch/demo/h7_demo_trace.csv` sayesinde ekran ST-Link olmadan tam çalışır.

@@ -134,3 +134,51 @@ void TestWatchPresetMatcher::regionScanSkippedWhenNoAlternativeResolves()
     const QList<WatchItem> out = WatchPresetMatcher::resolveSuggestions({preset}, symbols);
     QVERIFY(out.isEmpty());
 }
+
+// offset_bytes lets a preset item point into a field of a struct symbol
+// (e.g. g_telemetry.sensor[0]) rather than only at the symbol's own start.
+void TestWatchPresetMatcher::offsetBytesIsAddedToSymbolAddress()
+{
+    WatchPreset preset;
+    preset.id = "sensor_memory";
+    preset.always = true;
+    WatchPresetItem item;
+    item.role = "sensor0";
+    item.symbol = "g_telemetry";
+    item.offsetBytes = 4;
+    preset.items << item;
+
+    const QList<Symbol> symbols = { makeSymbol("g_telemetry", 0x24000100) };
+    const QList<WatchItem> out = WatchPresetMatcher::resolveSuggestions({preset}, symbols);
+
+    QCOMPARE(out.size(), 1);
+    QCOMPARE(out.first().address, quint64(0x24000104));
+}
+
+// guardBegin/guardEnd resolve against the symbol table the same way the main
+// symbol does, landing in WatchItem::guardBeginAddr/guardEndAddr so
+// WatchPlanBuilder can fold them into the item's seqlock-guarded read.
+void TestWatchPresetMatcher::guardSymbolsResolveIntoWatchItemGuardAddresses()
+{
+    WatchPreset preset;
+    preset.id = "sensor_memory";
+    preset.always = true;
+    WatchPresetItem item;
+    item.role = "sensor0";
+    item.symbol = "g_telemetry";
+    item.offsetBytes = 4;
+    item.hasGuardBegin = true;
+    item.guardBeginSymbol = "g_telemetry";
+    item.guardBeginOffsetBytes = 0;
+    item.hasGuardEnd = true;
+    item.guardEndSymbol = "g_telemetry";
+    item.guardEndOffsetBytes = 88;
+    preset.items << item;
+
+    const QList<Symbol> symbols = { makeSymbol("g_telemetry", 0x24000100) };
+    const QList<WatchItem> out = WatchPresetMatcher::resolveSuggestions({preset}, symbols);
+
+    QCOMPARE(out.size(), 1);
+    QCOMPARE(out.first().guardBeginAddr, quint64(0x24000100));
+    QCOMPARE(out.first().guardEndAddr, quint64(0x24000100 + 88));
+}

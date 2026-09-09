@@ -4283,6 +4283,10 @@ void Backend::applyWatchPresets()
             props[QStringLiteral("regionBytes")]   = int(it.regionBytes);
             props[QStringLiteral("regionPattern")] = QVariant::fromValue(it.regionPattern);
         }
+        if (it.guardBeginAddr != 0 && it.guardEndAddr != 0) {
+            props[QStringLiteral("guardBeginAddr")] = QVariant::fromValue(it.guardBeginAddr);
+            props[QStringLiteral("guardEndAddr")]   = QVariant::fromValue(it.guardEndAddr);
+        }
         m_watcher->updateItem(m_watcher->items().last().id, props);
     }
 }

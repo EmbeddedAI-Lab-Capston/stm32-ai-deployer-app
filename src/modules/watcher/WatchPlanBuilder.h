@@ -6,6 +6,8 @@
 #include <QPair>
 #include <QVector>
 
+#include <array>
+
 // ── WatchPlanBuilder ──────────────────────────────────────────────────────
 // Pure logic (no QObject, no link): turns a WatchItem selection into a
 // minimal set of MemoryRequests (plan docs/variable_watcher_plan.md Bolum 7.2).
@@ -21,6 +23,13 @@ struct WatchPlan
     // byteOffset}. {-1,-1} means "not sampled by this plan" (disabled, or
     // the wrong WatchItemKind for this builder call).
     QVector<QPair<int, int>> itemSlots;
+
+    // Parallel to `items`, scalar items only. {requestIndex, seq_begin byte
+    // offset, seq_end byte offset} for a seqlock-guarded item (WatchItem::
+    // guardBeginAddr/guardEndAddr both set); {-1,-1,-1} for an unguarded one.
+    // Guarded items are read alongside their guard words in one request (see
+    // build()), so requestIndex is always the same block as itemSlots'.
+    QVector<std::array<int, 3>> guardSlots;
 
     int roundTripsPerSample() const { return requests.size(); }
 };

@@ -12,6 +12,27 @@
       ]
     },
     {
+      "id": "sensor_memory", "label": "Sensor ham degerleri (bellek, UART gerekmez)",
+      "requiresAnySymbol": ["g_telemetry"],
+      "items": [
+        { "role": "sensor0", "symbol": "g_telemetry", "offset_bytes": 4,  "type": "f32", "unit": "",
+          "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
+          "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } },
+        { "role": "sensor1", "symbol": "g_telemetry", "offset_bytes": 8,  "type": "f32", "unit": "",
+          "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
+          "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } },
+        { "role": "sensor2", "symbol": "g_telemetry", "offset_bytes": 12, "type": "f32", "unit": "",
+          "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
+          "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } },
+        { "role": "memInferUs",   "symbol": "g_telemetry", "offset_bytes": 44, "type": "u32", "unit": "us",
+          "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
+          "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } },
+        { "role": "memInferCount", "symbol": "g_telemetry", "offset_bytes": 48, "type": "u32",
+          "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
+          "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } }
+      ]
+    },
+    {
       "id": "xcubeai_runtime", "label": "X-CUBE-AI calisma zamani",
       "requiresAnySymbol": ["s_network", "net_exec_ctx", "g_npu_exec_ctx", "NN_Instance_Default"],
       "items": [

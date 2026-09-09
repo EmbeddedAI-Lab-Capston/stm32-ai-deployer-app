@@ -16,4 +16,5 @@ private slots:
     void disabledItemsAreExcluded();
     void mergeCombinesRequestsAndRemapsRegionSlots();
     void mergeLeavesScalarSlotsUntouched();
+    void guardedItemRangeCoversBothGuards();
 };

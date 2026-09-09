@@ -28,6 +28,23 @@ QVector<double> WatchSampler::decodeSample(const QList<WatchItem> &items, const 
         if (!reply.ok)
             continue;
 
+        // Seqlock gate: if the two guard words differ, the host caught the
+        // firmware mid-write. Do NOT fabricate a value for this sample —
+        // leave ok[i] false, same contract as any other failed read.
+        if (i < plan.guardSlots.size() && plan.guardSlots.at(i)[0] >= 0) {
+            const auto &g = plan.guardSlots.at(i);
+            if (g[0] >= replies.size())
+                continue;
+            const MemoryReply &guardReply = replies.at(g[0]);
+            if (!guardReply.ok)
+                continue;
+            bool beginOk = false, endOk = false;
+            const double beginVal = ValueCodec::decode(guardReply.data, g[1], WatchValueType::U32, &beginOk);
+            const double endVal   = ValueCodec::decode(guardReply.data, g[2], WatchValueType::U32, &endOk);
+            if (!beginOk || !endOk || beginVal != endVal)
+                continue;
+        }
+
         bool decodeOk = false;
         const double v = ValueCodec::decode(reply.data, byteOffset, item.type, &decodeOk);
         if (decodeOk) {

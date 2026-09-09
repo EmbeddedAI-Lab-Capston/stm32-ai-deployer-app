@@ -23,6 +23,21 @@ struct WatchPresetItem
     double         scale = 1.0;
     QString        unit;
 
+    // Byte offset added to `symbol`'s address — lets one preset item point
+    // into a field of a struct symbol (e.g. g_telemetry.sensor[0]) instead
+    // of only at a symbol's own start.
+    qint64         offsetBytes = 0;
+
+    // Seqlock guard words: "guardBegin"/"guardEnd" JSON objects, each
+    // {"symbol","offset_bytes"}. Both must resolve for the produced
+    // WatchItem to carry guardBeginAddr/guardEndAddr (see WatchModel.h).
+    bool           hasGuardBegin = false;
+    QString        guardBeginSymbol;
+    qint64         guardBeginOffsetBytes = 0;
+    bool           hasGuardEnd = false;
+    QString        guardEndSymbol;
+    qint64         guardEndOffsetBytes = 0;
+
     bool           isRegionScan = false;
     QStringList    regionFromAlternatives;   // tried in order; first that resolves wins
     QString        regionTo;

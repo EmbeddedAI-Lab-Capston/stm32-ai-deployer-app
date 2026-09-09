@@ -6,13 +6,21 @@
 #include <algorithm>
 
 namespace {
-struct Range { int itemIndex; quint64 start; quint32 len; };
+struct Range {
+    int     itemIndex;
+    quint64 start;          // extended range start (covers guard words too, if any)
+    quint32 len;            // extended range length
+    quint64 itemAddr;       // the item's own value address (for itemSlots offset)
+    quint64 guardBeginAddr; // 0 if unguarded
+    quint64 guardEndAddr;   // 0 if unguarded
+};
 }
 
 WatchPlan WatchPlanBuilder::build(const QList<WatchItem> &items, quint32 maxReadBytes)
 {
     WatchPlan plan;
-    plan.itemSlots = QVector<QPair<int, int>>(items.size(), qMakePair(-1, -1));
+    plan.itemSlots  = QVector<QPair<int, int>>(items.size(), qMakePair(-1, -1));
+    plan.guardSlots = QVector<std::array<int, 3>>(items.size(), std::array<int, 3>{-1, -1, -1});
     if (maxReadBytes == 0) maxReadBytes = 4096;
 
     QVector<Range> ranges;
@@ -24,7 +32,16 @@ WatchPlan WatchPlanBuilder::build(const QList<WatchItem> &items, quint32 maxRead
         const int sz = ValueCodec::byteSize(it.type);
         if (sz <= 0)
             continue;
-        ranges.append({ i, it.address, quint32(sz) });
+
+        const bool guarded = it.guardBeginAddr != 0 && it.guardEndAddr != 0;
+        quint64 rangeStart = it.address;
+        quint64 rangeEnd   = it.address + quint64(sz);
+        if (guarded) {
+            rangeStart = qMin(rangeStart, it.guardBeginAddr);
+            rangeEnd   = qMax(rangeEnd, it.guardEndAddr + 4);
+        }
+        ranges.append({ i, rangeStart, quint32(rangeEnd - rangeStart), it.address,
+                         guarded ? it.guardBeginAddr : 0, guarded ? it.guardEndAddr : 0 });
     }
 
     std::sort(ranges.begin(), ranges.end(),
@@ -58,7 +75,12 @@ WatchPlan WatchPlanBuilder::build(const QList<WatchItem> &items, quint32 maxRead
 
         for (int m : members) {
             const Range &r = ranges.at(m);
-            plan.itemSlots[r.itemIndex] = qMakePair(reqIndex, int(r.start - blockStart));
+            plan.itemSlots[r.itemIndex] = qMakePair(reqIndex, int(r.itemAddr - blockStart));
+            if (r.guardBeginAddr != 0) {
+                plan.guardSlots[r.itemIndex] = { reqIndex,
+                                                  int(r.guardBeginAddr - blockStart),
+                                                  int(r.guardEndAddr - blockStart) };
+            }
         }
 
         idx = j;
@@ -70,7 +92,8 @@ WatchPlan WatchPlanBuilder::build(const QList<WatchItem> &items, quint32 maxRead
 WatchPlan WatchPlanBuilder::buildRegionScans(const QList<WatchItem> &items, quint32 maxReadBytes)
 {
     WatchPlan plan;
-    plan.itemSlots = QVector<QPair<int, int>>(items.size(), qMakePair(-1, -1));
+    plan.itemSlots  = QVector<QPair<int, int>>(items.size(), qMakePair(-1, -1));
+    plan.guardSlots = QVector<std::array<int, 3>>(items.size(), std::array<int, 3>{-1, -1, -1});
     if (maxReadBytes == 0) maxReadBytes = 4096;
 
     for (int i = 0; i < items.size(); ++i) {
@@ -106,7 +129,8 @@ WatchPlan WatchPlanBuilder::merge(const WatchPlan &scalarPlan, const WatchPlan &
     out.requests = scalarPlan.requests;
     out.requests += regionPlan.requests;
 
-    out.itemSlots = scalarPlan.itemSlots;
+    out.itemSlots  = scalarPlan.itemSlots;
+    out.guardSlots = scalarPlan.guardSlots;   // RegionScan items never carry guards
     const int offset = scalarPlan.requests.size();
     for (int i = 0; i < out.itemSlots.size() && i < regionPlan.itemSlots.size(); ++i) {
         const QPair<int, int> &slot = regionPlan.itemSlots.at(i);

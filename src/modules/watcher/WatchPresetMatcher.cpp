@@ -61,7 +61,21 @@ QList<WatchPreset> WatchPresetMatcher::loadPresetsFromJson(const QByteArray &jso
                     item.regionFromAlternatives << rf.toString();
                 }
             } else {
-                item.symbol = io.value(QStringLiteral("symbol")).toString();
+                item.symbol      = io.value(QStringLiteral("symbol")).toString();
+                item.offsetBytes = qint64(io.value(QStringLiteral("offset_bytes")).toDouble(0));
+
+                const QJsonObject gb = io.value(QStringLiteral("guardBegin")).toObject();
+                if (!gb.isEmpty()) {
+                    item.hasGuardBegin        = true;
+                    item.guardBeginSymbol     = gb.value(QStringLiteral("symbol")).toString();
+                    item.guardBeginOffsetBytes = qint64(gb.value(QStringLiteral("offset_bytes")).toDouble(0));
+                }
+                const QJsonObject ge = io.value(QStringLiteral("guardEnd")).toObject();
+                if (!ge.isEmpty()) {
+                    item.hasGuardEnd        = true;
+                    item.guardEndSymbol     = ge.value(QStringLiteral("symbol")).toString();
+                    item.guardEndOffsetBytes = qint64(ge.value(QStringLiteral("offset_bytes")).toDouble(0));
+                }
             }
             preset.items.append(item);
         }
@@ -166,13 +180,30 @@ QList<WatchItem> WatchPresetMatcher::resolveSuggestions(const QList<WatchPreset>
             WatchItem item;
             item.label   = pi.symbol;
             item.role     = pi.role;
-            item.address = sym->address;
+            item.address = sym->address + quint64(pi.offsetBytes);
             item.kind     = WatchItemKind::Scalar;
             item.type     = pi.type;
             item.format   = pi.format;
             item.scale   = pi.scale;
             item.unit     = pi.unit;
             item.source   = QStringLiteral("preset:%1").arg(preset.id);
+
+            if (pi.hasGuardBegin) {
+                for (const Symbol &s : symbols) {
+                    if (s.name == pi.guardBeginSymbol && !s.addressIsValue) {
+                        item.guardBeginAddr = s.address + quint64(pi.guardBeginOffsetBytes);
+                        break;
+                    }
+                }
+            }
+            if (pi.hasGuardEnd) {
+                for (const Symbol &s : symbols) {
+                    if (s.name == pi.guardEndSymbol && !s.addressIsValue) {
+                        item.guardEndAddr = s.address + quint64(pi.guardEndOffsetBytes);
+                        break;
+                    }
+                }
+            }
             out.append(item);
         }
     }

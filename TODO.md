@@ -85,6 +85,58 @@ bellek okumak**; sensör verisini de oradan okuyunca F4 tam işlevsel hale
 geliyor ve UART bir bağımlılık olmaktan çıkıp (H7'de) çapraz doğrulama
 aracına dönüşüyor.
 
+### Faz 10.1 — durum (2026-09-09, kısmen tamamlandı)
+
+**Kod tamamlandı, testler yeşil, F4'te canlı doğrulandı; H7 sensör
+takılınca ve N6 flash sorunu çözülünce tamamlanacak.**
+
+- `templates/ai_glue/telemetry.h/.c` (seqlock korumalı `TelemetryBlock`)
+  eklendi; üç kartın da `main.c`+`Makefile`'ı güncellendi (N6'daki sentetik-
+  veri yedek yoluna da `sensor_ok` doğru yansıtılıyor).
+- Host: `WatchItem::guardBeginAddr/guardEndAddr`, `WatchPlanBuilder` guard'ı
+  aynı bloğa dahil edip `guardSlots` üretiyor, `WatchSampler::decodeSample()`
+  seqlock kapısını uyguluyor, `WatchPresetMatcher` `offset_bytes` +
+  `guardBegin`/`guardEnd` JSON alanlarını çözüyor, `Backend::applyWatchPresets()`
+  guard adreslerini yeni kaleme aktarıyor (`VariableWatcher::updateItem`'a
+  `guardBeginAddr`/`guardEndAddr` prop desteği eklendi — bu olmadan preset'ten
+  gelen guard bilgisi sessizce kayboluyordu, canlı testte yakalandı).
+  6 yeni birim testi (`TestWatchSampler` x3, `TestWatchPlanBuilder` x1,
+  `TestWatchPresetMatcher` x2), hepsi + mevcut tüm testler yeşil.
+- `watch/watch_presets.json`'a `sensor_memory` preseti eklendi
+  (`sensor0/1/2`, `memInferUs`, `memInferCount`) — offset'ler (4/8/12/44/48,
+  guard 0/88) **tahmin edilmedi**, H7/F4/N6 ELF'lerinin üçünde de
+  `gdb ptype /o TelemetryBlock` ile ayrı ayrı doğrulandı (üçünde de aynı,
+  padding yok).
+- **F4: tam canlı doğrulandı** (UART yok, sadece SWD). Gerçek BME280 değerleri
+  okundu (sıcaklık/nem/basınç fiziksel olarak makul, küçük doğal jitter
+  dışında kararlı) ve `memInferCount`/`memInferUs` mevcut `g_ai_infer_count`/
+  `g_ai_last_inference_us` ile **birebir eşleşti** — iki bağımsız SWD okuma
+  yolunun aynı sonucu vermesi, seqlock decode'unun doğruluğunun kanıtı.
+  Ekran görüntüsü + ham JSON: `out/sensor_memory_e2e/04_f4_*`.
+- **H7: kod/ELF eşleşmesi doğrulandı ama sensör canlı testi YAPILAMADI** —
+  bu oturumda BME280 fiziksel olarak H7'ye değil F4'e bağlıydı (kullanıcı
+  onayı). ELF eşleşmesi ve preset uygulaması doğru çalıştı, `uwTick`/
+  `stackWatermark` canlı güncellendi, ama `sensor0/1/2` beklendiği gibi
+  `0.000` kaldı (gerçek durum — uydurma değil, o boot'ta hiç başarılı I2C
+  okuması olmadı). **Kullanıcı BME280'i H7'ye taktıktan sonra tekrar
+  denenmeli** (UART-vs-bellek çapraz doğrulaması, plan §3.11).
+- **N6: derleme başarılı** (telemetry.c Cortex-M55'te de sorunsuz derleniyor,
+  offset'ler aynı), **flash başarısız**: `STM32_Programmer_CLI karta
+  baglanamadi` — bilinen N6 bağlantı kısıtı (§2.5), zaman kutulu bırakıldı.
+- **Yol boyunca bulunan, Faz 10.1 kapsamı dışı bir UI hatası:**
+  `qml/components/watch/WatchToolbar.qml`'de ELF durum etiketi
+  `backend.watchElfPath().length > 0 ? ... : "ELF yüklenmedi"` şeklinde bir
+  **metot çağrısına** bağlı — QML'in binding motoru bunu değişiklik için
+  izleyemiyor, yani ELF yüklendikten sonra bile etiket "ELF yüklenmedi"
+  göstermeye devam ediyor (arka planda gerçek durum doğru, sadece bu etiket
+  bayat). Düzeltme `watchElfPath`'i NOTIFY'lı bir `Q_PROPERTY`ye çevirmeyi
+  gerektiriyor — bilinçli olarak bu oturumda yapılmadı (kapsam dışı), ama
+  gerçek ve düşük riskli bir düzeltme.
+- **Kalan (Faz 10.1'i kapatmak için):** H7'de BME280 canlı + UART çapraz
+  doğrulama, N6 flash sorununun (gerekirse) çözülmesi veya kalıcı olarak
+  "doğrulanamadı" işaretlenmesi, ekran görüntüleri `out/sensor_memory_e2e/`
+  altında tamamlanması (`01_h7_*`, `02_h7_*`, `03_h7_uart_vs_bellek_*`).
+
 ---
 
 ## Kalan işler (öncelik sıralı)

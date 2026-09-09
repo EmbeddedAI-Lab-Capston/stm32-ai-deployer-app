@@ -6,6 +6,7 @@
 #include "ai_config.h"
 #include "ai_runner.h"
 #include "stack_paint.h"
+#include "telemetry.h"
 #include "uart_report.h"
 #include "{{SENSOR_TYPE_LOWER}}.h"
 
@@ -87,6 +88,24 @@ int main(void)
         Ensure_AI_Ready();
         AI_InferenceResult result;
         uint32_t inf_us = AI_Runner_Infer(input, &result);
+
+        /* Telemetry write — host reads this over SWD, UART not required.
+         * sensor_ok reflects whether `input` came from the real sensor this
+         * cycle or the synthetic fallback above (sensor_missing). */
+        Telemetry_BeginWrite();
+        for (uint32_t ti = 0; ti < AI_INPUT_SIZE && ti < TELEMETRY_MAX_SENSOR; ++ti)
+            g_telemetry.sensor[ti] = input[ti];
+        g_telemetry.sensor_count   = (AI_INPUT_SIZE < TELEMETRY_MAX_SENSOR)
+                                        ? AI_INPUT_SIZE : TELEMETRY_MAX_SENSOR;
+        g_telemetry.sensor_ok      = sensor_missing ? 0 : 1;
+        g_telemetry.inf_us         = inf_us;
+        g_telemetry.infer_count   += 1;
+        g_telemetry.cycle          = cycle;
+        g_telemetry.class_id       = result.class_id;
+        g_telemetry.confidence_pct = result.confidence_pct;
+        for (uint32_t li = 0; li < TELEMETRY_LABEL_LEN; ++li)
+            g_telemetry.label[li] = result.label[li];
+        Telemetry_EndWrite();
 
         UART_Report_Inference(AI_MODEL_NAME, inf_us,
                               AI_Runner_GetRamUsage(),

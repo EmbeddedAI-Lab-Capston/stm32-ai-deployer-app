@@ -6,6 +6,7 @@
 #include "ai_config.h"
 #include "ai_runner.h"
 #include "stack_paint.h"
+#include "telemetry.h"
 #include "uart_report.h"
 #include "{{SENSOR_TYPE_LOWER}}.h"
 
@@ -66,6 +67,9 @@ int main(void)
                 UART_Report_Error(300, "sensor_read_fail");
             }
             read_failures++;
+            Telemetry_BeginWrite();
+            g_telemetry.sensor_ok = 0;
+            Telemetry_EndWrite();
             HAL_Delay(200);
             continue;
         }
@@ -73,6 +77,22 @@ int main(void)
 
         AI_InferenceResult result;
         uint32_t inf_us = AI_Runner_Infer(input, &result);
+
+        /* Telemetry write — host reads this over SWD, UART not required */
+        Telemetry_BeginWrite();
+        for (uint32_t ti = 0; ti < AI_INPUT_SIZE && ti < TELEMETRY_MAX_SENSOR; ++ti)
+            g_telemetry.sensor[ti] = input[ti];
+        g_telemetry.sensor_count   = (AI_INPUT_SIZE < TELEMETRY_MAX_SENSOR)
+                                        ? AI_INPUT_SIZE : TELEMETRY_MAX_SENSOR;
+        g_telemetry.sensor_ok      = 1;
+        g_telemetry.inf_us         = inf_us;
+        g_telemetry.infer_count   += 1;
+        g_telemetry.cycle          = cycle;
+        g_telemetry.class_id       = result.class_id;
+        g_telemetry.confidence_pct = result.confidence_pct;
+        for (uint32_t li = 0; li < TELEMETRY_LABEL_LEN; ++li)
+            g_telemetry.label[li] = result.label[li];
+        Telemetry_EndWrite();
 
         UART_Report_Inference(AI_MODEL_NAME, inf_us,
                               AI_Runner_GetRamUsage(),

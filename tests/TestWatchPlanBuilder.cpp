@@ -174,3 +174,33 @@ void TestWatchPlanBuilder::mergeLeavesScalarSlotsUntouched()
     QCOMPARE(merged.itemSlots.at(0), scalarPlan.itemSlots.at(0));
     QCOMPARE(merged.itemSlots.at(0).first, 0);   // still the first (only) scalar request
 }
+
+// A seqlock-guarded item's produced MemoryRequest must span both guard words
+// as well as the value itself, all in ONE block — otherwise seq_begin/
+// seq_end could land in different SWD reads and the seqlock check would be
+// comparing snapshots taken at different times (meaningless).
+void TestWatchPlanBuilder::guardedItemRangeCoversBothGuards()
+{
+    WatchItem it;
+    it.address        = 0x24000004;   // the value itself
+    it.type           = WatchValueType::U32;
+    it.enabled        = true;
+    it.kind           = WatchItemKind::Scalar;
+    it.guardBeginAddr = 0x24000000;   // seq_begin, before the value
+    it.guardEndAddr   = 0x24000008;   // seq_end, after the value
+
+    const QList<WatchItem> items{ it };
+    const WatchPlan plan = WatchPlanBuilder::build(items, 4096);
+
+    QCOMPARE(plan.requests.size(), 1);
+    QCOMPARE(plan.requests.at(0).addr, quint64(0x24000000));
+    QCOMPARE(plan.requests.at(0).len, quint32(12));   // covers guardEndAddr+4
+
+    QCOMPARE(plan.itemSlots.at(0).first, 0);
+    QCOMPARE(plan.itemSlots.at(0).second, 4);   // value offset within the block
+
+    QCOMPARE(plan.guardSlots.size(), 1);
+    QCOMPARE(plan.guardSlots.at(0)[0], 0);   // same request as the value
+    QCOMPARE(plan.guardSlots.at(0)[1], 0);   // guardBeginAddr offset
+    QCOMPARE(plan.guardSlots.at(0)[2], 8);   // guardEndAddr offset
+}

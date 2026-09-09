@@ -174,6 +174,8 @@ void VariableWatcher::updateItem(const QString &id, const QVariantMap &props)
         if (props.contains(QStringLiteral("enabled")))  item.enabled = props.value(QStringLiteral("enabled")).toBool();
         if (props.contains(QStringLiteral("color")))    item.color   = props.value(QStringLiteral("color")).toString();
         if (props.contains(QStringLiteral("laneIndex"))) item.laneIndex = props.value(QStringLiteral("laneIndex")).toInt();
+        if (props.contains(QStringLiteral("guardBeginAddr"))) item.guardBeginAddr = props.value(QStringLiteral("guardBeginAddr")).toULongLong();
+        if (props.contains(QStringLiteral("guardEndAddr")))   item.guardEndAddr   = props.value(QStringLiteral("guardEndAddr")).toULongLong();
 
         emit itemsChanged();
         return;
