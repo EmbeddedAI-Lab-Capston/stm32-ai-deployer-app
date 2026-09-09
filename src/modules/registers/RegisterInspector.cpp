@@ -361,6 +361,19 @@ void RegisterInspector::clearSnapshots()
 
 void RegisterInspector::finishWithError(const QString &message)
 {
+    // A failed attempt must not leave the target slot showing whatever it
+    // held before (possibly a different board's snapshot entirely — this
+    // was reproduced live: NUCLEO-N657X0-Q's failed read left slot A still
+    // "valid" and on-screen with STM32F407's peripherals/values from an
+    // earlier attempt). registerModel/registerSnapshotInfo must reflect "no
+    // snapshot" rather than silently keep stale, possibly wrong-board data
+    // — the same "never show data that might be wrong without a visible
+    // warning" principle CLAUDE.md already applies to the Watcher's ELF
+    // mismatch check.
+    if (m_pendingSlot == 0 || m_pendingSlot == 1) {
+        m_slotFilled[m_pendingSlot] = false;
+        m_slots[m_pendingSlot] = RegisterSnapshot{};
+    }
     m_phase = Phase::Idle;
     m_lastError = message;
     setBusy(false);

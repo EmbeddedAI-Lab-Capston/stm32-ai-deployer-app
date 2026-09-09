@@ -3024,6 +3024,12 @@ void Backend::wireRegisters()
     });
     connect(m_registers, &RegisterInspector::errorOccurred, this, [this](const QString &m) {
         emit statusMessage(m);
+        // A failed snapshot attempt clears the target slot (RegisterInspector::
+        // finishWithError) so it stops reporting a possibly different board's
+        // stale data as "valid" — registerModel must be re-read too, not just
+        // the busy/stage properties, or the tree keeps showing that stale data
+        // on screen until some unrelated later change happens to touch it.
+        emit registerModelChanged();
         emit registerChanged();
     });
 
