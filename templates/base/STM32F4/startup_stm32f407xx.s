@@ -12,6 +12,15 @@
   .type Reset_Handler, %function
 Reset_Handler:
   ldr   sp, =_estack
+
+  /* Must run before any FP instruction — enables the FPU (SCB->CPACR) and
+   * does the rest of CMSIS device init. Without this call the build's hard
+   * float ABI (see Makefile's MCU flags) makes the very first VFP
+   * instruction UsageFault (CFSR UNDEFINSTR) almost immediately, before
+   * main() gets anywhere near real work — reproduced live on an actual
+   * F407 Discovery board, main.c never got past its first line. */
+  bl    SystemInit
+
   /* Copy .data from Flash to RAM */
   movs  r1, #0
   b     LoopCopyDataInit
