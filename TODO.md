@@ -143,7 +143,35 @@ bakın — burası yalnızca özet, oradan senkron tutun:
    alt cepheye bölünmesi düşünülebilir — mimari karar, aceleye getirilmemeli.
 7. **DÜŞÜK — Register Inspector hız iddiası (Faz 2) hiç canlı ölçülmedi**
    (GDB arka ucu vs CLI). Varsayılan zaten `"cli"` olduğu için regresyon
-   riski yok, sadece bir performans iddiası doğrulanmamış durumda.
+   riski yok, sadece bir performans iddiası doğrulanmamış durumda. (Bu
+   oturumda GDB arka ucu fonksiyonel olarak doğrulandı — bkz. madde 8 — ama
+   hız kıyaslaması hâlâ yapılmadı.)
+8. ~~**Register Inspector'ın geniş kapsamlı canlı testi.**~~ **2026-09-09
+   tamamlandı.** Önceki oturum yalnızca tek bir RCC snapshot'ı doğrulamıştı;
+   bu oturumda H7 + F4 + N6 (üçü de bağlıyken) üzerinde: Snapshot A/B → **A→B
+   farkı** (gerçek GPIOD/USART3.ISR TXE-TC değişimleri, doğru alan/adres/Δ),
+   kural motoru (`registerRuleViolations`, 0 ihlal — sağlıklı donanımda
+   beklenen/doğru sonuç, USART/I2C/TIM hepsi doğru yapılandırılmış), JSON
+   dışa aktarım (1.1 MB, board+diff+violations şeması doğru), **GDB okuma
+   arka ucu** (`setRegisterReadBackend("gdb")`, `mode: GDB-ATTACH`, aynı 53
+   değişiklik/0 hata CLI ile — commit 599c2fb'nin ST-Link hedefleme
+   düzeltmesi GDB yolunda da doğrulandı, sonra varsayılan `"cli"`'ye geri
+   alındı). LLM danışman yolu yalnızca "API key yokken doğru şekilde
+   devre dışı" olarak doğrulandı — gerçek bir LLM çağrısı kimlik bilgisi
+   gerektirdiği için denenmedi.
+   **Yol boyunca 2 gerçek hata bulunup düzeltildi:** (a) SVD `<description>`
+   metinleri kaynak XML'in kendi satır sonlarını/girintisini olduğu gibi
+   taşıyordu — `RegisterDiffView`'in sabit yükseklikli satırları bu yüzden
+   bir sonraki satırın üzerine biniyordu (H7'nin diff popup'ında canlı
+   yakalandı); tek noktadan (`SvdParser::normalizeDescription`,
+   `QString::simplified()`) düzeltildi, tüm tüketiciler (diff/ağaç/tooltip)
+   otomatik faydalanıyor. (b) `RegisterInspector::finishWithError()` başarısız
+   bir deneme sonrası hedef slotu hiç geçersiz kılmıyordu — N6'nın (bilinen/
+   dokümante TrustZone kısıtı yüzünden) RCC okuması başarısız olduğunda,
+   Register Tablosu bir önceki **F407 snapshot'ını** N6 başlığı altında
+   sessizce "geçerli" göstermeye devam ediyordu; slot artık hata anında
+   temizleniyor ve `registerModelChanged()` de tetikleniyor ki QML ağacı
+   aynı anda güncellensin.
 
 ---
 
