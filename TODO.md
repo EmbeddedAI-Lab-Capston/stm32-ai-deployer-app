@@ -156,10 +156,25 @@ bakın — burası yalnızca özet, oradan senkron tutun:
    stack bölgesi için gerçek bir maliyet — ayrı düşük-hızlı zamanlayıcı
    (DHCSR sağlık kontrolü gibi) ileride eklenebilir, şimdilik dokümante
    edildi (bkz. `WatchPlanBuilder.h`, `CLAUDE.md`).
-5. **ORTA — `AnalysisScreen.qml`'e "İzleme Profilleri" sekmesi.** Planda
-   vardı, hiç eklenmedi. **Bilinçli olarak yapılmadı** — 5. sekme
-   `_subTabs`/`_cols`/`rowsForIndex`/özet kartları/dışa aktarımı birden
-   etkiliyor ve görsel doğrulama (GUI otomasyonu yok) gerektiriyor.
+5. ~~**ORTA — `AnalysisScreen.qml`'e "İzleme Profilleri" sekmesi.**~~
+   **2026-09-09 tamamlandı.** Eskiden "GUI otomasyonu yok" gerekçesiyle
+   ertelenmişti — artık [[project-verification-ecosystem|DebugBridge/uiprobe]]
+   var, gerekçe geçersizleşti. `Backend::watchProfileRecords()` eklendi
+   (diğer dört `*Records()` erişimcisiyle birebir aynı desen —
+   `recordsForKind("watch_profile")`); `AnalysisScreen.qml`'e 5. sekme
+   eklendi, mevcut genel `_cols`/`rowsForIndex`/`colsForIndex`/
+   `boardColumn`/`typeColumn`/`summaryCards`/`barData`/CSV-PDF dışa aktarım
+   makinesi **hiç özel kod yazmadan** yeniden kullanıldı (`WatchProfile::
+   buildRows()`'un zaten ürettiği c0..c14 hücre biçimi, diğer 4 sekmenin
+   kullandığı `{id,kind,cells}` şekliyle bire bir örtüşüyordu). Canlı H7
+   verisiyle doğrulandı: 24 kalem satırı, doğru özet kartları (Toplam
+   Kalem/Kart Sayısı/Kalem Türü/Ort. Hz), gerçek kalem bazlı ortalama
+   grafiği. Ekran görüntüsü: `out/regionscan_e2e/02_izleme_profilleri_tab.png`.
+   **Bilinen sınırlama:** depolama satır-başına-KALEM (item) granülerliğinde
+   — bir oturumda izlenen 6 kalem 6 ayrı satır olarak görünür, aynı oturuma
+   ait olduklarını gösteren ortak bir "oturum" sütunu/kimliği yok (board+not
+   ile elle ilişkilendirilebilir). "Sil" butonu bu yüzden tek bir kalemi
+   siler, tüm oturumu değil — kapsam dışı bırakıldı.
 6. **DÜŞÜK — `Backend.cpp` 4320 satıra çıktı** (+%30). `WatchFacade` gibi bir
    alt cepheye bölünmesi düşünülebilir — mimari karar, aceleye getirilmemeli.
 7. ~~**DÜŞÜK — Register Inspector hız iddiası (Faz 2) hiç canlı ölçülmedi**~~

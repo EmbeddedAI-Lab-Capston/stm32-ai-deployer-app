@@ -73,6 +73,7 @@ class Backend : public QObject
     Q_PROPERTY(QVariantList simulationRecords  READ simulationRecords  NOTIFY analysisChanged)
     Q_PROPERTY(QVariantList sensorRecords      READ sensorRecords      NOTIFY analysisChanged)
     Q_PROPERTY(QVariantList compiledRecords    READ compiledRecords    NOTIFY analysisChanged)
+    Q_PROPERTY(QVariantList watchProfileRecords READ watchProfileRecords NOTIFY analysisChanged)
 
     // Register Inspector
     Q_PROPERTY(bool    registerBusy         READ registerBusy         NOTIFY registerChanged)
@@ -187,6 +188,7 @@ public:
     QVariantList simulationRecords() const;
     QVariantList sensorRecords()     const;
     QVariantList compiledRecords()   const;
+    QVariantList watchProfileRecords() const;   // per-item rows, kind="watch_profile" — see WatchProfile.h for the c0..c14 layout
     Q_INVOKABLE void deleteAnalysisRecord(int id);
     Q_INVOKABLE QVariantList recordsForKindQml(const QString &kind) const;
     Q_INVOKABLE QVariantList recentAnalysisRecords(int limit) const;

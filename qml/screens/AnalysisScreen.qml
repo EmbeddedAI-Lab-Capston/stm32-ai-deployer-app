@@ -7,7 +7,7 @@ import STM32AiDeployer
 Item {
     id: root
 
-    // Sub-tab index: 0=Benchmark, 1=Simulation, 2=Sensor, 3=Compiled
+    // Sub-tab index: 0=Benchmark, 1=Simulation, 2=Sensor, 3=Compiled, 4=Watch profiles
     property int subIndex: 0
     property string exportMessage: ""
     property bool exportOk: true
@@ -16,7 +16,7 @@ Item {
     property string boardFilter: "Tüm Kartlar"
     property string typeFilter: "Tüm Türler"
 
-    readonly property var _subTabs: ["Benchmark", "Simülasyon", "Gerçek Sensör", "Derlenen Modeller"]
+    readonly property var _subTabs: ["Benchmark", "Simülasyon", "Gerçek Sensör", "Derlenen Modeller", "İzleme Profilleri"]
 
     // Column headers per kind
     readonly property var _cols: [
@@ -29,10 +29,18 @@ Item {
         [{title:"Tarih",w:120},{title:"Model",w:0},{title:"Tür",w:60},
          {title:"Kart",w:0},{title:"Chip",w:0},{title:"Sensör",w:80},
          {title:"Input",w:70},{title:"Params",w:80},{title:"MACC",w:80},
-         {title:"Weights",w:80},{title:"Firmware",w:0},{title:"Arşiv",w:0}]
+         {title:"Weights",w:80},{title:"Firmware",w:0},{title:"Arşiv",w:0}],
+        // watch_profile — one row per watched item (WatchProfile::buildRows(),
+        // c0..c14); NOT one row per saved session, so a session with 6 watched
+        // items shows as 6 rows here sharing the same board/note/duration.
+        [{title:"Model",w:0},{title:"Kart",w:0},{title:"Kalem",w:120},
+         {title:"Örnek",w:70},{title:"Hz",w:60},{title:"Min",w:80},
+         {title:"Max",w:80},{title:"Ort",w:80},{title:"StdDev",w:80},
+         {title:"Son",w:80},{title:"Süre (s)",w:70},{title:"Birim",w:60},
+         {title:"Rol",w:100},{title:"Kayıt Dosyası",w:0},{title:"Not",w:0}]
     ]
 
-    function colsForIndex(i) { return i === 3 ? _cols[1] : _cols[0] }
+    function colsForIndex(i) { return i === 3 ? _cols[1] : (i === 4 ? _cols[2] : _cols[0]) }
 
     // Load records from backend
     function rowsForIndex(i) {
@@ -41,6 +49,7 @@ Item {
         if      (i === 0) rec = backend.benchmarkRecords
         else if (i === 1) rec = backend.simulationRecords
         else if (i === 2) rec = backend.sensorRecords
+        else if (i === 4) rec = backend.watchProfileRecords
         else              rec = backend.compiledRecords
 
         return rec || []
@@ -61,8 +70,8 @@ Item {
         return out
     }
 
-    function boardColumn(i) { return i === 3 ? 3 : 2 }
-    function typeColumn(i) { return i === 3 ? 2 : 6 }
+    function boardColumn(i) { return i === 3 ? 3 : (i === 4 ? 1 : 2) }
+    function typeColumn(i) { return i === 3 ? 2 : (i === 4 ? 12 : 6) }   // i===4: "Tür" filter reused for Rol (c12)
 
     function filterOptions(col, prefix) {
         var seen = {}
@@ -128,6 +137,14 @@ Item {
                 { title:"Firmware",      value: uniqueCount(rows, 10), accent: Theme.warning }
             ]
         }
+        if (i === 4) {
+            return [
+                { title:"Toplam Kalem",  value: String(total),  accent: Theme.primary },
+                { title:"Kart Sayısı",   value: uniqueCount(rows, 1), accent: Theme.cyan },
+                { title:"Kalem Türü",    value: uniqueCount(rows, 2), accent: Theme.success },
+                { title:"Ort. Hz",       value: averagePlain(rows, 4), accent: Theme.warning }
+            ]
+        }
         return [
             { title:"Toplam Kayıt",  value: String(total),  accent: Theme.primary },
             { title:"—", value:"—", accent: Theme.cyan },
@@ -147,6 +164,16 @@ Item {
             }
         }
         return count > 0 ? (sum / count).toFixed(2) + " ms" : "—"
+    }
+
+    function averagePlain(rows, col) {
+        var sum = 0
+        var count = 0
+        for (var k = 0; k < rows.length; ++k) {
+            var n = parseNumber(rows[k][col])
+            if (!isNaN(n)) { sum += n; count++ }
+        }
+        return count > 0 ? (sum / count).toFixed(1) : "—"
     }
 
     function averagePercent(rows, col) {
@@ -182,11 +209,15 @@ Item {
     }
 
     function chartTitle(i) {
-        return i === 3 ? "Model Kaynakları" : "Inference Süresi"
+        if (i === 3) return "Model Kaynakları"
+        if (i === 4) return "İzleme Ortalamaları"
+        return "Inference Süresi"
     }
 
     function chartSubtitle(i) {
-        return i === 3 ? "Weights / MACC karşılaştırması" : "Model karşılaştırması"
+        if (i === 3) return "Weights / MACC karşılaştırması"
+        if (i === 4) return "Kalem bazında ortalama değer"
+        return "Model karşılaştırması"
     }
 
     function parseNumber(text) {
@@ -221,6 +252,8 @@ Item {
 
     // Bar chart values from inference/resource columns.
     function barData(i, rows) {
+        if (i === 4) return watchProfileBarData(rows)
+
         var out = []
         var maxValue = 0
         for (var k = 0; k < Math.min(rows.length, 6); ++k) {
@@ -238,6 +271,28 @@ Item {
                 label: label,
                 text: isNaN(n) ? text : (i === 3 ? text : (n.toFixed(2) + " ms")),
                 value: isNaN(n) || maxValue <= 0 ? 0 : Math.max(0.04, n / maxValue)
+            })
+        }
+        return out
+    }
+
+    // Watch profile rows are per-item, not per-session — chart the mean
+    // value (c7) per watched item label (c2) rather than per row index.
+    function watchProfileBarData(rows) {
+        var out = []
+        var maxValue = 0
+        var limit = Math.min(rows.length, 6)
+        for (var k = 0; k < limit; ++k) {
+            var n = parseNumber(rowCells(rows[k])[7])
+            if (!isNaN(n)) maxValue = Math.max(maxValue, Math.abs(n))
+        }
+        for (var j = 0; j < limit; ++j) {
+            var c = rowCells(rows[j])
+            var n2 = parseNumber(c[7])
+            out.push({
+                label: c[2] || ("Kalem " + (j + 1)),
+                text: isNaN(n2) ? "—" : n2.toFixed(2),
+                value: isNaN(n2) || maxValue <= 0 ? 0 : Math.max(0.04, Math.abs(n2) / maxValue)
             })
         }
         return out
@@ -293,6 +348,7 @@ Item {
             Repeater {
                 model: root._subTabs
                 delegate: Rectangle {
+                    objectName: "analysis.subTab" + index
                     Layout.preferredHeight: 34
                     Layout.preferredWidth: pillText.implicitWidth + Theme.spacingLg
                     radius: Theme.radiusMd

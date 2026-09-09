@@ -2063,6 +2063,7 @@ QVariantList Backend::benchmarkRecords()  const { return recordsForKind("benchma
 QVariantList Backend::simulationRecords() const { return recordsForKind("simulation"); }
 QVariantList Backend::sensorRecords()     const { return recordsForKind("sensor"); }
 QVariantList Backend::compiledRecords()   const { return recordsForKind("compiled"); }
+QVariantList Backend::watchProfileRecords() const { return recordsForKind("watch_profile"); }
 QVariantList Backend::recordsForKindQml(const QString &kind) const { return recordsForKind(kind); }
 
 QVariantList Backend::recentAnalysisRecords(int limit) const
