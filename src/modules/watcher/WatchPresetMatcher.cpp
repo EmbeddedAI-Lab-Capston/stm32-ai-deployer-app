@@ -147,6 +147,11 @@ QList<WatchItem> WatchPresetMatcher::resolveSuggestions(const QList<WatchPreset>
                 item.regionBytes = quint32(toAddr - fromAddr);
                 item.unit         = pi.unit;
                 item.source       = QStringLiteral("preset:%1").arg(preset.id);
+                bool patternOk = false;
+                const quint32 parsedPattern = pi.pattern.trimmed()
+                    .mid(pi.pattern.trimmed().startsWith(QStringLiteral("0x"), Qt::CaseInsensitive) ? 2 : 0)
+                    .toUInt(&patternOk, 16);
+                if (patternOk) item.regionPattern = parsedPattern;
                 out.append(item);
                 continue;
             }

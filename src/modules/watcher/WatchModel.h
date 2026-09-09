@@ -24,6 +24,7 @@ struct WatchItem
     WatchValueType type = WatchValueType::U32;
     DisplayFormat  format = DisplayFormat::Dec;
     quint32        regionBytes = 0;   // for RegionScan
+    quint32        regionPattern = 0xA5A5A5A5u;   // for RegionScan — fill word to scan against
     double         scale = 1.0;
     double         offset = 0.0;
     QString        unit;

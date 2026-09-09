@@ -958,3 +958,51 @@ hatasını saklıyordu (18.1 Faz 8'i, 18.2 Faz 6'yı, 18.3 Faz 4'ü).
 kopuktu: test başarısız olduğunda `ctest --output-on-failure` **hiçbir şey**
 yazmıyordu. §1'deki "birim testler yeşil" iddiası doğruydu, ama bir
 başarısızlık durumunda teşhis edilemez olduğu fark edilmemişti.
+
+## 19. RegionScan (stack watermark) canlı örneklemesi — tamamlandı (2026-09-09)
+
+§17.3'te "bilinçli olarak ertelendi" denen iş bitirildi. Not: §17.3'ün
+tarif ettiği eksik yalnızca decode adımıydı; canlı deneme sırasında İKİNCİ,
+daha temel bir eksik de bulundu.
+
+**19.1 — Asıl kör nokta decode değil, hiç örneklenmiyor olmasıydı.**
+`WatchSampler::decodeRegionScan()`'ı yazıp `Backend::applyWatchPresets()`'in
+RegionScan `continue`'unu kaldırdıktan sonra ilk canlı denemede kalem
+`hasValue=true, liveValue="0 B"` döndü — mantıksız bir sonuç (bu firmware'in
+4 KB'lık stack'i hiçbir şekilde tamamen dolmuş olamazdı). Kök neden:
+`VariableWatcher::rebuildPlan()` yalnızca `WatchPlanBuilder::build()`
+(skaler kalemler) çağırıyordu; `buildRegionScans()` **hiçbir yerden**
+çağrılmıyordu, yani RegionScan kalemlerinin `itemSlots` girdisi hep
+`{-1,-1}` kalıyordu. `onRawSamplesReady()`'deki "son iyi değeri koru"
+mantığı (§18.4'ün kendi düzeltmesi!) bu durumda `m_lastGoodValues[i]`'nin
+hiç güncellenmemiş başlangıç değerini (`0.0`) sonsuza dek gerçek bir okuma
+gibi tamponun/istatistiğin içine itiyordu — `ok=false` asla `count`'u
+etkilemiyordu çünkü `flushPending()`/`WatchStats::push()` `ok`'a hiç
+bakmıyor, `good` olsun olmasın her örnekte bir değer itiyor. Düzeltme:
+`WatchPlanBuilder::merge()` eklendi, `rebuildPlan()` artık skaler + region
+planlarını birleştirip tek bir `m_plan` kuruyor.
+
+**19.2 — Ölçülen gerçek maliyet.** RegionScan istekleri ayrı/düşük-hızlı bir
+plana değil ana örnekleme planına giriyor (`watch_presets.json`'daki
+`"rateHz":2` alanı hep parse ediliyordu ama hiçbir yerde okunmuyordu —
+ikincil-hız mekanizması hiç var olmamıştı, §17.3'ün ima ettiği gibi
+"ayrıca yazılması gereken" bir şeydi). H7'de aynı 4 KB bölgeyle: hedef
+200 Hz, gerçek ~100 Hz, 462 kaçırılan örnek. Gerçek, doğrulanmış bir
+performans maliyeti — büyük bir stack bölgesi izleniyorsa ayrı düşük-hızlı
+bir zamanlayıcı (DHCSR sağlık kontrolü ile aynı desen) gerekebilir; şimdilik
+dokümante edilip ertelendi.
+
+**19.3 — Test yöntemi.** `TestWatchSampler`'a 4 yeni senaryo eklendi (tam
+boyanmış bölge, tek kelimelik uyuşmazlık, chunk sınırını aşan uyuşmazlık,
+başarısız chunk → `ok=false`); `TestWatchPlanBuilder`'a `merge()` için 2
+senaryo. Canlı H7 doğrulaması: `applyWatchPresets()` → `stackWatermark`
+kalemi `kind=region, address=0x2001F000` ile eklendi (linker'ın
+`_estack - _Min_Stack_Size = 0x20020000 - 0x1000` hesabıyla birebir
+örtüşüyor) → örnekleme başlatıldı → canlı değer **2896 B**, `hasValue=true`.
+`watch/watch_rules.json`'daki iki `stackWatermark` kuralı tekrar etkin.
+
+**19.4 — Hâlâ yapılmayan.** Farklı (bu pipeline'la derlenmemiş) bir ELF
+izlenirse tarama ilk kelimede uyuşmazlık bulur ve boşluk yanıltıcı biçimde
+"~0 B" görünür; kalem başına ayrı bir "kullanılamıyor" göstergesi
+eklenmedi — tek koruma genel `watchElfMatch` banner'ıdır. Bkz. CLAUDE.md
+"Stack watermark yalnızca..." maddesi.

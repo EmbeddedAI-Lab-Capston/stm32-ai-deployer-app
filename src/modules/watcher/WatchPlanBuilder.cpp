@@ -99,3 +99,19 @@ WatchPlan WatchPlanBuilder::buildRegionScans(const QList<WatchItem> &items, quin
 
     return plan;
 }
+
+WatchPlan WatchPlanBuilder::merge(const WatchPlan &scalarPlan, const WatchPlan &regionPlan)
+{
+    WatchPlan out;
+    out.requests = scalarPlan.requests;
+    out.requests += regionPlan.requests;
+
+    out.itemSlots = scalarPlan.itemSlots;
+    const int offset = scalarPlan.requests.size();
+    for (int i = 0; i < out.itemSlots.size() && i < regionPlan.itemSlots.size(); ++i) {
+        const QPair<int, int> &slot = regionPlan.itemSlots.at(i);
+        if (slot.first >= 0)
+            out.itemSlots[i] = qMakePair(slot.first + offset, slot.second);
+    }
+    return out;
+}

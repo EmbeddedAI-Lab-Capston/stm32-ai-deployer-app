@@ -449,16 +449,19 @@ emit errorReceived(QJsonObject);
   `watch/demo/h7_demo_trace.csv` sayesinde ekran ST-Link olmadan tam çalışır.
   Oynatma sırasında göz ardı edilemez bir banner gösterilir.
 - **Stack watermark yalnızca bu pipeline ile derlenmiş firmware'de geçerlidir**
-  (startup'ta 0xA5A5A5A5 boyama gerekir). Başka bir ELF izlenirken watermark
-  kalemi "kullanılamıyor" olarak gösterilir; sahte değer üretilmez. **Bilinen
-  durum (2026-08):** `WatchPresetMatcher` adres aralığını doğru çözer ve
-  `WatchPlanBuilder::buildRegionScans()` okuma planını doğru kurar, ama bu
-  ikisi arasındaki bayt-tarama DECODE adımı henüz `WatchSampler`'a
-  bağlanmadı — RegionScan kalemleri şu an `0.0/ok=false` döner. Bunun
-  sonucu olarak `watch/watch_rules.json`'daki iki `stackWatermark` kuralı
-  `"enabled": false` ile **kapatılmıştır**: hiçbir kalem `role=stackWatermark`
-  taşıyamayacağı için etkin bırakmak, gerçekleşemeyecek bir tespit vaat
-  etmek olurdu. RegionScan decode'u yazıldığında ikisi birlikte açılır.
+  (startup'ta 0xA5A5A5A5 boyama gerekir). RegionScan bayt-tarama DECODE adımı
+  **2026-09-09'da `WatchSampler::decodeRegionScan()` ile eklendi** —
+  `_sstack`'ten `_estack`'e taranan blok boyunca `regionPattern`'e (varsayılan
+  `0xA5A5A5A5`, `watch_presets.json`'daki `pattern` alanından) uymayan ilk
+  32-bit kelimenin bayt ofseti = kalan stack boşluğu (B) olarak raporlanır;
+  `Backend::applyWatchPresets()` artık RegionScan önerilerini atlamıyor,
+  `watch/watch_rules.json`'daki iki `stackWatermark` kuralı da tekrar
+  etkin. **Bilinen sınırlama:** bu pipeline'la derlenmemiş (boyamayan) bir
+  firmware izlenirse tarama ilk kelimede hemen uyuşmazlık bulur ve boşluk
+  "~0 B" (yanıltıcı biçimde kritik) görünür — kalem başına ayrı bir
+  "kullanılamıyor" göstergesi YOKTUR; tek koruma genel ELF-eşleşme
+  banner'ıdır (`watchElfMatch`). Yorumlayan kişi ~0 B'lik bir okumayı gerçek
+  bir taşma ile "bu ELF hiç boyamadı" ihtimalini ayırt etmelidir.
   Detay: `docs/variable_watcher_findings.md` Bölüm 17.3 ve
   `docs/variable_watcher_review.md`.
 

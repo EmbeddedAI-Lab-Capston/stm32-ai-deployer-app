@@ -131,10 +131,31 @@ bakın — burası yalnızca özet, oradan senkron tutun:
    bir sonuç, zorlanmadı). Oynatma canlı UI'da doğrulandı: banner görünüyor,
    birim/rol etiketleri (`0.926 ms` vb.) doğru taşınıyor. Header'daki `elf=`
    alanı commit'e gitmeden kişisel makine yolundan temizlendi.
-4. **ORTA — RegionScan (stack watermark) canlı decode'u.** `WatchSampler`'a
-   bayt-tarama decode adımı yazılmadı; bu yüzden `watch/watch_rules.json`'daki
-   iki `stackWatermark` kuralı `"enabled": false` ile kapalı duruyor. Bağlı:
-   `templates/ai_glue/stack_paint.c` şu an ürettiği veriyi okuyan yok.
+4. ~~**ORTA — RegionScan (stack watermark) canlı decode'u.**~~ **2026-09-09
+   tamamlandı.** `WatchSampler::decodeRegionScan()` eklendi: `_sstack`'ten
+   `_estack`'e taranan bloğu 32-bit kelime kelime `regionPattern`
+   (`0xA5A5A5A5`) ile kıyaslar, ilk uyuşmayan kelimenin bayt ofsetini "kalan
+   stack boşluğu" olarak döner; çok parçalı (chunk'lı) bölgeleri de doğru
+   takip eder, bir parça başarısız olursa tüm taramayı `ok=false` yapar
+   (sahte kısmi değer üretmez). **Asıl kör nokta decode değil, hiç
+   çağrılmıyor olmasıydı:** `Backend::applyWatchPresets()` RegionScan
+   önerilerini açıkça `continue` ile atlıyordu, VE
+   `VariableWatcher::rebuildPlan()` yalnızca `WatchPlanBuilder::build()`
+   (skaler) çağırıyordu — `buildRegionScans()` hiçbir yerden çağrılmıyordu.
+   İkisi de düzeltildi (`WatchPlanBuilder::merge()` eklendi, skaler+region
+   planlarını birleştiriyor). Canlı H7'de doğrulandı: `stackWatermark`
+   kalemi gerçek "2896 B" değeri verdi (`hasValue=true`). `watch_rules.json`
+   içindeki iki `stackWatermark` kuralı tekrar etkin. 6 yeni birim testi
+   eklendi (`TestWatchSampler`: 4 RegionScan senaryosu, `TestWatchPlanBuilder`:
+   2 `merge()` senaryosu), hepsi + mevcut tüm testler geçti.
+   **Bilinen maliyet (ölçüldü, aynı H7 oturumunda):** RegionScan istekleri
+   ayrı/düşük hızlı bir plana değil, ANA örnekleme planına giriyor (öyle bir
+   ikincil-hız mekanizması hiç yoktu — presetteki `"rateHz":2` alanı hiçbir
+   yerde okunmuyordu, sadece parse ediliyordu). Sonuç: 4 KB'lık bu bölge
+   200 Hz hedefini gerçek ~100 Hz'e düşürdü (462 kaçırılan örnek). Büyük bir
+   stack bölgesi için gerçek bir maliyet — ayrı düşük-hızlı zamanlayıcı
+   (DHCSR sağlık kontrolü gibi) ileride eklenebilir, şimdilik dokümante
+   edildi (bkz. `WatchPlanBuilder.h`, `CLAUDE.md`).
 5. **ORTA — `AnalysisScreen.qml`'e "İzleme Profilleri" sekmesi.** Planda
    vardı, hiç eklenmedi. **Bilinçli olarak yapılmadı** — 5. sekme
    `_subTabs`/`_cols`/`rowsForIndex`/özet kartları/dışa aktarımı birden

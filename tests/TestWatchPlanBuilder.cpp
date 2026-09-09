@@ -13,6 +13,16 @@ WatchItem makeItem(quint64 addr, WatchValueType t = WatchValueType::U32, bool en
     it.kind = WatchItemKind::Scalar;
     return it;
 }
+
+WatchItem makeRegion(quint64 addr, quint32 bytes)
+{
+    WatchItem it;
+    it.address     = addr;
+    it.kind        = WatchItemKind::RegionScan;
+    it.regionBytes = bytes;
+    it.enabled     = true;
+    return it;
+}
 }
 
 void TestWatchPlanBuilder::fourContiguousU32MergeIntoOneRequest()
@@ -116,4 +126,51 @@ void TestWatchPlanBuilder::maxReadBytesLimitSplitsIntoSeparateRequests()
         QVERIFY(off >= 0);
         QCOMPARE(tight.requests.at(req).addr + quint64(off), items.at(i).address);
     }
+}
+
+// VariableWatcher::rebuildPlan() merges a scalar plan and a region-scan plan
+// built over the SAME items list — the region plan's request indices must be
+// remapped by however many requests the scalar plan already contributed, or
+// WatchSampler would decode a region item's bytes from the wrong reply.
+void TestWatchPlanBuilder::mergeCombinesRequestsAndRemapsRegionSlots()
+{
+    const QList<WatchItem> items{
+        makeItem(0x1000), makeItem(0x1004),      // one scalar block
+        makeRegion(0x2001F000, 16),               // one region item
+    };
+
+    const WatchPlan scalarPlan = WatchPlanBuilder::build(items, 4096);
+    const WatchPlan regionPlan = WatchPlanBuilder::buildRegionScans(items, 4096);
+    QCOMPARE(scalarPlan.requests.size(), 1);   // the two u32s merge into one block
+    QCOMPARE(regionPlan.requests.size(), 1);
+
+    const WatchPlan merged = WatchPlanBuilder::merge(scalarPlan, regionPlan);
+    QCOMPARE(merged.requests.size(), 2);
+    // Request 0 is still the scalar block, unmoved.
+    QCOMPARE(merged.requests.at(0).addr, quint64(0x1000));
+    // Request 1 is the region's, appended after it.
+    QCOMPARE(merged.requests.at(1).addr, quint64(0x2001F000));
+
+    // The region item (index 2) must now point at request 1, not 0 — this is
+    // exactly the remap the merge has to get right.
+    QCOMPARE(merged.itemSlots.at(2).first, 1);
+    QCOMPARE(merged.itemSlots.at(2).second, 0);
+}
+
+// A scalar item's slot must survive the merge completely untouched — the
+// region plan has nothing valid at that index ({-1,-1}), so merge() must not
+// let it clobber what build() already resolved.
+void TestWatchPlanBuilder::mergeLeavesScalarSlotsUntouched()
+{
+    const QList<WatchItem> items{
+        makeItem(0x1000),
+        makeRegion(0x2001F000, 16),
+    };
+
+    const WatchPlan scalarPlan = WatchPlanBuilder::build(items, 4096);
+    const WatchPlan regionPlan = WatchPlanBuilder::buildRegionScans(items, 4096);
+    const WatchPlan merged = WatchPlanBuilder::merge(scalarPlan, regionPlan);
+
+    QCOMPARE(merged.itemSlots.at(0), scalarPlan.itemSlots.at(0));
+    QCOMPARE(merged.itemSlots.at(0).first, 0);   // still the first (only) scalar request
 }

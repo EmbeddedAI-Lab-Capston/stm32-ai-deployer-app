@@ -4263,23 +4263,26 @@ void Backend::applyWatchPresets()
     if (!m_watcher) return;
     const QList<WatchItem> suggestions = WatchPresetMatcher::resolveSuggestions(m_watchPresets, m_watcher->symbols());
     for (const WatchItem &it : suggestions) {
-        if (it.kind == WatchItemKind::RegionScan) {
-            // Live sampling of RegionScan items (byte-pattern watermark scan)
-            // isn't wired into WatchSampler yet — see watch/README.md and
-            // docs/variable_watcher_findings.md Bolum 17. Adding one now
-            // would silently sit at 0/unavailable, which is worse than not
-            // adding it, so region-scan suggestions are skipped here.
-            continue;
-        }
+        // RegionScan items (byte-pattern watermark scan) use the same
+        // address-based add path as a scalar; addAddress()'s ELF-range
+        // warning check only looks at the single address, which is exactly
+        // the region's low-address start (e.g. _sstack) — a real symbol, so
+        // it validates the same way a scalar item's address would.
         if (m_watcher->addAddress(it.address, it.type, it.label).isEmpty())
             continue;   // refused (e.g. sampling running) — nothing to update
-        m_watcher->updateItem(m_watcher->items().last().id, {
+        QVariantMap props{
             {QStringLiteral("role"),   it.role},
             {QStringLiteral("unit"),   it.unit},
             {QStringLiteral("scale"),  it.scale},
             {QStringLiteral("offset"), it.offset},
             {QStringLiteral("format"), displayFormatToString(it.format)},
-        });
+        };
+        if (it.kind == WatchItemKind::RegionScan) {
+            props[QStringLiteral("kind")]          = QStringLiteral("region");
+            props[QStringLiteral("regionBytes")]   = int(it.regionBytes);
+            props[QStringLiteral("regionPattern")] = QVariant::fromValue(it.regionPattern);
+        }
+        m_watcher->updateItem(m_watcher->items().last().id, props);
     }
 }
 

@@ -11,4 +11,8 @@ private slots:
     void failedReplyReportsNotOkAndDoesNotFakeAZero();
     void unmappedItemReportsNotOk();
     void shortReplyReportsNotOk();
+    void regionScanFullyPaintedReportsWholeRegion();
+    void regionScanMismatchReportsOffsetOfFirstBadWord();
+    void regionScanMismatchAcrossChunkBoundary();
+    void regionScanFailedChunkReportsNotOk();
 };

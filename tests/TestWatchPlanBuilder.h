@@ -14,4 +14,6 @@ private slots:
     void eightKbSpreadNeverExceedsMaxReadBytes();
     void itemSlotsMapToCorrectRequestAndOffset();
     void disabledItemsAreExcluded();
+    void mergeCombinesRequestsAndRemapsRegionSlots();
+    void mergeLeavesScalarSlotsUntouched();
 };

@@ -28,4 +28,21 @@ public:
     static QVector<double> decodeSample(const QList<WatchItem> &items, const WatchPlan &plan,
                                         const QVector<MemoryReply> &replies,
                                         QVector<bool> *okOut = nullptr);
+
+private:
+    // A RegionScan item's bytes may span several MemoryRequests
+    // (WatchPlanBuilder::buildRegionScans() splits a region wider than
+    // maxReadBytes into sequential chunks). Walks forward from `firstReqIndex`
+    // through `replies` for as long as each reply's address is exactly
+    // contiguous with the previous one's end (no gap, no reordering) and
+    // fewer than `item.regionBytes` bytes have been consumed, scanning 32-bit
+    // words for the first one that doesn't match `item.regionPattern`. Returns
+    // the byte offset of that first mismatch (i.e. how much of the region from
+    // its low-address start is still untouched — the stack "headroom" a
+    // stackWatermark item reports), or `item.regionBytes` if every word
+    // scanned still matches the pattern. *ok is false if a needed chunk is
+    // missing/failed — the whole scan is unusable for this sample, same
+    // "caller must honour ok, 0.0 is not a reading" contract as scalar items.
+    static double decodeRegionScan(const WatchItem &item, int firstReqIndex,
+                                   const QVector<MemoryReply> &replies, bool *ok);
 };

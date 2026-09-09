@@ -159,8 +159,13 @@ void VariableWatcher::updateItem(const QString &id, const QVariantMap &props)
         // every role-based rule and the whole profile comparison dead code.
         if (props.contains(QStringLiteral("role")))     item.role    = props.value(QStringLiteral("role")).toString();
         if (props.contains(QStringLiteral("address")))  item.address = props.value(QStringLiteral("address")).toULongLong();
+        if (props.contains(QStringLiteral("kind")))
+            item.kind = (props.value(QStringLiteral("kind")).toString() == QStringLiteral("region"))
+                            ? WatchItemKind::RegionScan : WatchItemKind::Scalar;
         if (props.contains(QStringLiteral("regionBytes")))
             item.regionBytes = quint32(props.value(QStringLiteral("regionBytes")).toUInt());
+        if (props.contains(QStringLiteral("regionPattern")))
+            item.regionPattern = quint32(props.value(QStringLiteral("regionPattern")).toUInt());
         if (props.contains(QStringLiteral("type")))     item.type    = watchValueTypeFromString(props.value(QStringLiteral("type")).toString());
         if (props.contains(QStringLiteral("format")))   item.format  = displayFormatFromString(props.value(QStringLiteral("format")).toString());
         if (props.contains(QStringLiteral("scale")))    item.scale   = props.value(QStringLiteral("scale")).toDouble();
@@ -254,7 +259,9 @@ void VariableWatcher::rebuildPlan()
 {
     quint32 maxBytes = m_link->maxReadBytes();
     if (maxBytes == 0) maxBytes = 4096;
-    m_plan = WatchPlanBuilder::build(m_items, maxBytes);
+    const WatchPlan scalarPlan = WatchPlanBuilder::build(m_items, maxBytes);
+    const WatchPlan regionPlan = WatchPlanBuilder::buildRegionScans(m_items, maxBytes);
+    m_plan = WatchPlanBuilder::merge(scalarPlan, regionPlan);
 }
 
 void VariableWatcher::clearBuffer()
@@ -507,7 +514,8 @@ void VariableWatcher::saveItems(const QString &boardName)
                                                 ? QStringLiteral("region") : QStringLiteral("scalar");
         o[QStringLiteral("type")]        = watchValueTypeToString(it.type);
         o[QStringLiteral("format")]      = displayFormatToString(it.format);
-        o[QStringLiteral("regionBytes")] = int(it.regionBytes);
+        o[QStringLiteral("regionBytes")]   = int(it.regionBytes);
+        o[QStringLiteral("regionPattern")] = int(it.regionPattern);
         o[QStringLiteral("scale")]       = it.scale;
         o[QStringLiteral("offset")]      = it.offset;
         o[QStringLiteral("unit")]        = it.unit;
@@ -535,7 +543,9 @@ void VariableWatcher::loadItems(const QString &boardName)
                               ? WatchItemKind::RegionScan : WatchItemKind::Scalar;
         it.type        = watchValueTypeFromString(o.value(QStringLiteral("type")).toString());
         it.format      = displayFormatFromString(o.value(QStringLiteral("format")).toString());
-        it.regionBytes = quint32(o.value(QStringLiteral("regionBytes")).toInt());
+        it.regionBytes   = quint32(o.value(QStringLiteral("regionBytes")).toInt());
+        it.regionPattern = o.value(QStringLiteral("regionPattern")).isUndefined()
+                                ? 0xA5A5A5A5u : quint32(o.value(QStringLiteral("regionPattern")).toInt());
         it.scale       = o.value(QStringLiteral("scale")).toDouble(1.0);
         it.offset      = o.value(QStringLiteral("offset")).toDouble(0.0);
         it.unit        = o.value(QStringLiteral("unit")).toString();
