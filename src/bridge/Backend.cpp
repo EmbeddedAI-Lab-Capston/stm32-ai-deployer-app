@@ -38,6 +38,7 @@
 #include "modules/serial/PacketParser.h"
 #include "modules/flash/FlashManager.h"
 #include "modules/flash/PipelineRunner.h"
+#include "modules/flash/ModelSweepRunner.h"
 #include "modules/analysis/AnalysisManager.h"
 #include "modules/board/BoardPresets.h"
 #include "modules/registers/RegisterInspector.h"
@@ -4458,6 +4459,29 @@ QString Backend::addWatchRegister(const QString &peripheral, const QString &regi
         {QStringLiteral("source"), QStringLiteral("svd:%1.%2").arg(peripheral, registerName)},
     });
     return id;
+}
+
+void Backend::startModelSweep(const QVariantList &modelPaths, const QString &board,
+                               const QString &sensorType, int secondsPerModel)
+{
+    if (!m_modelSweep) {
+        m_modelSweep = new ModelSweepRunner(this, this);
+        connect(m_modelSweep, &ModelSweepRunner::changed, this, &Backend::sweepChanged);
+    }
+    QStringList paths;
+    paths.reserve(modelPaths.size());
+    for (const QVariant &v : modelPaths) paths << v.toString();
+    m_modelSweep->start(paths, board, sensorType, secondsPerModel);
+}
+
+void Backend::cancelModelSweep()
+{
+    if (m_modelSweep) m_modelSweep->cancel();
+}
+
+QVariantMap Backend::sweepStatus() const
+{
+    return m_modelSweep ? m_modelSweep->status() : QVariantMap{{QStringLiteral("running"), false}};
 }
 
 QVariantList Backend::watchProfiles() const

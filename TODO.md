@@ -69,14 +69,20 @@ Faz 4 (QML birim testleri) opsiyonel/düşük öncelik olarak bekliyor.
 
 ---
 
-## SIRADAKİ İŞ — Faz 10: bellek-öncelikli telemetri
+## Faz 10: bellek-öncelikli telemetri — 6 alt fazın 6'sı da uygulandı ve F4'te canlı doğrulandı (2026-09-09)
 
 **Tam plan:** [`docs/memory_telemetry_plan.md`](docs/memory_telemetry_plan.md)
 — kendi kendine yeterli, adım adım, üç kart için (F4/H7/N6).
 
 Altı alt faz: sensör ham değerlerini bellekten okuma (seqlock ile) → RAM
 bütçesi → hız tutarlılık kontrolü → "model sığar mı" ön kontrolü → canlı
-peripheral/register izleme → otomatik çok-modelli süpürme.
+peripheral/register izleme → otomatik çok-modelli süpürme. **Hepsi
+uygulandı, testler yeşil, F4'te (gerçek BME280 ile) canlı doğrulandı.**
+**Kalan tek iş:** BME280 kullanıcı tarafından H7'ye takıldıktan sonra
+Faz 10.1'in UART-vs-bellek çapraz doğrulamasının H7'de tekrarlanması
+(kod zaten H7'de ELF-eşleşme/offset düzeyinde doğrulandı, yalnızca canlı
+sensör-veri karşılaştırması eksik). N6 flash sorunu (bilinen ST-Link
+kısıtı) zaman kutulu bırakıldı, çözülmedi.
 
 **Bu fazın çıkış noktası:** F4'ün ST-Link VCP'si hedef USART'a köprülü
 değil (harici adaptör kullanılmayacak — kullanıcı kararı), yani F4'te
@@ -247,6 +253,65 @@ olarak eklenebilir.
 `DMA1.S0NDTR` zaten hep `0` (kullanılmadığı için, takıldığı için değil);
 kural etkinleştirilirse yanlış alarm üretir. `TimeSeriesRuleEngine`'in
 `"op":"=="` desteği koddan doğrulandı (zaten vardı, `qFuzzyCompare` ile).
+
+### Faz 10.6 — Otomatik çok-modelli süpürme: TAMAMLANDI (2026-09-09)
+
+`src/modules/flash/ModelSweepRunner.h/.cpp` (yeni `QObject`, durum makinesi
+`Idle→Compiling→Connecting→Watching→Saving→(sonraki)`) + `Backend`'e
+`startModelSweep`/`cancelModelSweep`/`sweepStatus` (canlı `Q_PROPERTY`) +
+`qml/dialogs/ModelSweepDialog.qml` (`sweep.startButton`/`sweep.cancelButton`/
+`sweep.progressList`) + Benchmark ekranına `benchmark.sweepButton`. **Bilinçli
+tasarım kararı:** `ModelSweepRunner` `PipelineRunner`/`VariableWatcher`'a
+DOĞRUDAN dokunmuyor, sadece `Backend`'in KENDİ public invokable/property
+yüzeyini kullanıyor — bu sayede paylaşılan tek ST-Link kilidini
+(`m_stlinkOwner`) atlamak yerine otomatik olarak ona uyuyor: her modelin
+derle+flash adımından ÖNCE İzleyici bağlantısı kapatılıyor (flash'ın
+ST-Link'i boş bulması gerekiyor), örnekleme bitince tekrar kapatılıp
+sıradaki modele geçiliyor — elle UI kullanımıyla birebir aynı akış.
+
+**Canlı doğrulama (F4, gerçek BME280, 2 model — `anomaly_mlp_int8` +
+`weather_mlp_int8`, 20 sn/model):** İkinci koşuda ikisi de "ok", her ikisi
+de `İzleme Profilleri` sekmesinde doğru veriyle (gerçek BME280 basıncı
+`~998.8 hPa` dahil) göründü. Toplam süre ~80 saniye (bu küçük MLP
+modelleri için — plan'ın "1.5-3 dk/model" tahmini büyük/yavaş-derlenen
+modelleri varsayıyordu, küçük modellerde daha hızlı olması beklenen ve
+dürüst bir sonuç). Ekran görüntüleri: `out/model_sweep_e2e/`
+(`01_dialog.png`, `02_ilerleme.png` — gerçek "[1/1] anomaly_mlp_int8 —
+Derleniyor/Flash..." canlı metniyle, `03_sonuc_profilleri.png`).
+
+**Canlı testte yakalanan VE düzeltilen 2 gerçek hata (ilk koşu
+kasıtlı olarak "olduğu gibi" bırakılıp gözlemlendi, ikinci koşuda
+düzeltmeler doğrulandı):**
+1. `loadWatchElf()` sonrası `applyWatchPresets()` HİÇ BEKLEMEDEN
+   çağrılıyordu — ama sembol yükleme `ElfSymbolSource` üzerinden ASENKRON
+   (bir `arm-none-eabi-nm` alt-süreci). İlk koşuda süpürmenin İLK modeli
+   (`anomaly_mlp_int8`) bu yüzden BOŞ sembol tablosuna karşı preset
+   çözümledi (0 kalem eklendi) ve `saveWatchProfile()` haklı olarak
+   "profil kaydedilemedi" ile reddetti; ikinci model ise BİR ÖNCEKİ
+   modelin (hâlâ önbellekte duran) sembol tablosuna karşı çözümleyip
+   şans eseri "başarılı" görünmüştü (roller/adresler aynı şablon
+   kod tabanından geldiği için isimler örtüşüyordu, ama bu YANLIŞ
+   davranıştı). Düzeltme: `Backend::watchSymbolsLoaded(int)` sinyali
+   beklenmeden `applyWatchPresets()` çağrılmıyor artık (+ 15 sn'lik bir
+   zaman aşımı koruması, ELF yükleme hiç bitmezse süpürmeyi sonsuza kadar
+   asılı bırakmasın diye).
+2. Modeller arası `clearWatchItems()` hiç çağrılmıyordu —
+   `applyWatchPresets()` yalnızca EKLER, hiç silmez, yani ikinci modelin
+   profili İLK modelin kalemlerini de taşıyordu (canlı yakalandı: 12
+   yerine 24 kalem). Düzeltme: her modelin ELF'i yüklenmeden hemen önce
+   `clearWatchItems()` çağrılıyor.
+
+**Bitti sayılır ki (plan §8.4) — hepsi karşılandı:**
+- [x] Bir modelin başarısızlığı süpürmeyi durdurmuyor (ilk koşuda gerçek
+  bir hatayla CANLI kanıtlandı: model 1 başarısız oldu, süpürme model
+  2'ye geçti ve onu bitirdi)
+- [x] İptal düğmesi gerçekten iptal ediyor — canlı test: derleme
+  ortasında `cancelModelSweep()` çağrıldı, sonrasında `pipelineBusy=false`,
+  `stlinkOwner=""`, `watchLinkOpen=false` — hiçbir kilit/yarım durum kalmadı
+- [x] F4'te 2 modelle uçtan uca koştu (iki kez — biri hatayı bulmak,
+  biri düzeltmeyi doğrulamak için)
+- [x] Profiller Analiz ekranında (İzleme Profilleri) doğru veriyle görünüyor
+- [x] Testler yeşil, commit atıldı
 
 ---
 

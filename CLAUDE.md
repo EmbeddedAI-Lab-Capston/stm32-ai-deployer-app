@@ -104,7 +104,8 @@ stm32-ai-deployer-app/
 │       │   ├── XCubeAIRunner.h / .cpp ← stedgeai CLI wrapper + parseAnalyzeOutput()
 │       │   ├── PipelineConfig.h     ← Pipeline yapılandırma struct
 │       │   ├── ModelFitCheck.h / .cpp ← Faz 10.5 "sığar mı" ön kontrolü (saf, testli)
-│       │   └── PipelineRunner.h / .cpp ← .tflite→C→GCC→Flash orkestrasyonu
+│       │   ├── PipelineRunner.h / .cpp ← .tflite→C→GCC→Flash orkestrasyonu
+│       │   └── ModelSweepRunner.h / .cpp ← Faz 10.6 çok-modelli süpürme (derle→flash→izle→kaydet döngüsü)
 │       ├── serial/
 │       │   ├── SerialManager.h / .cpp ← Thread'li seri port yöneticisi
 │       │   ├── SerialWorker.h / .cpp ← QThread worker
@@ -153,7 +154,8 @@ stm32-ai-deployer-app/
 │   │                                   WatchPlaybackBanner/WatchRuleFeed/RamBudgetBar
 │   ├── dialogs/                     ← SettingsDialog/PipelineWizard/AboutDialog/
 │   │                                   SymbolPickerDialog/WatchItemDialog/
-│   │                                   ProfileCompareDialog/RegisterPickerDialog
+│   │                                   ProfileCompareDialog/RegisterPickerDialog/
+│   │                                   ModelSweepDialog
 │   └── factory/                     ← FactorySimWindow/Dashboard/Map/ZoneDetail/NodeDetail
 │
 ├── resources/

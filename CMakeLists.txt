@@ -70,6 +70,8 @@ set(PROJECT_SOURCES
     src/modules/flash/PipelineRunner.cpp
     src/modules/flash/ModelFitCheck.h
     src/modules/flash/ModelFitCheck.cpp
+    src/modules/flash/ModelSweepRunner.h
+    src/modules/flash/ModelSweepRunner.cpp
 
     src/modules/serial/PacketParser.h
     src/modules/serial/PacketParser.cpp
@@ -239,6 +241,7 @@ qt_add_qml_module(STM32AiDeployer
         qml/dialogs/PipelineWizard.qml
         qml/dialogs/SymbolPickerDialog.qml
         qml/dialogs/RegisterPickerDialog.qml
+        qml/dialogs/ModelSweepDialog.qml
         qml/dialogs/WatchItemDialog.qml
         qml/screens/DashboardScreen.qml
         qml/screens/BoardScreen.qml

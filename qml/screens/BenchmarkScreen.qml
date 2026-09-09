@@ -106,6 +106,12 @@ Item {
                 status: root._xcubeReady ? "ready" : "warning"
             }
             AppButton {
+                objectName: "benchmark.sweepButton"
+                text: "Coklu Model Supurme…"
+                variant: "secondary"
+                onClicked: sweepDialog.open()
+            }
+            AppButton {
                 text: root._busy ? "Calisiyor..." : "Benchmark Baslat"
                 iconText: ">"
                 enabled: !root._busy
@@ -381,4 +387,6 @@ Item {
             }
         }
     }
+
+    ModelSweepDialog { id: sweepDialog }
 }

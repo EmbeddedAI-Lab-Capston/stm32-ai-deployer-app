@@ -23,6 +23,7 @@ class ToolDetector;
 class PacketParser;
 class SerialSimulator;
 class PipelineRunner;
+class ModelSweepRunner;
 class RegisterInspector;
 class RegisterAdvisor;
 struct RegisterSnapshot;
@@ -92,6 +93,7 @@ class Backend : public QObject
     Q_PROPERTY(QVariantList watchItems       READ watchItems       NOTIFY watchItemsChanged)
     Q_PROPERTY(QVariantList watchViolations  READ watchViolations  NOTIFY watchViolationsChanged)
     Q_PROPERTY(QVariantMap  ramBudget        READ ramBudget        NOTIFY ramBudgetChanged)
+    Q_PROPERTY(QVariantMap  sweepStatus      READ sweepStatus      NOTIFY sweepChanged)
     Q_PROPERTY(QString      stlinkOwner      READ stlinkOwner      NOTIFY stlinkOwnerChanged)
     Q_PROPERTY(QString      watchElfMatch       READ watchElfMatch       NOTIFY watchElfMatchChanged)
     Q_PROPERTY(QVariantMap  watchElfMatchDetail READ watchElfMatchDetail NOTIFY watchElfMatchChanged)
@@ -364,6 +366,16 @@ public:
                                                const QString &registerName,
                                                bool acknowledgeReadAction);
 
+    // Faz 10.6: compiles+flashes+samples+saves a profile for each model in
+    // turn, on one fixed board — see ModelSweepRunner.h for exactly how it
+    // shares the ST-Link arbiter with everything else.
+    Q_INVOKABLE void        startModelSweep(const QVariantList &modelPaths,
+                                             const QString &board,
+                                             const QString &sensorType,
+                                             int secondsPerModel);
+    Q_INVOKABLE void        cancelModelSweep();
+    QVariantMap             sweepStatus() const;
+
 signals:
     void toolPathsChanged();
     void scanningChanged();
@@ -393,6 +405,7 @@ signals:
     void watchStatsChanged();
     void watchViolationsChanged();
     void ramBudgetChanged();
+    void sweepChanged();
     void watchSymbolsLoaded(int count);
     void watchError(const QString &message);
     void stlinkOwnerChanged();
@@ -449,6 +462,7 @@ private:
     RegisterAdvisor   *m_advisor = nullptr;
     DebugLink         *m_debugLink = nullptr;
     VariableWatcher   *m_watcher = nullptr;
+    ModelSweepRunner  *m_modelSweep = nullptr;
     TraceEventLog      m_eventLog;   // Faz 6 shared timeline; reset() on watch link open
     // Per-item smoothed plot Y-range (Bolum 9.3 "kucculme 1s yumusatmayla").
     // Keyed by WatchItem::id; grows instantly, shrinks exponentially.
