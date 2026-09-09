@@ -92,9 +92,32 @@ bakın — burası yalnızca özet, oradan senkron tutun:
    kurulumuyla gelmiyordu (bkz. `docs/dev_machine_setup.md` §7) ve
    `DebugBridge`'in liste kırpması baş yerine kuyruktan yapılacak şekilde
    düzeltildi (asıl pipeline hatasını gizliyordu).
-2. **YÜKSEK — Uçtan uca senaryo elle koşulmalı.** ELF yükle → sembol ekle →
-   başlat → grafik → kaydet → durdur → oynat → profil kaydet → karşılaştır.
-   Katmanlar tek tek kanıtlandı, tam zincir hiç çalıştırılmadı.
+2. ~~**YÜKSEK — Uçtan uca senaryo elle koşulmalı.**~~ **2026-09-09 tamamlandı.**
+   Gerçek H7 + `anomaly_cnn_int8` ELF'i ile tam zincir koşuldu: bağlan → ELF
+   yükle (eşleşme doğrulandı: SP+reset vektörü tutuyor) → `AI Presetlerini
+   Uygula` (6 rol-etiketli kalem: `inferenceUs`/`inferCount`/`lastClass`/
+   `confidence`/`hwTick`/`bssEnd`) → başlat (200 Hz gerçek, 0 kaçırılan/hata,
+   canlı grafik) → kayıt başlat/durdur (gerçek 200 Hz CSV, `watch_rules.json`
+   formatına uygun) → oynat (kayıttan güvenli mod, banner görünür, değerler
+   birebir eşleşti) → profil kaydet (x2) → **karşılaştır**: rol-etiketli iki
+   profil arasında `Ortalama/Tepe inference (ms)` gerçek delta=0 ile eşleşti,
+   heap/stack (izlenmedikleri için) doğru şekilde "karşılığı yok" gösterdi →
+   CSV dışa aktarım (görünür pencere, birim etiketli). Ekran görüntüleri:
+   `out/watch_e2e/` (gitignored, silinmedi).
+   **Yol boyunca bulunanlar:** (a) `DebugBridge.cmdInvoke` 4 argümanla
+   sınırlıydı ve dönüş değerini hiç yakalamıyordu — `flashFirmware` (5 arg)
+   ve `watchProfiles()`/`compareWatchProfiles()` gibi `QVariantList`/
+   `QVariantMap` dönen metotlar test edilemiyordu; kalıcı olarak 6 arguman +
+   `QGenericReturnArgument` ile dönüş değeri yakalama eklendi. (b)
+   `SymbolPickerDialog`/`WatchRecordingBar`/`ProfileCompareDialog`'daki
+   birkaç butona (`watch.symbolDialogCloseButton`,
+   `watch.compareProfilesButton`, `watch.compareDialogCloseButton`)
+   `objectName` eklendi — önceden yalnızca fare tıklamasıyla kapatılabiliyorlardı.
+   (c) Elle eklenen semboller (`Sembol Ekle`) rol taşımıyor — bu yüzden
+   `Profilleri Karşılaştır` rol gerektiren metrikleri boş gösteriyordu; bu bir
+   hata değil, `AI Presetlerini Uygula` akışının amaçlanan kullanım şekli
+   olduğunun doğrulanması (madde 3'teki demo kaydı eksikliğiyle aynı kök
+   neden — rol etiketleme).
 3. **YÜKSEK — Demo kaydı üretin.** Dağıtılan `watch/demo/h7_demo_trace.csv`
    yalnızca `SysTick_VAL` içeriyor; rolü yok, `inference_us` regex'ine
    uymuyor → demo sırasında kural akışı (`WatchRuleFeed`) boş görünür. Rol
