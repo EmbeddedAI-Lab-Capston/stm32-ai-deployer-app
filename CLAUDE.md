@@ -101,8 +101,9 @@ stm32-ai-deployer-app/
 │       ├── flash/
 │       │   ├── FlashManager.h / .cpp
 │       │   ├── CliRunner.h / .cpp   ← QProcess wrapper
-│       │   ├── XCubeAIRunner.h / .cpp ← stedgeai CLI wrapper
+│       │   ├── XCubeAIRunner.h / .cpp ← stedgeai CLI wrapper + parseAnalyzeOutput()
 │       │   ├── PipelineConfig.h     ← Pipeline yapılandırma struct
+│       │   ├── ModelFitCheck.h / .cpp ← Faz 10.5 "sığar mı" ön kontrolü (saf, testli)
 │       │   └── PipelineRunner.h / .cpp ← .tflite→C→GCC→Flash orkestrasyonu
 │       ├── serial/
 │       │   ├── SerialManager.h / .cpp ← Thread'li seri port yöneticisi
@@ -135,7 +136,9 @@ stm32-ai-deployer-app/
 │           ├── TraceRecorder.h/.cpp · TracePlayer.h/.cpp ← CSV kayıt/oynatma
 │           ├── WatchProfile.h/.cpp   ← analysis_records "watch_profile" satırları
 │           ├── TimeSeriesRuleModel.h · TimeSeriesRuleEngine.h/.cpp ← Faz 8 kural motoru
-│           └── WatchPresetMatcher.h/.cpp ← AI-farkındalıklı preset eşleştirme
+│           ├── WatchPresetMatcher.h/.cpp ← AI-farkındalıklı preset eşleştirme
+│           ├── RamBudget.h/.cpp      ← Faz 10.2 RAM bütçesi hesabı (saf, testli)
+│           └── RateCheck.h/.cpp      ← Faz 10.3 hız tutarlılık kontrolü (saf, testli)
 │
 ├── src/quick/
 │   └── TracePlot.h / .cpp           ← QQuickPaintedItem, piksel-sütunu min/max grafik
@@ -147,7 +150,7 @@ stm32-ai-deployer-app/
 │   ├── components/                  ← AppButton/Card/DataTable/Terminal/TitleBar …
 │   │   └── watch/                   ← WatchItemTable/WatchToolbar/WatchLinkStatus/
 │   │                                   TracePlotView/WatchEventLane/WatchRecordingBar/
-│   │                                   WatchPlaybackBanner/WatchRuleFeed
+│   │                                   WatchPlaybackBanner/WatchRuleFeed/RamBudgetBar
 │   ├── dialogs/                     ← SettingsDialog/PipelineWizard/AboutDialog/
 │   │                                   SymbolPickerDialog/WatchItemDialog/
 │   │                                   ProfileCompareDialog

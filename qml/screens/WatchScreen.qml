@@ -73,6 +73,13 @@ Item {
             }
         }
 
+        RamBudgetBar {
+            id: ramBar
+            objectName: "watch.ramBudget"
+            Layout.fillWidth: true
+            Layout.fillHeight: false
+        }
+
         WatchLinkStatus {
             id: ls
             Layout.fillWidth: true

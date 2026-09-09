@@ -14,6 +14,8 @@
 #include "CliRunner.h"
 #include "XCubeAIRunner.h"
 #include "core/TemplateEngine.h"
+#include "modules/board/BoardPresets.h"
+#include "ModelFitCheck.h"
 
 // Returns the first existing path that matches a wildcard pattern in a parent dir.
 static QString findSdkDir(const QString &parent, const QString &namePattern)
@@ -431,11 +433,14 @@ void PipelineRunner::stepAnalyze()
 
     const QString xcubeOut = m_config.outputDir + "/xcubeai_output";
 
+    m_lastAnalyzeOutput.clear();
     m_xcubeRunner = new XCubeAIRunner(this);
     m_xcubeRunner->setCliPath(m_config.xcubeCliPath);
 
     connect(m_xcubeRunner, &XCubeAIRunner::outputLine,
             this, &PipelineRunner::outputLine);
+    connect(m_xcubeRunner, &XCubeAIRunner::outputLine, this,
+            [this](const QString &line) { m_lastAnalyzeOutput += line + '\n'; });
     connect(m_xcubeRunner, &XCubeAIRunner::errorLine,
             this, &PipelineRunner::errorLine);
     connect(m_xcubeRunner, &XCubeAIRunner::progressChanged,
@@ -458,6 +463,25 @@ void PipelineRunner::onXCubeAnalyzeFinished(const XCubeAIResult &result)
         if (!result.errorMessage.isEmpty())
             emit errorLine(result.errorMessage);
         return;
+    }
+
+    // Faz 10.5 fit-check: warn (never block — the user may still want to try)
+    // if the model's own reported footprint looks unlikely to fit the
+    // board. See ModelFitCheck.h for the estimate this relies on and its
+    // limits.
+    {
+        const ModelFootprint fp = XCubeAIRunner::parseAnalyzeOutput(m_lastAnalyzeOutput);
+        const BoardInfo board = BoardPresets::find(m_config.targetBoard);
+
+        if (board.isNull()) {
+            emit warningLine(tr("Kapasite kontrolu yapilamadi: kart bilgisi bulunamadi (%1).").arg(m_config.targetBoard));
+        } else if (fp.activationsBytes < 0 || fp.weightsBytes < 0) {
+            emit warningLine(tr("Kapasite kontrolu yapilamadi: model boyutu (weights/activations) "
+                                 "analyze ciktisindan ayristirilamadi."));
+        } else {
+            for (const QString &w : checkModelFitsBoard(fp, board))
+                emit warningLine(w);
+        }
     }
 
     emit outputLine(tr("Model X-CUBE-AI tarafinda destekleniyor, C kodu uretimine geciliyor."));

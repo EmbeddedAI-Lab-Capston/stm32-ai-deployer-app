@@ -4,6 +4,16 @@
 #include <QProcess>
 #include <QStringList>
 
+// Weights/activations/macc parsed from a stedgeai `analyze` run's "Exec/
+// report summary" block (Faz 10.5, docs/memory_telemetry_plan.md Bolum 7).
+// A field that couldn't be parsed is -1 ("unknown"), NEVER 0 — 0 would
+// silently read as "fits easily" to a naive size comparison.
+struct ModelFootprint {
+    qint64 weightsBytes     = -1;
+    qint64 activationsBytes = -1;
+    qint64 maccCount        = -1;
+};
+
 // Result from a stm32ai generate invocation
 struct XCubeAIResult {
     bool        success      = false;
@@ -32,6 +42,13 @@ public:
     // Search well-known locations for stm32ai.exe; returns empty string if not found.
     static QString detectCliPath();
     static bool    isAvailable();
+
+    // Pure text parser (no process/QObject involved) — parses the "Exec/
+    // report summary" block's weights/activations/macc lines out of a
+    // stedgeai `analyze` run's combined stdout. Deliberately narrow (this
+    // exact ST Edge AI Core v4 output shape, confirmed live against real
+    // H7/F4 analyze runs) rather than a general report parser.
+    static ModelFootprint parseAnalyzeOutput(const QString &output);
 
     bool isRunning() const;
     void cancel();

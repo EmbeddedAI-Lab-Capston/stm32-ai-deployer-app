@@ -29,6 +29,10 @@ signals:
     void stageChanged(const QString &stage);
     void outputLine(const QString &line);
     void errorLine(const QString &line);
+    // Non-blocking advisory (Faz 10.5 fit-check etc.) — distinct from
+    // errorLine so Backend can surface it as pipelineLines type "warn"
+    // rather than "err" (a warning never fails the pipeline).
+    void warningLine(const QString &line);
     void progressChanged(int percent);    // 0-100
     void finished(bool success);
 
@@ -51,6 +55,7 @@ private:
     bool            m_running       = false;
     bool            m_cancelled     = false;
     QString         m_builtElfPath;
+    QString         m_lastAnalyzeOutput;   // accumulated stdout of stepAnalyze(), for the Faz 10.5 fit-check
     QString         m_cubeSdkPath;
     QStringList     m_programmerConnectArgs;
 

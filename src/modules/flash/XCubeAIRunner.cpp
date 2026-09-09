@@ -309,6 +309,39 @@ void XCubeAIRunner::parseProgressFromLine(const QString &line)
              line.contains("done",  Qt::CaseSensitive))    emit progressChanged(100);
 }
 
+ModelFootprint XCubeAIRunner::parseAnalyzeOutput(const QString &output)
+{
+    ModelFootprint fp;
+
+    // Anchored on the COLON form ("label       :   1,234 ...") that only
+    // appears in the "Exec/report summary" block. The per-cluster
+    // "Complexity report" section repeats macc/weights using an EQUALS form
+    // ("macc=2,528 weights=2,696 ...") with different (partial) numbers —
+    // requiring ':' is what keeps this from matching the wrong section.
+    static const QRegularExpression maccRe(R"((?:^|\n)\s*macc\s*:\s*([\d,]+))");
+    static const QRegularExpression weightsRe(R"((?:^|\n)\s*weights\s*\([^)]*\)\s*:\s*([\d,]+)\s*B)");
+    static const QRegularExpression activationsRe(R"((?:^|\n)\s*activations\s*\([^)]*\)\s*:\s*([\d,]+)\s*B)");
+
+    const auto toInt = [](const QString &s) -> qint64 {
+        QString digits = s;
+        digits.remove(QLatin1Char(','));
+        bool ok = false;
+        const qint64 v = digits.toLongLong(&ok);
+        return ok ? v : -1;
+    };
+
+    const auto mm = maccRe.match(output);
+    if (mm.hasMatch()) fp.maccCount = toInt(mm.captured(1));
+
+    const auto wm = weightsRe.match(output);
+    if (wm.hasMatch()) fp.weightsBytes = toInt(wm.captured(1));
+
+    const auto am = activationsRe.match(output);
+    if (am.hasMatch()) fp.activationsBytes = toInt(am.captured(1));
+
+    return fp;
+}
+
 XCubeAIResult XCubeAIRunner::parseResult(int exitCode) const
 {
     XCubeAIResult result;

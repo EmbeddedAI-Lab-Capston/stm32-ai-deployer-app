@@ -48,6 +48,8 @@
 #include "modules/watcher/WatchProfile.h"
 #include "modules/watcher/TimeSeriesRuleEngine.h"
 #include "modules/watcher/WatchPresetMatcher.h"
+#include "modules/watcher/RamBudget.h"
+#include "modules/watcher/RateCheck.h"
 
 namespace
 {
@@ -1741,6 +1743,8 @@ void Backend::runPipeline(const QVariantMap &config)
             [this](const QString &line) { appendPipelineLine(line, "info"); });
     connect(m_pipelineRunner, &PipelineRunner::errorLine, this,
             [this](const QString &line) { appendPipelineLine(line, "err"); });
+    connect(m_pipelineRunner, &PipelineRunner::warningLine, this,
+            [this](const QString &line) { appendPipelineLine(line, "warn"); });
     connect(m_pipelineRunner, &PipelineRunner::finished, this, [this](bool success) {
         m_pipelineBusy = false;
         if (m_pipelinePulseTimer) m_pipelinePulseTimer->stop();
@@ -3484,6 +3488,12 @@ void Backend::wireWatcher()
     connect(m_watcher, &VariableWatcher::statsChanged,     this, &Backend::watchStatsChanged);
     connect(m_watcher, &VariableWatcher::runningChanged,   this, &Backend::watchRunChanged);
     connect(m_watcher, &VariableWatcher::symbolsLoaded,    this, &Backend::watchSymbolsLoaded);
+    // Faz 10.2: the bar depends on live item values (heapEnd/stackWatermark)
+    // AND on symbol addresses (_end/_estack) — re-evaluate on either changing.
+    connect(m_watcher, &VariableWatcher::itemsChanged,     this, &Backend::ramBudgetChanged);
+    connect(m_watcher, &VariableWatcher::samplesAppended,  this, &Backend::ramBudgetChanged);
+    connect(m_watcher, &VariableWatcher::statsChanged,     this, &Backend::ramBudgetChanged);
+    connect(m_watcher, &VariableWatcher::symbolsLoaded,    this, &Backend::ramBudgetChanged);
     connect(m_watcher, &VariableWatcher::elfMatchChanged,  this, &Backend::watchElfMatchChanged);
     connect(m_watcher, &VariableWatcher::playbackFinished, this, [this]() {
         emit watchLinkChanged();
@@ -4289,6 +4299,116 @@ void Backend::applyWatchPresets()
         }
         m_watcher->updateItem(m_watcher->items().last().id, props);
     }
+}
+
+QVariantMap Backend::ramBudget() const
+{
+    QVariantMap out;
+    if (!m_watcher) {
+        out[QStringLiteral("ok")] = false;
+        out[QStringLiteral("warning")] = tr("Izleyici baslatilmadi");
+        return out;
+    }
+
+    RamBudgetInput in;
+    in.ramTotalBytes = m_state ? quint64(m_state->boardRamKb()) * 1024ull : 0;
+
+    const auto findSymbolAddr = [this](const QString &name, quint64 &addrOut) {
+        for (const Symbol &s : m_watcher->symbols()) {
+            if (s.name == name && !s.addressIsValue) { addrOut = s.address; return true; }
+        }
+        return false;
+    };
+    in.ramTopKnown    = findSymbolAddr(QStringLiteral("_estack"), in.ramTopAddr);
+    in.staticEndKnown = findSymbolAddr(QStringLiteral("_end"), in.staticEndAddr);
+
+    // heapEnd/stackWatermark come from the LIVE WATCHED ITEMS, not straight
+    // from symbols — heapTop and the stack headroom are VALUES that only
+    // exist once sampling has actually read them (RamBudget.h's whole point:
+    // never substitute a symbol's address for a value that must be read).
+    const QList<WatchItem> &items = m_watcher->items();
+    for (int i = 0; i < items.size(); ++i) {
+        const WatchItem &it = items.at(i);
+        const WatchStats &st = m_watcher->buffer().stats(i);
+        if (it.role == QStringLiteral("heapEnd") && st.count > 0) {
+            in.heapKnown   = true;
+            in.heapTopAddr = quint64(st.last);
+        } else if (it.role == QStringLiteral("stackWatermark") && st.count > 0) {
+            in.stackKnown         = true;
+            in.stackBaseAddr      = it.address;
+            in.stackHeadroomBytes = quint64(st.last);
+        }
+    }
+
+    const RamBudgetResult r = computeRamBudget(in);
+    out[QStringLiteral("ok")]         = r.ok;
+    out[QStringLiteral("warning")]    = r.warning;
+    out[QStringLiteral("ramTotal")]   = QVariant::fromValue(r.ramTotal);
+    out[QStringLiteral("ramBase")]    = QVariant::fromValue(r.ramBase);
+    out[QStringLiteral("ramTop")]     = QVariant::fromValue(r.ramTop);
+    out[QStringLiteral("staticEnd")]  = QVariant::fromValue(r.staticEnd);
+    out[QStringLiteral("heapTop")]    = QVariant::fromValue(r.heapTop);
+    out[QStringLiteral("stackDip")]   = QVariant::fromValue(r.stackDip);
+    out[QStringLiteral("freeBytes")]  = QVariant::fromValue(r.freeBytes);
+    out[QStringLiteral("staticUsed")] = QVariant::fromValue(r.staticUsed);
+    out[QStringLiteral("heapUsed")]   = QVariant::fromValue(r.heapUsed);
+    out[QStringLiteral("stackUsed")]  = QVariant::fromValue(r.stackUsed);
+    out[QStringLiteral("usedPct")]    = r.usedPct;
+    return out;
+}
+
+QVariantMap Backend::inferenceRateCheck(double windowSec) const
+{
+    QVariantMap out;
+    if (!m_watcher) {
+        out[QStringLiteral("ok")] = false;
+        out[QStringLiteral("detail")] = tr("Izleyici baslatilmadi");
+        return out;
+    }
+    if (windowSec <= 0.0) windowSec = 10.0;
+
+    // Prefer the original g_ai_* preset's roles; fall back to the memory-
+    // telemetry preset's (Faz 10.1) equivalents if that's what's watched.
+    const auto findRoleIndex = [this](std::initializer_list<const char *> roles) -> int {
+        const QList<WatchItem> &items = m_watcher->items();
+        for (const char *role : roles) {
+            for (int i = 0; i < items.size(); ++i) {
+                if (items.at(i).role == QLatin1String(role)) return i;
+            }
+        }
+        return -1;
+    };
+    const int countIdx = findRoleIndex({"inferCount", "memInferCount"});
+    const int infUsIdx = findRoleIndex({"inferenceUs", "memInferUs"});
+
+    RateCheckInput in;
+    if (countIdx >= 0) {
+        const double tEnd = m_watcher->buffer().lastTime();
+        const QVector<RawSample> raw = m_watcher->buffer().rawWindow(countIdx, tEnd - windowSec, tEnd);
+        if (raw.size() >= 2) {
+            in.haveCountSamples = true;
+            in.firstT     = raw.first().t;
+            in.firstCount = raw.first().v;
+            in.lastT      = raw.last().t;
+            in.lastCount  = raw.last().v;
+        }
+    }
+    if (infUsIdx >= 0) {
+        const WatchStats &st = m_watcher->buffer().stats(infUsIdx);
+        if (st.count > 0) {
+            in.infUsKnown    = true;
+            in.reportedInfUs = st.last;
+        }
+    }
+
+    const RateCheckResult r = computeRateCheck(in);
+    out[QStringLiteral("ok")]               = r.ok;
+    out[QStringLiteral("detail")]           = r.detail;
+    out[QStringLiteral("observedHz")]       = r.observedHz;
+    out[QStringLiteral("reportedInfUs")]    = r.reportedInfUs;
+    out[QStringLiteral("theoreticalMaxHz")] = r.theoreticalMaxHz;
+    out[QStringLiteral("consistent")]       = r.consistent;
+    return out;
 }
 
 QVariantList Backend::watchProfiles() const

@@ -137,6 +137,62 @@ takılınca ve N6 flash sorunu çözülünce tamamlanacak.**
   "doğrulanamadı" işaretlenmesi, ekran görüntüleri `out/sensor_memory_e2e/`
   altında tamamlanması (`01_h7_*`, `02_h7_*`, `03_h7_uart_vs_bellek_*`).
 
+### Faz 10.2 — RAM bütçesi görselleştirmesi: TAMAMLANDI (2026-09-09)
+
+`src/modules/watcher/RamBudget.h/.cpp` (saf, 6 birim testi) + `Backend::ramBudget`
+(canlı `Q_PROPERTY`, `NOTIFY ramBudgetChanged` — `watchItems`/`watchRateInfo`
+gibi diğer canlı property'lerle aynı desen) + `qml/components/watch/RamBudgetBar.qml`
+(`objectName: "watch.ramBudget"`, `WatchLinkStatus`'ın üstünde). Sembol
+ADRESİ (`_end`/`_estack`) ile izlenen kalemin DEĞERİ (`heapEnd`/
+`stackWatermark`) birbirine karıştırılmıyor — plan §4.1'in asıl endişesi.
+**F4'te canlı doğrulandı:** gerçek "%35.8 (68.7 KB / 192.0 KB)" gösterdi,
+sayılar elle çapraz kontrol edildi (staticUsed+heapUsed+stackUsed+freeBytes
+== ramTotal). `heapEnd` bu firmware'de hiç yok (malloc kullanılmıyor) —
+`heapTop=0` doğru davranış, hata değil. Ekran görüntüsü:
+`out/ram_budget_e2e/01_f4_bar.png`.
+**Bulunan pre-existing hata (kapsam dışı, düzeltilmedi):**
+`qml/components/watch/WatchToolbar.qml`'deki "ELF yüklenmedi" etiketi
+`backend.watchElfPath()` bir METOD çağrısına bağlı — QML binding motoru
+bunu izleyemiyor, ELF yüklendikten sonra bile etiket bayat kalıyor. Düzeltme
+`watchElfPath`'i NOTIFY'lı `Q_PROPERTY`ye çevirmek (aynı desen bu fazda
+`ramBudget` için zaten uygulandı) — küçük ve düşük riskli ama bu fazın
+kapsamı dışında bırakıldı.
+
+### Faz 10.3 — Hız tutarlılık kontrolü: TAMAMLANDI (2026-09-09)
+
+`src/modules/watcher/RateCheck.h/.cpp` (saf, 5 birim testi) +
+`Backend::inferenceRateCheck(windowSec)` (`Q_INVOKABLE` — plan gereği canlı
+property değil, çağıran pencereyi kendi seçiyor) + `WatchLinkStatus.qml`'de
+3 sn'de bir `Timer` ile çağrılan `objectName: "watch.rateCheckBadge"` rozeti.
+Rozet **"doğrulandı" DEMİYOR** — "tutarlı"/"TUTARSIZ" diyor (dürüstlük
+kuralı, plan §5.1). **F4'te canlı doğrulandı:** "22.7 Hz gözlendi · beyan
+125 µs ile tutarlı" (teorik üst sınır 8000 Hz) — gerçek sayılar, gerçek
+firmware. Ekran görüntüsü: `out/rate_check_e2e/01_f4_tutarli.png`.
+**Tutarsız durum canlı denenmedi** (firmware'in kendi beyanını yalanlaması
+gerekirdi, ki mevcut firmware doğru rapor veriyor) — pure fonksiyonun kendisi
+birim testiyle (`observedRateExceedingTheoreticalMaxIsInconsistent`) hem
+tutarlı hem tutarsız durumu kapsıyor.
+
+### Faz 10.5 — "Bu model bu karta sığar mı" ön kontrolü: TAMAMLANDI (2026-09-09)
+
+`XCubeAIRunner::parseAnalyzeOutput()` (saf, gerçek H7+F4 `stedgeai analyze`
+çıktılarıyla test edildi — "Complexity report" bölümündeki eşittir-biçimli
+("macc=2,528") yanıltıcı ikinci bir sayıyı ayırt etmek için ":" biçimine
+kilitleniyor) + `checkModelFitsBoard()` (`src/modules/flash/ModelFitCheck.h/.cpp`,
+saf, 3 birim testi) + `PipelineRunner`'a yeni `warningLine` sinyali
+(pipelineLines'a `type:"warn"` düşüyor, `type:"err"`'den ayrı — uyarı asla
+pipeline'ı durdurmuyor). **Sığan durum F4'te canlı doğrulandı**
+(`anomaly_mlp_int8`: weights=2,696 B, activations=716 B — hiç uyarı
+çıkmadı, `pipelineLines` erken-anlık görüntüyle doğrulandı çünkü DebugBridge
+listeleri son 20 satıra kırpıyor). **Sığmayan durum canlı DENENEMEDİ:**
+depodaki hiçbir gerçek `.tflite` modeli (kws_dnn/kws_dscnn/kws_tcresnet/
+wisdm_mlp dahil, hepsi `stedgeai analyze` ile bizzat ölçüldü) F4'ün bile
+kapasitesini aşmıyor — plan "sığıyorsa başka bir model dene, uyarıyı
+zorlama" diyor, zorlanmadı. Eşik/uyarı mantığının kendisi
+`TestModelFitCheck.cpp`'de gerçek model sayılarıyla (kws_dnn'in ölçülen
+261.424 B/12.824 B ayak izi) ama sentetik (gerçek olmayan, açıkça
+etiketlenmiş) bir "tiny test fixture" kart tanımına karşı doğrulandı.
+
 ---
 
 ## Kalan işler (öncelik sıralı)

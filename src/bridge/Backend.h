@@ -91,6 +91,7 @@ class Backend : public QObject
     Q_PROPERTY(QVariantMap  watchRateInfo    READ watchRateInfo    NOTIFY watchStatsChanged)
     Q_PROPERTY(QVariantList watchItems       READ watchItems       NOTIFY watchItemsChanged)
     Q_PROPERTY(QVariantList watchViolations  READ watchViolations  NOTIFY watchViolationsChanged)
+    Q_PROPERTY(QVariantMap  ramBudget        READ ramBudget        NOTIFY ramBudgetChanged)
     Q_PROPERTY(QString      stlinkOwner      READ stlinkOwner      NOTIFY stlinkOwnerChanged)
     Q_PROPERTY(QString      watchElfMatch       READ watchElfMatch       NOTIFY watchElfMatchChanged)
     Q_PROPERTY(QVariantMap  watchElfMatchDetail READ watchElfMatchDetail NOTIFY watchElfMatchChanged)
@@ -270,6 +271,10 @@ public:
     QVariantMap  watchRateInfo() const;
     QVariantList watchItems() const;
     QVariantList watchViolations() const;
+    // Faz 10.2: RAM budget breakdown for the live-watched items — see
+    // src/modules/watcher/RamBudget.h for the arithmetic and the
+    // address-vs-value distinction it exists to get right.
+    QVariantMap  ramBudget() const;
     QString      stlinkOwner() const { return m_stlinkOwner; }
     QString      watchElfMatch() const;
     QVariantMap  watchElfMatchDetail() const;
@@ -338,6 +343,13 @@ public:
     Q_INVOKABLE void         applyWatchPresets();                        // adds every resolvable preset item
     Q_INVOKABLE QVariantList watchPresetSuggestions() const;              // preview before applying
 
+    // Faz 10.3: independent sanity check of the firmware's self-reported
+    // inf_us against the host's own clock — see src/modules/watcher/
+    // RateCheck.h for exactly what this can and cannot prove. Explicitly
+    // Q_INVOKABLE (not a live property): the caller picks the averaging
+    // window each time, per plan docs/memory_telemetry_plan.md Bolum 5.
+    Q_INVOKABLE QVariantMap  inferenceRateCheck(double windowSec) const;
+
 signals:
     void toolPathsChanged();
     void scanningChanged();
@@ -366,6 +378,7 @@ signals:
     void watchItemsChanged();
     void watchStatsChanged();
     void watchViolationsChanged();
+    void ramBudgetChanged();
     void watchSymbolsLoaded(int count);
     void watchError(const QString &message);
     void stlinkOwnerChanged();

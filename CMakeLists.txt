@@ -68,6 +68,8 @@ set(PROJECT_SOURCES
 
     src/modules/flash/PipelineRunner.h
     src/modules/flash/PipelineRunner.cpp
+    src/modules/flash/ModelFitCheck.h
+    src/modules/flash/ModelFitCheck.cpp
 
     src/modules/serial/PacketParser.h
     src/modules/serial/PacketParser.cpp
@@ -156,6 +158,10 @@ set(PROJECT_SOURCES
     src/modules/watcher/TimeSeriesRuleEngine.cpp
     src/modules/watcher/WatchPresetMatcher.h
     src/modules/watcher/WatchPresetMatcher.cpp
+    src/modules/watcher/RamBudget.h
+    src/modules/watcher/RamBudget.cpp
+    src/modules/watcher/RateCheck.h
+    src/modules/watcher/RateCheck.cpp
 
     src/quick/TracePlot.h
     src/quick/TracePlot.cpp
@@ -243,6 +249,7 @@ qt_add_qml_module(STM32AiDeployer
         qml/screens/WatchScreen.qml
         qml/components/watch/WatchItemTable.qml
         qml/components/watch/WatchLinkStatus.qml
+        qml/components/watch/RamBudgetBar.qml
         qml/components/watch/WatchToolbar.qml
         qml/components/watch/TracePlotView.qml
         qml/components/watch/WatchEventLane.qml

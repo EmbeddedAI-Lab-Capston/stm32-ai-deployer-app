@@ -32,6 +32,14 @@ set(TEST_SOURCES
     TestTimeSeriesRuleEngine.cpp
     TestWatchPresetMatcher.h
     TestWatchPresetMatcher.cpp
+    TestRamBudget.h
+    TestRamBudget.cpp
+    TestRateCheck.h
+    TestRateCheck.cpp
+    TestModelFootprint.h
+    TestModelFootprint.cpp
+    TestModelFitCheck.h
+    TestModelFitCheck.cpp
 
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.h
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.cpp
@@ -63,6 +71,16 @@ set(TEST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/TimeSeriesRuleEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchPresetMatcher.h
     ${CMAKE_SOURCE_DIR}/src/modules/watcher/WatchPresetMatcher.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/RamBudget.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/RamBudget.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/RateCheck.h
+    ${CMAKE_SOURCE_DIR}/src/modules/watcher/RateCheck.cpp
+
+    ${CMAKE_SOURCE_DIR}/src/modules/flash/XCubeAIRunner.h
+    ${CMAKE_SOURCE_DIR}/src/modules/flash/XCubeAIRunner.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/flash/ModelFitCheck.h
+    ${CMAKE_SOURCE_DIR}/src/modules/flash/ModelFitCheck.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/board/BoardPresets.h
 )
 
 qt_add_executable(STM32AiDeployerTests ${TEST_SOURCES})

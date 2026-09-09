@@ -15,6 +15,18 @@ Rectangle {
     readonly property string _elfMatch: _hasBackend ? backend.watchElfMatch : "unknown"
     readonly property var    _elfDetail: _hasBackend ? backend.watchElfMatchDetail : ({})
 
+    // Faz 10.3: inferenceRateCheck() is Q_INVOKABLE (caller picks the
+    // window each call), so polled on a timer rather than bound live —
+    // matching how the plan itself describes calling it on demand.
+    property var _rateCheck: ({})
+    Timer {
+        interval: 3000
+        repeat: true
+        running: root._hasBackend && backend.watchRunning
+        triggeredOnStart: true
+        onTriggered: root._rateCheck = backend.inferenceRateCheck(10)
+    }
+
     implicitHeight: 44
     color: Theme.bgElevated
     radius: Theme.radiusMd
@@ -86,6 +98,14 @@ Rectangle {
         }
 
         Item { Layout.fillWidth: true }
+
+        // ── Rate consistency check (Faz 10.3) ────────────────────────────
+        StatusPill {
+            objectName: "watch.rateCheckBadge"
+            visible: root._hasBackend && backend.watchRunning && root._rateCheck.ok === true
+            text: root._rateCheck.detail || ""
+            status: root._rateCheck.consistent === true ? "ready" : "error"
+        }
 
         // ── ELF match ─────────────────────────────────────────────────────
         RowLayout {
