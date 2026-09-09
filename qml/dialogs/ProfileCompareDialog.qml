@@ -119,7 +119,7 @@ Popup {
         RowLayout {
             Layout.fillWidth: true
             Item { Layout.fillWidth: true }
-            AppButton { text: "Kapat"; variant: "ghost"; onClicked: root.close() }
+            AppButton { objectName: "watch.compareDialogCloseButton"; text: "Kapat"; variant: "ghost"; onClicked: root.close() }
         }
     }
 }

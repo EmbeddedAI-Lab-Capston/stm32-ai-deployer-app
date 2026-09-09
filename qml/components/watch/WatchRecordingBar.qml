@@ -73,6 +73,7 @@ RowLayout {
         onClicked: backend.applyWatchPresets()
     }
     AppButton {
+        objectName: "watch.compareProfilesButton"
         text: "Profilleri Karşılaştır"
         variant: "ghost"
         enabled: root._hasBackend

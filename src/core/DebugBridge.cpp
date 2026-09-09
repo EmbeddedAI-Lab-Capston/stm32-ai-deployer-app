@@ -387,9 +387,9 @@ QJsonObject DebugBridge::cmdInvoke(const QJsonObject &request) const
     for (const QJsonValue &value : jsonArgs)
         args.append(value.toVariant());
 
-    if (args.size() > 4)
+    if (args.size() > 6)
         return QJsonObject{{QStringLiteral("ok"), false},
-                           {QStringLiteral("error"), QStringLiteral("at most 4 args supported")}};
+                           {QStringLiteral("error"), QStringLiteral("at most 6 args supported")}};
 
     const QMetaObject *meta = target->metaObject();
     int foundIndex = -1;
@@ -417,12 +417,25 @@ QJsonObject DebugBridge::cmdInvoke(const QJsonObject &request) const
             args[i].convert(targetType);
     }
 
-    QGenericArgument genArgs[4];
+    QGenericArgument genArgs[6];
     for (int i = 0; i < args.size(); ++i)
         genArgs[i] = QGenericArgument(args[i].typeName(), args[i].constData());
 
-    const bool invoked = method.invoke(target, Qt::DirectConnection,
-                                       genArgs[0], genArgs[1], genArgs[2], genArgs[3]);
+    // Capture the return value (if any) so callers can retrieve data from
+    // QVariantList/QVariantMap/QString/... returning methods, not just void
+    // ones. QGenericReturnArgument needs a live QVariant of the exact return
+    // type to write into.
+    const QMetaType returnMetaType = method.returnMetaType();
+    const bool hasReturn = returnMetaType.isValid() && returnMetaType.id() != QMetaType::Void;
+    QVariant returnValue;
+    if (hasReturn) returnValue = QVariant(returnMetaType);
+    QGenericReturnArgument retArg;
+    if (hasReturn)
+        retArg = QGenericReturnArgument(returnValue.typeName(), returnValue.data());
+
+    const bool invoked = method.invoke(target, Qt::DirectConnection, retArg,
+                                       genArgs[0], genArgs[1], genArgs[2], genArgs[3],
+                                       genArgs[4], genArgs[5]);
     if (!invoked)
         return QJsonObject{{QStringLiteral("ok"), false},
                            {QStringLiteral("error"), QStringLiteral("invoke failed")}};
@@ -430,5 +443,7 @@ QJsonObject DebugBridge::cmdInvoke(const QJsonObject &request) const
     QJsonObject reply{{QStringLiteral("ok"), true}};
     reply.insert(QStringLiteral("object"), objName);
     reply.insert(QStringLiteral("method"), methodName);
+    if (hasReturn)
+        reply.insert(QStringLiteral("result"), clampValue(returnValue));
     return reply;
 }
