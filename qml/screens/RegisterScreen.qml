@@ -137,12 +137,14 @@ Item {
                     : root._support === "experimental" ? "warning" : "error"
             }
             AppButton {
+                objectName: "register.snapshotAButton"
                 text: root._busy ? "Alınıyor..." : "Snapshot A"
                 iconText: "◉"
                 enabled: !root._busy && root._support !== "unsupported"
                 onClicked: if (root._hasBackend) backend.takeRegisterSnapshot(0, root.selectedNames())
             }
             AppButton {
+                objectName: "register.snapshotBButton"
                 text: "Snapshot B"
                 iconText: "◎"
                 variant: "secondary"
@@ -150,6 +152,7 @@ Item {
                 onClicked: if (root._hasBackend) backend.takeRegisterSnapshot(1, root.selectedNames())
             }
             AppButton {
+                objectName: "register.diffButton"
                 text: "Diff"
                 variant: "secondary"
                 enabled: {
@@ -534,7 +537,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
             }
-            AppButton { Layout.alignment: Qt.AlignRight; text: "Tamam"; onClicked: diffSummaryPopup.close() }
+            AppButton { objectName: "register.diffPopupCloseButton"; Layout.alignment: Qt.AlignRight; text: "Tamam"; onClicked: diffSummaryPopup.close() }
         }
     }
 }

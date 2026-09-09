@@ -23,6 +23,17 @@ quint64 svdNumber(const QString &raw)
     return ok ? v : 0;
 }
 
+// SVD <description> text is XML element content, so it carries the source
+// file's own line breaks/indentation verbatim (readElementText() does not
+// touch it). Left as-is, that overflows every fixed-height single-line
+// delegate that displays it (RegisterDiffView, RegisterTree, tooltips) —
+// collapse all whitespace runs to a single space so descriptions are always
+// one clean line regardless of how the SVD author wrapped them.
+QString normalizeDescription(const QString &raw)
+{
+    return raw.simplified();
+}
+
 } // namespace
 
 SvdDevice SvdParser::parseFile(const QString &path)
@@ -66,7 +77,7 @@ void SvdParser::parseDevice(QXmlStreamReader &xml, SvdDevice &dev)
         else if (n == QLatin1String("version"))
             dev.version = xml.readElementText();
         else if (n == QLatin1String("description"))
-            dev.description = xml.readElementText();
+            dev.description = normalizeDescription(xml.readElementText());
         else if (n == QLatin1String("cpu"))
             parseCpu(xml, dev.cpu);
         else if (n == QLatin1String("size"))
@@ -122,7 +133,7 @@ QString SvdParser::parsePeripheral(QXmlStreamReader &xml, SvdPeripheral &p,
         else if (n == QLatin1String("groupName"))
             p.groupName = xml.readElementText();
         else if (n == QLatin1String("description"))
-            p.description = xml.readElementText();
+            p.description = normalizeDescription(xml.readElementText());
         else if (n == QLatin1String("baseAddress"))
             p.baseAddress = svdNumber(xml.readElementText());
         else if (n == QLatin1String("addressBlock"))
@@ -177,7 +188,7 @@ SvdRegister SvdParser::parseRegister(QXmlStreamReader &xml, const SvdDevice &dev
         else if (n == QLatin1String("displayName"))
             reg.displayName = xml.readElementText();
         else if (n == QLatin1String("description"))
-            reg.description = xml.readElementText();
+            reg.description = normalizeDescription(xml.readElementText());
         else if (n == QLatin1String("addressOffset"))
             reg.addressOffset = svdNumber(xml.readElementText());
         else if (n == QLatin1String("size"))
@@ -220,7 +231,7 @@ SvdField SvdParser::parseField(QXmlStreamReader &xml)
         if (n == QLatin1String("name"))
             field.name = xml.readElementText();
         else if (n == QLatin1String("description"))
-            field.description = xml.readElementText();
+            field.description = normalizeDescription(xml.readElementText());
         else if (n == QLatin1String("bitOffset"))
             field.bitOffset = static_cast<int>(svdNumber(xml.readElementText()));
         else if (n == QLatin1String("bitWidth"))
@@ -259,7 +270,7 @@ void SvdParser::parseEnumeratedValues(QXmlStreamReader &xml, SvdField &field)
             if (n == QLatin1String("name"))
                 ev.name = xml.readElementText();
             else if (n == QLatin1String("description"))
-                ev.description = xml.readElementText();
+                ev.description = normalizeDescription(xml.readElementText());
             else if (n == QLatin1String("value"))
                 ev.value = svdNumber(xml.readElementText());
             else if (n == QLatin1String("isDefault")) {
