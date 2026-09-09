@@ -141,11 +141,21 @@ bakın — burası yalnızca özet, oradan senkron tutun:
    etkiliyor ve görsel doğrulama (GUI otomasyonu yok) gerektiriyor.
 6. **DÜŞÜK — `Backend.cpp` 4320 satıra çıktı** (+%30). `WatchFacade` gibi bir
    alt cepheye bölünmesi düşünülebilir — mimari karar, aceleye getirilmemeli.
-7. **DÜŞÜK — Register Inspector hız iddiası (Faz 2) hiç canlı ölçülmedi**
-   (GDB arka ucu vs CLI). Varsayılan zaten `"cli"` olduğu için regresyon
-   riski yok, sadece bir performans iddiası doğrulanmamış durumda. (Bu
-   oturumda GDB arka ucu fonksiyonel olarak doğrulandı — bkz. madde 8 — ama
-   hız kıyaslaması hâlâ yapılmadı.)
+7. ~~**DÜŞÜK — Register Inspector hız iddiası (Faz 2) hiç canlı ölçülmedi**~~
+   **2026-09-09 ölçüldü.** H7'de aynı 16 peripheral'lık plan için 5'er koşum:
+   **CLI ortalama 273 ms, GDB ortalama 389 ms** — GDB arka ucu CLI'dan
+   **daha hızlı değil, aksine ~%40 daha yavaş.** Sebep: `GdbServerReader`
+   her okuma için `DebugLink::retain()`/`release()` çağırıyor (paylaşılan
+   ST-Link'in doğruluk/güvenlik sözleşmesi — bkz. CLAUDE.md "DebugLink
+   referans sayımlıdır"), yani her snapshot'ta gdbserver süreci baştan
+   başlatılıp durduruluyor; kalıcı bağlantı yeniden kullanımı YOK. Plan
+   dosyasındaki "hız kazancı" varsayımı, mevcut retain/release mimarisiyle
+   gerçekleşmiyor — bu bir hata değil (mimari doğruluk için kasıtlı), ama
+   performans iddiası artık yanlışlanmış durumda. Varsayılan `"cli"` kalmalı;
+   "gdb" seçeneğinin tek potansiyel faydası hız değil, farklı bir bağlantı
+   yolu olması (CLAUDE.md'deki not güncellenmeli: "hız kazancı konfordur"
+   ifadesi artık "konfor bile değil, sadece alternatif yol" olarak
+   okunmalı).
 8. ~~**Register Inspector'ın geniş kapsamlı canlı testi.**~~ **2026-09-09
    tamamlandı.** Önceki oturum yalnızca tek bir RCC snapshot'ı doğrulamıştı;
    bu oturumda H7 + F4 + N6 (üçü de bağlıyken) üzerinde: Snapshot A/B → **A→B

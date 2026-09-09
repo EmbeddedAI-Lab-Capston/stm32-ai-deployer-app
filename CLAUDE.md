@@ -426,8 +426,13 @@ emit errorReceived(QJsonObject);
   bile etkin arka uç her snapshot'ta çözümlenir: gdbserver yolu yoksa veya
   `retain()` başarısızsa sessizce CLI'ya düşülür ve **uygulama çalışması başına
   bir kez** (snapshot başına değil) uyarı verilir. Gerekçe: çalışır durumdaki
-  Register Inspector'a süreç/port riskini varsayılan olarak eklemeyiz; hız
-  kazancı konfordur, doğruluk değil.
+  Register Inspector'a süreç/port riskini varsayılan olarak eklemeyiz.
+  **Ölçüldü (2026-09-09, H7, 16 peripheral, 5 koşum):** GDB arka ucu hız
+  kazancı SAĞLAMIYOR — CLI ortalama 273 ms, GDB ortalama 389 ms (~%40 daha
+  yavaş), çünkü `GdbServerReader` her snapshot'ta `retain()`/`release()`
+  çağırıp gdbserver'ı baştan başlatıyor (kalıcı bağlantı yeniden kullanımı
+  yok). "gdb" seçeneği artık bir hız/konfor tercihi değil, salt alternatif
+  bir bağlantı yoludur — varsayılan `"cli"` bu yüzden de doğru seçim.
 - **`DebugLink` referans sayımlıdır; public `open()`/`close()` YOKTUR.** Tek
   ST-Link'i iki sahip (Register Inspector + Değişken İzleyici) paylaştığı için
   yalnızca `retain()`/`release()` vardır ve her `retain()` tam olarak bir
