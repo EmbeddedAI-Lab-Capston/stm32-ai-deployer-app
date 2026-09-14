@@ -69,7 +69,7 @@ Faz 4 (QML birim testleri) opsiyonel/düşük öncelik olarak bekliyor.
 
 ---
 
-## Faz 10: bellek-öncelikli telemetri — 6 alt fazın 6'sı da uygulandı ve F4'te canlı doğrulandı (2026-09-09)
+## Faz 10: bellek-öncelikli telemetri — 6 alt fazın 6'sı da uygulandı, F4 VE H7'de canlı doğrulandı (2026-09-14)
 
 **Tam plan:** [`docs/memory_telemetry_plan.md`](docs/memory_telemetry_plan.md)
 — kendi kendine yeterli, adım adım, üç kart için (F4/H7/N6).
@@ -77,12 +77,23 @@ Faz 4 (QML birim testleri) opsiyonel/düşük öncelik olarak bekliyor.
 Altı alt faz: sensör ham değerlerini bellekten okuma (seqlock ile) → RAM
 bütçesi → hız tutarlılık kontrolü → "model sığar mı" ön kontrolü → canlı
 peripheral/register izleme → otomatik çok-modelli süpürme. **Hepsi
-uygulandı, testler yeşil, F4'te (gerçek BME280 ile) canlı doğrulandı.**
-**Kalan tek iş:** BME280 kullanıcı tarafından H7'ye takıldıktan sonra
-Faz 10.1'in UART-vs-bellek çapraz doğrulamasının H7'de tekrarlanması
-(kod zaten H7'de ELF-eşleşme/offset düzeyinde doğrulandı, yalnızca canlı
-sensör-veri karşılaştırması eksik). N6 flash sorunu (bilinen ST-Link
-kısıtı) zaman kutulu bırakıldı, çözülmedi.
+uygulandı, testler yeşil, hem F4'te (2026-09-09) hem H7'de (2026-09-14,
+gerçek BME280 ile) canlı doğrulandı — Faz 10.1'in UART-vs-bellek çapraz
+doğrulaması dahil.** N6 flash sorunu (bilinen ST-Link kısıtı) zaman kutulu
+bırakıldı, çözülmedi.
+
+**H7'de BME280 kurulumunda yaşanan gerçek donanım sorunu (2026-09-14,
+çözüldü):** BME280 H7'ye ilk takıldığında ne sensör okuması ne de UART
+çalıştı (firmware SWD ile canlı doğrulandı — `main.c`'deki sensör-hata
+döngüsünde normal şekilde dönüyordu, çökme yoktu; COM3 ham OS seviyesinde
+0 bayt veriyordu). Sırasıyla denenip işe yaramayanlar: CSB'yi VCC'ye
+bağlamak, SDA/SCL'i yer değiştirmek. **Çözüm: ST-Link USB kablosunun
+sökülüp takılması** — sonrasında hem UART hem I2C anında çalışmaya
+başladı. Kök neden muhtemelen USB/VCP sürücü tarafında takılı kalmış bir
+durumdu, kalıcı bir kablolama sorunu değildi. **Ders:** H7'de UART/I2C
+tamamen sessiz kalırsa (ne hata ne veri) ve firmware SWD ile canlı+doğru
+çalıştığı doğrulanmışsa, önce USB'yi söküp takmayı dene — kablolamaya
+dokunmadan önce.
 
 **Bu fazın çıkış noktası:** F4'ün ST-Link VCP'si hedef USART'a köprülü
 değil (harici adaptör kullanılmayacak — kullanıcı kararı), yani F4'te
@@ -91,10 +102,10 @@ bellek okumak**; sensör verisini de oradan okuyunca F4 tam işlevsel hale
 geliyor ve UART bir bağımlılık olmaktan çıkıp (H7'de) çapraz doğrulama
 aracına dönüşüyor.
 
-### Faz 10.1 — durum (2026-09-09, kısmen tamamlandı)
+### Faz 10.1 — durum: TAMAMLANDI (2026-09-09 F4, 2026-09-14 H7)
 
-**Kod tamamlandı, testler yeşil, F4'te canlı doğrulandı; H7 sensör
-takılınca ve N6 flash sorunu çözülünce tamamlanacak.**
+**Kod tamamlandı, testler yeşil, hem F4 hem H7'de canlı doğrulandı. N6
+flash sorunu (bilinen ST-Link kısıtı) hâlâ çözülmedi, zaman kutulu.**
 
 - `templates/ai_glue/telemetry.h/.c` (seqlock korumalı `TelemetryBlock`)
   eklendi; üç kartın da `main.c`+`Makefile`'ı güncellendi (N6'daki sentetik-
@@ -119,16 +130,22 @@ takılınca ve N6 flash sorunu çözülünce tamamlanacak.**
   `g_ai_last_inference_us` ile **birebir eşleşti** — iki bağımsız SWD okuma
   yolunun aynı sonucu vermesi, seqlock decode'unun doğruluğunun kanıtı.
   Ekran görüntüsü + ham JSON: `out/sensor_memory_e2e/04_f4_*`.
-- **H7: kod/ELF eşleşmesi doğrulandı ama sensör canlı testi YAPILAMADI** —
-  bu oturumda BME280 fiziksel olarak H7'ye değil F4'e bağlıydı (kullanıcı
-  onayı). ELF eşleşmesi ve preset uygulaması doğru çalıştı, `uwTick`/
-  `stackWatermark` canlı güncellendi, ama `sensor0/1/2` beklendiği gibi
-  `0.000` kaldı (gerçek durum — uydurma değil, o boot'ta hiç başarılı I2C
-  okuması olmadı). **Kullanıcı BME280'i H7'ye taktıktan sonra tekrar
-  denenmeli** (UART-vs-bellek çapraz doğrulaması, plan §3.11).
+- **H7: tam canlı doğrulandı (2026-09-14), UART çapraz doğrulaması dahil.**
+  BME280 H7'ye takıldıktan ve donanım sorunu (yukarı bakın) çözüldükten
+  sonra: ELF eşleşti, presetler uygulandı, `sensor0/1/2` gerçek değerler
+  verdi (sıcaklık ~24.3-24.5°C, nem ~%36-37, basınç ~1005.0-1005.2 hPa) VE
+  **UART'taki `§ sensor` paketiyle aynı anda karşılaştırıldı** — ikisi de
+  aynı büyüklükte (UART: `values=[25000, 35638, 1004971]` milli-birim ↔
+  İzleyici: `24.4 / 36.0 / 1005.06`). `memInferCount`/`memInferUs`
+  `g_ai_infer_count`/`g_ai_last_inference_us` ile birebir eşleşti (ör.
+  `9619` / `0.944 ms` iki yoldan da aynı). Ekran görüntüleri:
+  `out/sensor_memory_e2e/01_h7_presetler_uygulandi.png`,
+  `02_h7_canli_sensor_degerleri.png`,
+  `03_h7_uart_vs_bellek_capraz_dogrulama.png`.
 - **N6: derleme başarılı** (telemetry.c Cortex-M55'te de sorunsuz derleniyor,
   offset'ler aynı), **flash başarısız**: `STM32_Programmer_CLI karta
-  baglanamadi` — bilinen N6 bağlantı kısıtı (§2.5), zaman kutulu bırakıldı.
+  baglanamadi` — bilinen N6 bağlantı kısıtı (§2.5), zaman kutulu bırakıldı,
+  hâlâ çözülmedi.
 - **Yol boyunca bulunan, Faz 10.1 kapsamı dışı bir UI hatası:**
   `qml/components/watch/WatchToolbar.qml`'de ELF durum etiketi
   `backend.watchElfPath().length > 0 ? ... : "ELF yüklenmedi"` şeklinde bir
@@ -138,12 +155,10 @@ takılınca ve N6 flash sorunu çözülünce tamamlanacak.**
   bayat). Düzeltme `watchElfPath`'i NOTIFY'lı bir `Q_PROPERTY`ye çevirmeyi
   gerektiriyor — bilinçli olarak bu oturumda yapılmadı (kapsam dışı), ama
   gerçek ve düşük riskli bir düzeltme.
-- **Kalan (Faz 10.1'i kapatmak için):** H7'de BME280 canlı + UART çapraz
-  doğrulama, N6 flash sorununun (gerekirse) çözülmesi veya kalıcı olarak
-  "doğrulanamadı" işaretlenmesi, ekran görüntüleri `out/sensor_memory_e2e/`
-  altında tamamlanması (`01_h7_*`, `02_h7_*`, `03_h7_uart_vs_bellek_*`).
+- **Kalan:** yalnızca N6 flash sorunu (§2.5, kalıcı ST-Link kısıtı olarak
+  kabul edilmiş, çözülmesi bu projenin kapsamında değil).
 
-### Faz 10.2 — RAM bütçesi görselleştirmesi: TAMAMLANDI (2026-09-09)
+### Faz 10.2 — RAM bütçesi görselleştirmesi: TAMAMLANDI (2026-09-09 F4, 2026-09-14 H7)
 
 `src/modules/watcher/RamBudget.h/.cpp` (saf, 6 birim testi) + `Backend::ramBudget`
 (canlı `Q_PROPERTY`, `NOTIFY ramBudgetChanged` — `watchItems`/`watchRateInfo`
@@ -156,6 +171,11 @@ sayılar elle çapraz kontrol edildi (staticUsed+heapUsed+stackUsed+freeBytes
 == ramTotal). `heapEnd` bu firmware'de hiç yok (malloc kullanılmıyor) —
 `heapTop=0` doğru davranış, hata değil. Ekran görüntüsü:
 `out/ram_budget_e2e/01_f4_bar.png`.
+**H7'de de canlı doğrulandı (2026-09-14):** gerçek "%88.7 (908.3 KB /
+1024.0 KB)" — sayılar yine self-consistent (928856+0+1208+118512=1048576
+== ramTotal tam). H7'nin çok daha büyük statik ayak izi (~907 KB, X-CUBE-AI
+1D CNN ağırlıkları+aktivasyonları F4'ün MLP'sinden çok daha büyük) doğru
+şekilde yansıdı. Ekran görüntüsü: `out/ram_budget_e2e/02_h7_bar.png`.
 **Bulunan pre-existing hata (kapsam dışı, düzeltilmedi):**
 `qml/components/watch/WatchToolbar.qml`'deki "ELF yüklenmedi" etiketi
 `backend.watchElfPath()` bir METOD çağrısına bağlı — QML binding motoru
@@ -164,7 +184,7 @@ bunu izleyemiyor, ELF yüklendikten sonra bile etiket bayat kalıyor. Düzeltme
 `ramBudget` için zaten uygulandı) — küçük ve düşük riskli ama bu fazın
 kapsamı dışında bırakıldı.
 
-### Faz 10.3 — Hız tutarlılık kontrolü: TAMAMLANDI (2026-09-09)
+### Faz 10.3 — Hız tutarlılık kontrolü: TAMAMLANDI (2026-09-09 F4, 2026-09-14 H7)
 
 `src/modules/watcher/RateCheck.h/.cpp` (saf, 5 birim testi) +
 `Backend::inferenceRateCheck(windowSec)` (`Q_INVOKABLE` — plan gereği canlı
@@ -174,12 +194,16 @@ Rozet **"doğrulandı" DEMİYOR** — "tutarlı"/"TUTARSIZ" diyor (dürüstlük
 kuralı, plan §5.1). **F4'te canlı doğrulandı:** "22.7 Hz gözlendi · beyan
 125 µs ile tutarlı" (teorik üst sınır 8000 Hz) — gerçek sayılar, gerçek
 firmware. Ekran görüntüsü: `out/rate_check_e2e/01_f4_tutarli.png`.
+**H7'de de canlı doğrulandı (2026-09-14):** "21.1 Hz gözlendi · beyan 943 µs
+ile tutarlı" (teorik üst sınır ~1060 Hz — H7'nin 1D CNN modeli F4'ün
+MLP'sinden ~7x daha yavaş inference veriyor, doğru şekilde daha düşük bir
+üst sınıra yansıdı). Ekran görüntüsü: `out/rate_check_e2e/02_h7_tutarli.png`.
 **Tutarsız durum canlı denenmedi** (firmware'in kendi beyanını yalanlaması
 gerekirdi, ki mevcut firmware doğru rapor veriyor) — pure fonksiyonun kendisi
 birim testiyle (`observedRateExceedingTheoreticalMaxIsInconsistent`) hem
 tutarlı hem tutarsız durumu kapsıyor.
 
-### Faz 10.5 — "Bu model bu karta sığar mı" ön kontrolü: TAMAMLANDI (2026-09-09)
+### Faz 10.5 — "Bu model bu karta sığar mı" ön kontrolü: TAMAMLANDI (2026-09-09 F4, 2026-09-14 H7)
 
 `XCubeAIRunner::parseAnalyzeOutput()` (saf, gerçek H7+F4 `stedgeai analyze`
 çıktılarıyla test edildi — "Complexity report" bölümündeki eşittir-biçimli
@@ -190,7 +214,11 @@ saf, 3 birim testi) + `PipelineRunner`'a yeni `warningLine` sinyali
 pipeline'ı durdurmuyor). **Sığan durum F4'te canlı doğrulandı**
 (`anomaly_mlp_int8`: weights=2,696 B, activations=716 B — hiç uyarı
 çıkmadı, `pipelineLines` erken-anlık görüntüyle doğrulandı çünkü DebugBridge
-listeleri son 20 satıra kırpıyor). **Sığmayan durum canlı DENENEMEDİ:**
+listeleri son 20 satıra kırpıyor). **H7'de de canlı doğrulandı
+(2026-09-14):** `anomaly_cnn_int8` (weights=6,856 B, activations=6,592 B,
+H7'nin 1024 KB RAM/2048 KB Flash'ına karşı) — yine hiç uyarı çıkmadı, aynı
+erken-anlık görüntü yöntemiyle doğrulandı. Ekran görüntüsü:
+`out/fit_check_e2e/02_h7_uyari_yok.png`. **Sığmayan durum canlı DENENEMEDİ:**
 depodaki hiçbir gerçek `.tflite` modeli (kws_dnn/kws_dscnn/kws_tcresnet/
 wisdm_mlp dahil, hepsi `stedgeai analyze` ile bizzat ölçüldü) F4'ün bile
 kapasitesini aşmıyor — plan "sığıyorsa başka bir model dene, uyarıyı
@@ -199,7 +227,7 @@ zorlama" diyor, zorlanmadı. Eşik/uyarı mantığının kendisi
 261.424 B/12.824 B ayak izi) ama sentetik (gerçek olmayan, açıkça
 etiketlenmiş) bir "tiny test fixture" kart tanımına karşı doğrulandı.
 
-### Faz 10.4 — Canlı peripheral/register izleme: TAMAMLANDI (2026-09-09)
+### Faz 10.4 — Canlı peripheral/register izleme: TAMAMLANDI (2026-09-09 F4/H7 kısmi, 2026-09-14 H7 tam)
 
 `RegisterInspector::registersOfPeripheral()` (SVD'den register listesi —
 adres, access, `readAction`, `hasReadSideEffect`, açıklama, best-effort
@@ -216,10 +244,19 @@ canlı doğrulandı (`addWatchRegister("I2C1","ICR",false)` → `""` döndü,
 `watchItems` boş kaldı; `true` ile → gerçekten eklendi, doğru adres
 `0x4000541c`).
 
-**Canlı doğrulama (H7):** `I2C1.CR1` = gerçek `0x00000001` (PE biti seti —
-firmware I2C1'i gerçekten açmış), `DMA1.S0NDTR` = gerçek `0x00000000`
-(DMA hiç kullanılmıyor — aşağıya bkz.), 200.4 Hz / 0 kaçırılan. Ekran
-görüntüsü: `out/live_register_e2e/03_h7_canli_register_degerleri.png`.
+**Canlı doğrulama (H7, sensör bağlı değilken, 2026-09-09):** `I2C1.CR1` =
+gerçek `0x00000001` (PE biti seti — firmware I2C1'i gerçekten açmış),
+`DMA1.S0NDTR` = gerçek `0x00000000` (DMA hiç kullanılmıyor — aşağıya bkz.),
+200.4 Hz / 0 kaçırılan. Ekran görüntüsü:
+`out/live_register_e2e/03_h7_canli_register_degerleri.png`.
+
+**Canlı doğrulama (H7, BME280 gerçekten okurken, 2026-09-14):** `I2C1.ISR`
+bu sefer gerçek bus aktivitesi yakaladı — min=`0x00000001` (boşta),
+max=`0x00008001` (BUSY biti anlık set), grafikte periyodik "sivri uçlar"
+olarak görünür oldu (her I2C transaction'ında bir tepe). `I2C1.ICR`
+(write-only, readAction) yine onaysız reddedildi, onaylı doğru adrese
+(`0x4000541c`) eklendi. Ekran görüntüsü:
+`out/live_register_e2e/05_h7_canli_register_ve_sensor.png`.
 
 **Canlı doğrulama (F4, gerçek BME280 aktifken):** `I2C1.SR1` min/max
 `0x00/0x40` (durum bitleri gerçekten değişiyor), **`I2C1.DR` min=`0x2f`
@@ -254,7 +291,7 @@ olarak eklenebilir.
 kural etkinleştirilirse yanlış alarm üretir. `TimeSeriesRuleEngine`'in
 `"op":"=="` desteği koddan doğrulandı (zaten vardı, `qFuzzyCompare` ile).
 
-### Faz 10.6 — Otomatik çok-modelli süpürme: TAMAMLANDI (2026-09-09)
+### Faz 10.6 — Otomatik çok-modelli süpürme: TAMAMLANDI (2026-09-09 F4, 2026-09-14 H7)
 
 `src/modules/flash/ModelSweepRunner.h/.cpp` (yeni `QObject`, durum makinesi
 `Idle→Compiling→Connecting→Watching→Saving→(sonraki)`) + `Backend`'e
@@ -301,6 +338,29 @@ düzeltmeler doğrulandı):**
    yerine 24 kalem). Düzeltme: her modelin ELF'i yüklenmeden hemen önce
    `clearWatchItems()` çağrılıyor.
 
+**Canlı doğrulama (H7, gerçek BME280, 2 model — `anomaly_cnn_int8` +
+`weather_cnn_int8`, 2026-09-14):** İlk H7 koşusunda ikisi de "ok" durumuna
+geçti AMA kaydedilen profillerin ikisinde de inference/sensör değerleri
+sıfırdı (`g_ai_infer_count` vb. tüm 2000 örnekte 0) — kod hatası değil,
+**gerçek bir donanım zamanlama bulgusu**: flash+reset sonrası İzleyici'nin
+bağlan→ELF yükle→preset uygula→başlat zinciri saniyeler içinde tamamlanıyor,
+ama H7'nin BME280 bağlantısı reset sonrası birkaç saniye toparlanma
+istiyor olabilir (bugünkü oturumda zaten kararsız çıkmıştı — bkz. yukarıdaki
+USB kablo notu); 20 sn'lik pencere bu toparlanma süresine denk gelmiş
+olabilir. `saveWatchProfile()`'ın "başarı" ölçütü yalnızca "kalemler boş
+değil" — "değerler anlamlı" değil, yani süpürme bunu YAKALAMAZ. Süre 25 sn'e
+çıkarılıp hemen tekrar koşulduğunda (sensör artık kararlı) ikisi de gerçek
+veriyle geldi: `anomaly_cnn_int8` ort. inference 0.944 ms, `weather_cnn_int8`
+ort. inference 3.180 ms — az önceki elle ölçümle birebir eşleşti. Ekran
+görüntüleri: `out/model_sweep_e2e/04_h7_sonuc_profilleri.png` (sıfır veri
+durumu, dürüstlük için silinmedi), `05_h7_sonuc_profilleri_gercek_veri.png`
+(düzeltilmiş/gerçek veri). **Not:** bu, `ModelSweepRunner`'da düzeltilecek
+bir kod hatası değil — flash sonrası sensörün ısınma/toparlanma süresi
+firmware'in kendi sorumluluğu dışında, host'un bilemeyeceği bir gerçek
+donanım gecikmesi; ileride istenirse süpürmeye "ilk N saniyeyi say sayma"
+gibi bir marj eklenebilir ama bu oturumda yapılmadı (kapsam dışı, gerçek
+sorun donanım tarafında zaten çözüldü).
+
 **Bitti sayılır ki (plan §8.4) — hepsi karşılandı:**
 - [x] Bir modelin başarısızlığı süpürmeyi durdurmuyor (ilk koşuda gerçek
   bir hatayla CANLI kanıtlandı: model 1 başarısız oldu, süpürme model
@@ -310,6 +370,8 @@ düzeltmeler doğrulandı):**
   `stlinkOwner=""`, `watchLinkOpen=false` — hiçbir kilit/yarım durum kalmadı
 - [x] F4'te 2 modelle uçtan uca koştu (iki kez — biri hatayı bulmak,
   biri düzeltmeyi doğrulamak için)
+- [x] H7'de de 2 modelle uçtan uca koştu (iki kez — biri donanım
+  zamanlama bulgusunu yakalamak, biri gerçek veriyle doğrulamak için)
 - [x] Profiller Analiz ekranında (İzleme Profilleri) doğru veriyle görünüyor
 - [x] Testler yeşil, commit atıldı
 

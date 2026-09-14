@@ -112,7 +112,20 @@ Sırayla, atlamadan:
    **Bitince gdbserver'ı kapat** (`-e` kullanmadığımız için detach edince
    kendi kapanır; `tasklist | grep -i gdbserver` ile doğrula).
 
-4. **Hâlâ çözülmediyse dur ve kullanıcıya sor.** Ne denediğini, hangi
+4. **Firmware canlı+doğru çalıştığı (adım 3) doğrulandığı HALDE UART/I2C
+   tamamen sessizse (ne hata ne veri, ham OS seviyesinde de 0 bayt): önce
+   ST-Link USB kablosunu SÖKÜP TAK, kablolamaya dokunmadan önce.**
+   2026-09-14'te H7'de tam olarak bu yaşandı: firmware GDB ile canlı ve
+   doğru çalıştığı (sensör-hata döngüsünde normal dönüyordu, çökme yoktu)
+   doğrulandıktan sonra CSB'yi VCC'ye bağlamak ve SDA/SCL'i yer
+   değiştirmek hiçbir şeyi çözmedi — USB'yi söküp takmak anında hem UART
+   hem I2C'yi düzeltti. Kök neden muhtemelen USB/VCP sürücü tarafında
+   takılı kalmış bir durumdu, gerçek bir kablolama sorunu değildi.
+   **Sıra:** yazılım/firmware tarafını (adım 1-3) tüket, sonra kablolamayı
+   sorgulamadan önce USB'yi dene — kablolamayı sorgulamak zaman kaybettirir
+   ve kullanıcının doğru bağladığı bir şeyi yanlış sanmasına yol açabilir.
+
+5. **Hâlâ çözülmediyse dur ve kullanıcıya sor.** Ne denediğini, hangi
    çıktıyı aldığını yaz. **Tahminle kod değiştirme.**
 
 ### 0.4 Genel çalışma kuralları
