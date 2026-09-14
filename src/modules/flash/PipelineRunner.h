@@ -49,6 +49,10 @@ private:
     void stepBuild();
     void stepFlash();
 
+    // STM32N6 "ram" deploy: write the image into AXISRAM and start it, instead
+    // of signing it into external flash. Returns false after reporting.
+    bool deployN6ToRam(const QString &appBinPath);
+
     void fail(const QString &message);
 
     PipelineConfig  m_config;

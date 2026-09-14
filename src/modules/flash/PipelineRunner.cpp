@@ -13,6 +13,7 @@
 
 #include "CliRunner.h"
 #include "XCubeAIRunner.h"
+#include "core/AppSettings.h"
 #include "core/TemplateEngine.h"
 #include "modules/board/BoardPresets.h"
 #include "ModelFitCheck.h"
@@ -292,7 +293,8 @@ static quint32 readLe32(const QByteArray &bytes, int offset)
 static bool readVectorInfo(const QString &binPath,
                            quint32 &loadAddress,
                            quint32 &entryPoint,
-                           QString &errorMessage)
+                           QString &errorMessage,
+                           quint32 *initialSp = nullptr)
 {
     QFile file(binPath);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -304,7 +306,8 @@ static bool readVectorInfo(const QString &binPath,
         errorMessage = QStringLiteral("Binary vektor tablosu okunamadi: ") + binPath;
         return false;
     }
-    Q_UNUSED(readLe32(header, 0));
+    if (initialSp)
+        *initialSp = readLe32(header, 0);
     entryPoint = readLe32(header, 4);
 
     if (binPath.contains(QStringLiteral("FSBL"), Qt::CaseInsensitive))
@@ -312,6 +315,83 @@ static bool readVectorInfo(const QString &binPath,
     else
         loadAddress = 0x34000400U;
     return true;
+}
+
+// ── STM32N6 RAM deploy ─────────────────────────────────────────────────────
+//
+// The N6 has no internal flash. The linker already places the application in
+// AXISRAM at kN6RamLoadAddress (under LRUN boot the FSBL's whole job is to copy
+// it there), so ST-Link can write it to that address directly and start it.
+
+static constexpr quint32 kN6BootsrAddress   = 0x46008100U;  // SYSCFG_BOOTSR
+static constexpr quint32 kN6RamLoadAddress  = 0x34000400U;
+static constexpr quint32 kN6VtorAddress     = 0xE000ED08U;  // SCB->VTOR
+static constexpr quint32 kN6CpacrAddress    = 0xE000ED88U;  // SCB->CPACR
+static constexpr quint32 kN6CpacrFullAccess = 0x00F00000U;  // CP10+CP11
+
+static QString hex32(quint32 value)
+{
+    return QStringLiteral("0x%1").arg(value, 8, 16, QLatin1Char('0'));
+}
+
+// Extracts the first "0xADDRESS : VALUE" word from STM32_Programmer_CLI -r32.
+static bool parseCliWord32(const QString &output, quint32 &value)
+{
+    static const QRegularExpression wordRe(
+        QStringLiteral("0x[0-9A-Fa-f]{8}\\s*:\\s*([0-9A-Fa-f]{8})"));
+    const QRegularExpressionMatch match = wordRe.match(output);
+    if (!match.hasMatch())
+        return false;
+    bool ok = false;
+    value = match.captured(1).toUInt(&ok, 16);
+    return ok;
+}
+
+static QStringList n6ConnectArgsWithMode(const QStringList &baseArgs, const QString &mode)
+{
+    QStringList args;
+    for (const QString &arg : baseArgs) {
+        if (arg.startsWith(QStringLiteral("mode="), Qt::CaseInsensitive))
+            continue;
+        args << arg;
+    }
+    args << QStringLiteral("mode=%1").arg(mode);
+    return args;
+}
+
+// Reads SYSCFG_BOOTSR (bit0 = BOOT0 pin, bit1 = BOOT1 pin).
+//
+// mode=UR is deliberate and not interchangeable here: it reaches the target
+// whether the boot ROM is sitting idle or a firmware is running, while HOTPLUG
+// cannot attach to the idle ROM. A failure is itself informative - under flash
+// boot the ROM's secure boot closes debug memory access, so no address reads
+// back at all.
+static bool readN6BootPins(const QString &cliPath,
+                           const QStringList &connectArgs,
+                           quint32 &bootsr,
+                           QString &errorMessage)
+{
+    QStringList args{QStringLiteral("-c")};
+    args += n6ConnectArgsWithMode(connectArgs, QStringLiteral("UR"));
+    args << QStringLiteral("-r32") << hex32(kN6BootsrAddress) << QStringLiteral("0x4");
+
+    QString output;
+    if (!runBlockingTool(cliPath, args, 20000, output) || !parseCliWord32(output, bootsr)) {
+        errorMessage = output.trimmed();
+        return false;
+    }
+    return true;
+}
+
+static QString n6FlashBootHint()
+{
+    return QStringLiteral(
+        "  N6 debug erisimi kapali. Bu neredeyse her zaman BOOT jumper'inin flash-boot\n"
+        "  konumunda olmasi demektir: o konumda ROM'un guvenli boot'u debug bellek\n"
+        "  erisimini kapatir ve hicbir adres okunamaz.\n"
+        "  Cozum: BOOT1 jumper'ini USB-C konnektorune yakin konuma alin (gelistirme\n"
+        "  boot) ve tekrar deneyin. Kalici, kendi basina acilan bir kart istiyorsaniz\n"
+        "  bunun yerine ayarlardan flash/n6_deploy_mode = \"lrun\" secin.");
 }
 
 static bool ensureN6FsblLrunLayout(const QString &fsblProject, QString &errorMessage)
@@ -780,6 +860,77 @@ void PipelineRunner::onBuildFinished(bool success, int /*exitCode*/)
     stepFlash();
 }
 
+bool PipelineRunner::deployN6ToRam(const QString &appBinPath)
+{
+    quint32 loadAddress = 0;
+    quint32 entryPoint  = 0;
+    quint32 initialSp   = 0;
+    QString err;
+    if (!readVectorInfo(appBinPath, loadAddress, entryPoint, err, &initialSp)) {
+        fail(tr("✗ ") + err);
+        return false;
+    }
+
+    quint32 bootsr = 0;
+    if (!readN6BootPins(m_config.programmerCliPath, m_programmerConnectArgs, bootsr, err)) {
+        if (!err.isEmpty())
+            emit errorLine(err);
+        emit errorLine(n6FlashBootHint());
+        fail(tr("✗ N6 gelistirme boot modunda degil."));
+        return false;
+    }
+    // Observed on NUCLEO-N657X0-Q 2026-09-14: BOOT1=1 accompanies development
+    // boot. The opposite direction cannot be confirmed from here, because under
+    // flash boot this register is not readable at all.
+    emit outputLine(tr("  N6 boot pinleri: BOOT0=%1 BOOT1=%2 (SYSCFG_BOOTSR=%3) - debug erisimi acik.")
+                        .arg(bootsr & 0x1U)
+                        .arg((bootsr >> 1) & 0x1U)
+                        .arg(hex32(bootsr)));
+
+    QString output;
+
+    // The reset is not optional. A stale HARDFAULTACT left behind by a
+    // previously crashed image keeps the core inside a HardFault context, where
+    // SysTick is masked - HAL's tick never advances and every HAL timeout then
+    // blocks forever. Writing PC alone does not clear exception state.
+    QStringList resetArgs{QStringLiteral("-c")};
+    resetArgs += n6ConnectArgsWithMode(m_programmerConnectArgs, QStringLiteral("UR"));
+    resetArgs << QStringLiteral("-run");
+    emit outputLine(QStringLiteral("> STM32_Programmer_CLI ") + resetArgs.join(QLatin1Char(' ')));
+    if (!runBlockingTool(m_config.programmerCliPath, resetArgs, 30000, output)) {
+        emit errorLine(output);
+        fail(tr("✗ N6 reset basarisiz."));
+        return false;
+    }
+    emit progressChanged(88);
+
+    // VTOR points the vector table at our image. CPACR enables CP10/CP11: the
+    // CubeN6 SDK's SystemInit leaves that to "the secure application" (the
+    // FSBL), which a RAM image does not have, and a hard-float build faults on
+    // its first FP instruction without it. The startup code now does this too;
+    // writing it here as well keeps images built before that fix working.
+    QStringList loadArgs{QStringLiteral("-c")};
+    loadArgs += n6ConnectArgsWithMode(m_programmerConnectArgs, QStringLiteral("HOTPLUG"));
+    loadArgs << QStringLiteral("-halt")
+             << QStringLiteral("-w")   << appBinPath << hex32(kN6RamLoadAddress)
+             << QStringLiteral("-w32") << hex32(kN6VtorAddress)  << hex32(kN6RamLoadAddress)
+             << QStringLiteral("-w32") << hex32(kN6CpacrAddress) << hex32(kN6CpacrFullAccess)
+             << QStringLiteral("-coreReg")
+             << QStringLiteral("MSP=%1").arg(hex32(initialSp))
+             << QStringLiteral("PC=%1").arg(hex32(entryPoint & ~1U))
+             << QStringLiteral("-run");
+    emit outputLine(tr("  N6 AXISRAM'e yukleniyor: load=%1 MSP=%2 PC=%3")
+                        .arg(hex32(kN6RamLoadAddress), hex32(initialSp), hex32(entryPoint & ~1U)));
+    emit outputLine(QStringLiteral("> STM32_Programmer_CLI ") + loadArgs.join(QLatin1Char(' ')));
+    if (!runBlockingTool(m_config.programmerCliPath, loadArgs, 60000, output)) {
+        emit errorLine(output);
+        fail(tr("✗ N6 RAM yukleme basarisiz."));
+        return false;
+    }
+    emit outputLine(output.trimmed());
+    return true;
+}
+
 // ── Step 4: Flash ──────────────────────────────────────────────────────────
 
 void PipelineRunner::stepFlash()
@@ -797,6 +948,8 @@ void PipelineRunner::stepFlash()
                                      probeError)) {
         if (!probeSummary.isEmpty())
             emit outputLine(probeSummary);
+        if (boardFamily(m_config.targetBoard) == QStringLiteral("N6"))
+            emit errorLine(n6FlashBootHint());
         fail(tr("✗ Flash iptal edildi: ") + probeError + "\n"
              + tr("  Hedef: ") + m_config.targetBoard + "\n"
              + tr("  Derlenen dosya: ") + QFileInfo(m_builtElfPath).fileName());
@@ -810,6 +963,19 @@ void PipelineRunner::stepFlash()
             QFileInfo(m_builtElfPath).completeBaseName() + QStringLiteral(".bin"));
         if (!QFileInfo::exists(appBinPath)) {
             fail(tr("✗ N6 icin .bin dosyasi uretilemedi: ") + appBinPath);
+            return;
+        }
+
+        if (AppSettings().n6DeployMode() != QStringLiteral("lrun")) {
+            if (!deployN6ToRam(appBinPath))
+                return;
+            m_running = false;
+            emit progressChanged(100);
+            emit outputLine(tr("✓ N6 RAM deploy tamamlandi. Firmware AXISRAM'den calisiyor ve "
+                               "debug erisimi acik kaldi.\n"
+                               "  Not: RAM ucucu - guc kesilirse veya kart resetlenirse "
+                               "firmware durur, imaj RAM'de kalir ama yeniden baslatilmasi gerekir."));
+            emit finished(true);
             return;
         }
 

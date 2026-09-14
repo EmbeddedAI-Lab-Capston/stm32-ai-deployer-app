@@ -169,6 +169,20 @@ QString AppSettings::lastOutputDir() const
     return s.value(kKeyLastOutputDir, QDir::homePath()).toString();
 }
 
+QString AppSettings::n6DeployMode() const
+{
+    QSettings s;
+    const QString mode = s.value(kKeyN6DeployMode, QStringLiteral("ram")).toString();
+    return mode == QStringLiteral("lrun") ? mode : QStringLiteral("ram");
+}
+
+void AppSettings::setN6DeployMode(const QString &mode)
+{
+    QSettings s;
+    s.setValue(kKeyN6DeployMode, mode == QStringLiteral("lrun")
+                                     ? QStringLiteral("lrun") : QStringLiteral("ram"));
+}
+
 void AppSettings::setLastOutputDir(const QString &dir)
 {
     QSettings s;

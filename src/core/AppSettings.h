@@ -64,6 +64,16 @@ public:
     QString lastOutputDir() const;
     void    setLastOutputDir(const QString &dir);
 
+    // How the pipeline puts firmware on an STM32N6:
+    //   "ram"  - write the image straight into AXISRAM over SWD (default).
+    //            Needs the board in development boot, but keeps debug access
+    //            open, so Register Inspector and live reads work.
+    //   "lrun" - sign it and write it to external flash. Boots standalone
+    //            without a host, but the ROM's secure boot then closes debug
+    //            memory access.
+    QString n6DeployMode() const;
+    void    setN6DeployMode(const QString &mode);
+
     // Last model deployed to the board through the pipeline
     QString deployedModelName() const;
     void    setDeployedModelName(const QString &name);
@@ -155,6 +165,7 @@ private:
     static constexpr auto kKeyToolsAutoDetected = "tools/auto_detected";
     static constexpr auto kKeyLastModelDir     = "flash/last_model_dir";
     static constexpr auto kKeyLastOutputDir    = "flash/last_output_dir";
+    static constexpr auto kKeyN6DeployMode     = "flash/n6_deploy_mode";
     static constexpr auto kKeyDeployedModelName = "benchmark/deployed_model_name";
     static constexpr auto kKeyDeployedModelPath = "benchmark/deployed_model_path";
     static constexpr auto kKeyDeployedOutputDir = "benchmark/deployed_output_dir";
