@@ -75,3 +75,6 @@ Models/
 # Temporary clone of the sibling capstone repo (models/reports source) — not
 # part of this project, kept locally only, never committed.
 stm32-h7-projects/
+
+# Kisisel ogrenme notu (git disi)
+docs/n6_ogrenme_notlari.md
