@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <memory>
 
 #include <QSet>
 
@@ -37,6 +39,7 @@
 #include "modules/serial/SerialManager.h"
 #include "modules/serial/PacketParser.h"
 #include "modules/flash/FlashManager.h"
+#include "modules/flash/N6RamImage.h"
 #include "modules/flash/PipelineRunner.h"
 #include "modules/flash/ModelSweepRunner.h"
 #include "modules/analysis/AnalysisManager.h"
@@ -779,39 +782,96 @@ void Backend::resetN6TargetForCapture(const QString &reason, bool benchmarkLog)
     if (selectedSn.isEmpty())
         selectedSn = programmerSnForBoard(cliPath, board);
 
-    // NOTE: N6 boots from external flash with TrustZone/RIF active. Once the
-    // secured firmware runs, a normal SWD connect fails with "can't get core ID"
-    // (exit=1). mode=UR (connect under reset) holds NRST low during connection so
-    // the core is always reachable regardless of what firmware is running.
-    QStringList args{QStringLiteral("-c"), QStringLiteral("port=SWD"), QStringLiteral("mode=UR")};
+    QStringList connectArgs{QStringLiteral("port=SWD")};
     if (!selectedSn.isEmpty())
-        args << QStringLiteral("sn=%1").arg(selectedSn);
-    args << QStringLiteral("-rst");
+        connectArgs << QStringLiteral("sn=%1").arg(selectedSn);
 
-    logLine(QString("[n6-reset] %1: STM32_Programmer_CLI %2")
+    logLine(QString("[n6-reset] %1 (%2)")
                 .arg(reason.isEmpty() ? QStringLiteral("capture") : reason,
-                     args.join(QLatin1Char(' '))), "cmd");
+                     AppSettings().n6DeployMode()), "cmd");
 
-    QProcess *resetProcess = new QProcess(this);
-    connect(resetProcess, &QProcess::errorOccurred, this,
-            [resetProcess, logLine](QProcess::ProcessError) {
-                logLine(QString("[n6-reset] reset baslatilamadi: %1").arg(resetProcess->errorString()), "warn");
-                resetProcess->deleteLater();
+    auto warnFailure = [logLine](const QString &what, const QString &output) {
+        logLine(QString("[n6-reset] %1 basarisiz.%2")
+                    .arg(what,
+                         output.isEmpty() ? QString()
+                                          : QStringLiteral(" ") + output.left(180)), "warn");
+    };
+
+    // Under "lrun" the board boots from external flash on its own, so resetting
+    // it is the whole job.
+    if (AppSettings().n6DeployMode() == QStringLiteral("lrun")) {
+        runProgrammerCli(cliPath, N6RamImage::resetArgs(connectArgs),
+                         [logLine, warnFailure](bool ok, const QString &output) {
+                             if (ok)
+                                 logLine("[n6-reset] reset gonderildi; boot UART cikisi yakalaniyor.", "ok");
+                             else
+                                 warnFailure(QStringLiteral("reset"), output);
+                         });
+        return;
+    }
+
+    // Under "ram" a reset lands in the boot ROM, not in our firmware, so the
+    // image has to be pointed at again afterwards. Its vector table is read back
+    // out of AXISRAM rather than remembered, so a restart still works after the
+    // deployer itself has been closed and reopened.
+    runProgrammerCli(cliPath, N6RamImage::vectorReadArgs(connectArgs),
+        [this, cliPath, connectArgs, logLine, warnFailure](bool ok, const QString &output) {
+            quint32 initialSp = 0;
+            quint32 resetHandler = 0;
+            if (!ok || !N6RamImage::parseCliVector(output, initialSp, resetHandler)) {
+                warnFailure(QStringLiteral("AXISRAM vektor tablosu okuma"), output);
+                return;
+            }
+            if (!N6RamImage::vectorLooksValid(initialSp, resetHandler)) {
+                logLine("[n6-reset] AXISRAM'de gecerli bir imaj yok (guc kesilmis olabilir). "
+                        "Modeli Flash ekranindan yeniden yukleyin.", "warn");
+                return;
+            }
+            runProgrammerCli(cliPath, N6RamImage::resetArgs(connectArgs),
+                [this, cliPath, connectArgs, logLine, warnFailure, initialSp, resetHandler]
+                (bool resetOk, const QString &resetOutput) {
+                    if (!resetOk) {
+                        warnFailure(QStringLiteral("reset"), resetOutput);
+                        return;
+                    }
+                    runProgrammerCli(cliPath,
+                        N6RamImage::armArgs(connectArgs, initialSp, resetHandler),
+                        [logLine, warnFailure](bool armOk, const QString &armOutput) {
+                            if (armOk)
+                                logLine("[n6-reset] firmware AXISRAM'den yeniden baslatildi; "
+                                        "boot UART cikisi yakalaniyor.", "ok");
+                            else
+                                warnFailure(QStringLiteral("AXISRAM imajini baslatma"), armOutput);
+                        });
+                });
+        });
+}
+
+void Backend::runProgrammerCli(const QString &cliPath,
+                               const QStringList &args,
+                               std::function<void(bool, const QString &)> done)
+{
+    QProcess *process = new QProcess(this);
+    // errorOccurred and finished can both fire for one failed start; the
+    // callback must still run exactly once.
+    auto fired = std::make_shared<bool>(false);
+
+    connect(process, &QProcess::errorOccurred, this, [process, done, fired](QProcess::ProcessError) {
+        if (*fired) return;
+        *fired = true;
+        done(false, process->errorString());
+        process->deleteLater();
+    });
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [process, done, fired](int exitCode, QProcess::ExitStatus) {
+                if (*fired) return;
+                *fired = true;
+                const QString output = QString::fromLocal8Bit(process->readAllStandardOutput()
+                                                              + process->readAllStandardError()).trimmed();
+                done(exitCode == 0, output);
+                process->deleteLater();
             });
-    connect(resetProcess, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
-            [resetProcess, logLine](int exitCode, QProcess::ExitStatus) {
-                const QString output = QString::fromLocal8Bit(resetProcess->readAllStandardOutput()
-                                                              + resetProcess->readAllStandardError()).trimmed();
-                if (exitCode == 0) {
-                    logLine("[n6-reset] reset gonderildi; boot UART cikisi yakalaniyor.", "ok");
-                } else {
-                    logLine(QString("[n6-reset] reset basarisiz (exit=%1). Manuel NRST/reset deneyin.%2")
-                                .arg(exitCode)
-                                .arg(output.isEmpty() ? QString() : QStringLiteral(" ") + output.left(180)), "warn");
-                }
-                resetProcess->deleteLater();
-            });
-    resetProcess->start(cliPath, args);
+    process->start(cliPath, args);
 }
 
 void Backend::probeStLinkBoard()

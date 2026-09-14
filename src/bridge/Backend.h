@@ -4,6 +4,8 @@
 #include <QVariant>
 #include <QVariantList>
 #include <QStringList>
+
+#include <functional>
 #include <QTimer>
 #include <QVariantMap>
 #include <QHash>
@@ -423,6 +425,11 @@ private:
     void requestBoardInfoBurst();
     void handleN6TextLine(const QString &line);
     void resetN6TargetForCapture(const QString &reason, bool benchmarkLog);
+    // Runs one STM32_Programmer_CLI invocation off the UI thread and hands the
+    // combined output to `done` exactly once.
+    void runProgrammerCli(const QString &cliPath,
+                          const QStringList &args,
+                          std::function<void(bool, const QString &)> done);
     void wireSerial();
     void wireFlash();
     void wireAnalysis();

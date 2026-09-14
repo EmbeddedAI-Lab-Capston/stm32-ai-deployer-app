@@ -40,6 +40,8 @@ set(TEST_SOURCES
     TestModelFootprint.cpp
     TestModelFitCheck.h
     TestModelFitCheck.cpp
+    TestN6RamImage.h
+    TestN6RamImage.cpp
 
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.h
     ${CMAKE_SOURCE_DIR}/src/modules/debug/GdbRspCodec.cpp
@@ -80,6 +82,8 @@ set(TEST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/modules/flash/XCubeAIRunner.cpp
     ${CMAKE_SOURCE_DIR}/src/modules/flash/ModelFitCheck.h
     ${CMAKE_SOURCE_DIR}/src/modules/flash/ModelFitCheck.cpp
+    ${CMAKE_SOURCE_DIR}/src/modules/flash/N6RamImage.h
+    ${CMAKE_SOURCE_DIR}/src/modules/flash/N6RamImage.cpp
     ${CMAKE_SOURCE_DIR}/src/modules/board/BoardPresets.h
 )
 

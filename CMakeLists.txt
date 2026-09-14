@@ -70,6 +70,8 @@ set(PROJECT_SOURCES
     src/modules/flash/PipelineRunner.cpp
     src/modules/flash/ModelFitCheck.h
     src/modules/flash/ModelFitCheck.cpp
+    src/modules/flash/N6RamImage.h
+    src/modules/flash/N6RamImage.cpp
     src/modules/flash/ModelSweepRunner.h
     src/modules/flash/ModelSweepRunner.cpp
 
