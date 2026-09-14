@@ -49,7 +49,7 @@
       "access": "experimental",
       "connectMode": "HOTPLUG",
       "fallbackConnectMode": "UR",
-      "notes": "TrustZone/RIF: HOTPLUG may fail on secured firmware (can't get core ID). Fallback: mode=UR reset+snapshot (NOT live state). See plan Bolum 3.4 and docs/n6_kaldigimiz_yer.md. Faz 0 N6 checklist still deferred until board is on hand.",
+      "notes": "Requires the board in DEVELOPMENT boot (BOOT jumper); in flash-boot the ROM's secure boot closes debug memory access and every read fails with 'Unable to get core ID'. In development boot, HOTPLUG attaches to the running core and live reads work - verified 2026-09-14. Device is in OPEN mode, Debug Authentication is not involved. Non-secure (0x46...) and secure (0x56...) peripheral aliases return identical values, so these SVD addresses are used as-is. See docs/n6_kaldigimiz_yer.md.",
       "defaultPeripherals": [
         "RCC", "GPIOA", "GPIOB", "GPDMA", "HPDMA",
         "USART1", "LPUART1", "I2C1", "SPI1", "SAI1", "EXTI"
@@ -57,9 +57,9 @@
       "rccOverrides": {},
       "debug": {
         "gdb": {
-          "support": "experimental",
-          "notes": "TrustZone/RIF: guvenli RAM bolgeleri non-secure DAP'tan okunamaz; okuma hatasi olarak yuzeye cikar, sessiz sifir DONMEZ. LRUN boot sonrasi -g attach dogrulanmadi.",
-          "verifiedOn": ""
+          "support": "unsupported",
+          "notes": "ST-LINK_gdbserver CANNOT halt the N6 core, so no GDB session can be created: '-g' attach fails with 'Try halt... / Session manager. Fail starting session', '-k' with 'Target not halted after reset'. Also tried --halt, -m 0, --frequency, --pend-halt-timeout 30, -t, and both CubeProgrammer 2.23.0 and CubeIDE 2.2.0's bundled copy as -cp. Not a hardware limit: the same gdbserver attaches to H7 fine and STM32_Programmer_CLI halts this very N6 core fine. Use the CLI read backend on N6. Do not re-tune gdbserver options without new information.",
+          "verifiedOn": "2026-09-14 NUCLEO-N657X0-Q ST-Link SN 001A00273434511734313937 FW V3J17M10, gdbserver 7.14.0"
         }
       }
     }

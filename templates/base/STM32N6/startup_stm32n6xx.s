@@ -23,6 +23,18 @@ Reset_Handler:
   ldr   r0, =_estack
   mov   sp, r0
 
+  /* NOTE: The CubeN6 SDK's SystemInit leaves CP10/CP11 to "the secure
+     application" (the FSBL). An image started directly in AXISRAM has no
+     FSBL, so without this the first hard-float instruction raises a NOCP
+     UsageFault that escalates to HardFault. Idempotent under LRUN boot. */
+  ldr   r0, =0xE000ED88
+  ldr   r1, [r0]
+  ldr   r2, =0x00F00000
+  orrs  r1, r1, r2
+  str   r1, [r0]
+  dsb
+  isb
+
   /* Call SystemInit if present */
   bl    SystemInit
 

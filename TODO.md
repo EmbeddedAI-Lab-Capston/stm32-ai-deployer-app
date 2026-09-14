@@ -79,8 +79,9 @@ bütçesi → hız tutarlılık kontrolü → "model sığar mı" ön kontrolü 
 peripheral/register izleme → otomatik çok-modelli süpürme. **Hepsi
 uygulandı, testler yeşil, hem F4'te (2026-09-09) hem H7'de (2026-09-14,
 gerçek BME280 ile) canlı doğrulandı — Faz 10.1'in UART-vs-bellek çapraz
-doğrulaması dahil.** N6 flash sorunu (bilinen ST-Link kısıtı) zaman kutulu
-bırakıldı, çözülmedi.
+doğrulaması dahil.** N6 flash sorunu 2026-09-14'te **çözüldü** — kalıcı bir
+ST-Link kısıtı değil, BOOT jumper pozisyonuymuş; bkz. aşağıdaki "N6 çözüldü"
+bölümü ve [`docs/n6_kaldigimiz_yer.md`](docs/n6_kaldigimiz_yer.md).
 
 **H7'de BME280 kurulumunda yaşanan gerçek donanım sorunu (2026-09-14,
 çözüldü):** BME280 H7'ye ilk takıldığında ne sensör okuması ne de UART
@@ -104,8 +105,8 @@ aracına dönüşüyor.
 
 ### Faz 10.1 — durum: TAMAMLANDI (2026-09-09 F4, 2026-09-14 H7)
 
-**Kod tamamlandı, testler yeşil, hem F4 hem H7'de canlı doğrulandı. N6
-flash sorunu (bilinen ST-Link kısıtı) hâlâ çözülmedi, zaman kutulu.**
+**Kod tamamlandı, testler yeşil, hem F4 hem H7'de canlı doğrulandı. N6'nın
+flash sorunu 2026-09-14'te çözüldü (BOOT jumper).**
 
 - `templates/ai_glue/telemetry.h/.c` (seqlock korumalı `TelemetryBlock`)
   eklendi; üç kartın da `main.c`+`Makefile`'ı güncellendi (N6'daki sentetik-
@@ -143,9 +144,11 @@ flash sorunu (bilinen ST-Link kısıtı) hâlâ çözülmedi, zaman kutulu.**
   `02_h7_canli_sensor_degerleri.png`,
   `03_h7_uart_vs_bellek_capraz_dogrulama.png`.
 - **N6: derleme başarılı** (telemetry.c Cortex-M55'te de sorunsuz derleniyor,
-  offset'ler aynı), **flash başarısız**: `STM32_Programmer_CLI karta
-  baglanamadi` — bilinen N6 bağlantı kısıtı (§2.5), zaman kutulu bırakıldı,
-  hâlâ çözülmedi.
+  offset'ler aynı). O gün "flash başarısız" (`STM32_Programmer_CLI karta
+  baglanamadi`) diye kapatılmıştı; **2026-09-14'te sebebi bulundu ve aşıldı** —
+  kart flash-boot jumper pozisyonundaydı, o modda ROM'un güvenli boot'u debug
+  bellek erişimini kapatıyor. Geliştirme boot pozisyonunda hem yükleme hem canlı
+  okuma çalışıyor.
 - **Yol boyunca bulunan, Faz 10.1 kapsamı dışı bir UI hatası:**
   `qml/components/watch/WatchToolbar.qml`'de ELF durum etiketi
   `backend.watchElfPath().length > 0 ? ... : "ELF yüklenmedi"` şeklinde bir
@@ -155,8 +158,8 @@ flash sorunu (bilinen ST-Link kısıtı) hâlâ çözülmedi, zaman kutulu.**
   bayat). Düzeltme `watchElfPath`'i NOTIFY'lı bir `Q_PROPERTY`ye çevirmeyi
   gerektiriyor — bilinçli olarak bu oturumda yapılmadı (kapsam dışı), ama
   gerçek ve düşük riskli bir düzeltme.
-- **Kalan:** yalnızca N6 flash sorunu (§2.5, kalıcı ST-Link kısıtı olarak
-  kabul edilmiş, çözülmesi bu projenin kapsamında değil).
+- **Kalan:** N6 tarafı artık bloklu değil; kalan iş RAM-boot yolunu uygulamaya
+  bağlamak (aşağıdaki "N6 çözüldü" bölümü).
 
 ### Faz 10.2 — RAM bütçesi görselleştirmesi: TAMAMLANDI (2026-09-09 F4, 2026-09-14 H7)
 
@@ -266,8 +269,12 @@ görüntüsü: `out/live_register_e2e/04_f4_canli_grafik.png`.
 
 **N6:** SVD tarama/register listeleme çalışıyor (canlı bağlantı
 gerektirmiyor), ama Watch bağlantısı "Error in initializing ST-LINK
-device" ile başarısız oldu — bilinen N6 ST-Link kısıtı (§2.5), yeni bir
-hata değil.
+device" ile başarısız oldu. **2026-09-14'te gerçek sebebi bulundu:**
+genel bir ST-Link kısıtı değil — `ST-LINK_gdbserver` N6 çekirdeğini
+durduramıyor (aynı gdbserver H7'de çalışıyor, STM32_Programmer_CLI ise
+aynı N6 çekirdeğini durdurabiliyor). Register Inspector'ın CLI arka ucu
+N6'da çalışır durumda; bloklu olan yalnızca gdbserver gerektiren
+Değişken İzleyici. Detay: `docs/n6_kaldigimiz_yer.md` §9.
 
 **Gerçek bulgu — plan'ın varsayımı yanlış çıktı, doğrulanmadan
 yazılmadı:** F4'ün SVD'sinde I2C register'larının HİÇBİRİNDE
@@ -374,6 +381,61 @@ sorun donanım tarafında zaten çözüldü).
   zamanlama bulgusunu yakalamak, biri gerçek veriyle doğrulamak için)
 - [x] Profiller Analiz ekranında (İzleme Profilleri) doğru veriyle görünüyor
 - [x] Testler yeşil, commit atıldı
+
+---
+
+## N6 çözüldü (2026-09-14) — RAM-boot yolu açıldı
+
+**Tam anlatım:** [`docs/n6_kaldigimiz_yer.md`](docs/n6_kaldigimiz_yer.md)
+(2026-09-14'te baştan yazıldı; eski sürüm ciddi biçimde yanlıştı).
+
+Aylardır "kalıcı ST-Link kısıtı" sanılan N6 bağlantı sorunu **BOOT jumper
+pozisyonuymuş.** Flash-boot modunda ROM'un güvenli boot'u debug biriminin bellek
+erişimini kapatıyor (tasarım gereği — sahadaki imzalı ürün korunsun diye).
+Geliştirme boot pozisyonunda her şey açılıyor. Cihaz **OPEN mode**'da, Debug
+Authentication kilidi yok.
+
+Ayrıca **dış flash ve imzalama gereksizmiş**: linker script zaten programı
+AXISRAM `0x34000400`'e bağlıyor, ST-Link doğrudan oraya yazıp başlatabiliyor
+(0.13 sn). LRUN yolunda FSBL'in yaptığı iş de zaten buydu.
+
+**Bulunan ve düzeltilen gerçek firmware hatası:** N6 startup'ı CP10/CP11'i
+(FPU/Helium) hiç açmıyordu — CubeN6 SDK'sının `SystemInit`'i bunu açıkça
+"secure application" (FSBL) yapar diye bırakıyor. FSBL olmayan RAM boot'ta
+hard-float build ilk float komutunda NOCP UsageFault → HardFault veriyordu
+(`CFSR = 0x00080000` ile kanıtlandı). F4'teki `SystemInit` hatasının kardeşi.
+`templates/base/STM32N6/startup_stm32n6xx.s`'e idempotent düzeltme eklendi.
+
+**Canlı doğrulandı:** 600 MHz, inference **42 µs** (F4 125 µs, H7 943 µs),
+`uwTick` doğru artıyor, `g_telemetry` seqlock'u geçerli, `DHCSR = 0x01110000`
+(`S_HALT=0`, `S_RETIRE_ST=1`), `GPIOE_IDR = 0x60` (PE5/PE6 — USART1 pinleri).
+Non-secure ve secure peripheral alias'ları aynı değeri veriyor, yani SVD
+adresleri olduğu gibi kullanılabilir.
+
+**Hâlâ kapalı olan tek şey:** `ST-LINK_gdbserver` N6 çekirdeğini durduramıyor
+(`-g`, `-k`, `--halt`, `-m 0`, `--frequency`, `--pend-halt-timeout`, `-t` ve iki
+farklı CubeProgrammer `-cp` — hepsi denendi). Aynı gdbserver H7'de çalışıyor,
+STM32_Programmer_CLI aynı N6 çekirdeğini durdurabiliyor → gdbserver sınırı,
+donanım değil. Ölçülen alternatif: CLI tek çağrıda çok aralık okuyor,
+**312 ms → ~3.2 Hz**.
+
+**Sıradaki işler:**
+1. **RAM-boot'u uygulamaya bağla.** `PipelineRunner`/`Backend` N6 için flash
+   yerine: `stedgeai → derle → AXISRAM'e yaz → VTOR/CPACR/MSP/PC kur →
+   çalıştır`. `MSP`/`PC` imajın ilk 8 baytından okunmalı, sabitlenmemeli.
+   Öncesinde daima `mode=UR -run` ile gerçek reset (bayat `HARDFAULTACT`
+   SysTick'i maskeliyor).
+2. **Register Inspector'ı N6'da canlı doğrula.** `CliRegisterReader` zaten elle
+   doğrulanan komutun aynısını üretiyor; muhtemelen kod değişikliği gerekmiyor.
+3. **İzleyici için CLI arka ucu** (~3.2 Hz) — isteğe bağlı.
+4. **NPU register okuma.** SVD'de NPU bloğu yok; tam harita
+   `C:\ST\STEdgeAI\4.0\Middlewares\ST\AI\Npu\Devices\STM32N6xx\ATON.h`'de
+   (ST'nin iç adı **ATON**, "NPU" diye aramak sonuç vermez).
+   `NPU_BASE_NS = 0x480E0000`. Önce NPU'yu fiilen kullanan bir model gerekli —
+   mevcut MLP'de `RCC_AHB5ENR.NPUEN = 0`.
+5. **Pasif yakalama mantığını gözden geçir.** `resetN6TargetForCapture()`
+   flash-boot'u varsayıyor (kart kendi açılır). RAM boot'ta başlatan biz
+   olduğumuz için bu akış yeniden düşünülmeli.
 
 ---
 
