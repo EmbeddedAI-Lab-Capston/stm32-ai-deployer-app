@@ -48,8 +48,7 @@
       "device": "STM32N657X0",
       "access": "experimental",
       "connectMode": "HOTPLUG",
-      "fallbackConnectMode": "UR",
-      "notes": "Requires the board in DEVELOPMENT boot (BOOT jumper); in flash-boot the ROM's secure boot closes debug memory access and every read fails with 'Unable to get core ID'. In development boot, HOTPLUG attaches to the running core and live reads work - verified 2026-09-14. Device is in OPEN mode, Debug Authentication is not involved. Non-secure (0x46...) and secure (0x56...) peripheral aliases return identical values, so these SVD addresses are used as-is. See docs/n6_kaldigimiz_yer.md.",
+      "notes": "Requires the board in DEVELOPMENT boot (BOOT jumper); in flash-boot the ROM's secure boot closes debug memory access and every read fails with 'Unable to get core ID'. In development boot, HOTPLUG attaches to the running core and live reads work - verified 2026-09-14. Device is in OPEN mode, Debug Authentication is not involved. Non-secure (0x46...) and secure (0x56...) peripheral aliases return identical values, so these SVD addresses are used as-is. HOTPLUG needs something to be running: it cannot attach to the idle boot ROM, so deploy the firmware before taking a snapshot. There is deliberately no UR fallback - UR resets the board, which under the 'ram' deploy mode would stop the very firmware being inspected. Verified 2026-09-14: snapshot of RCC/GPIOA/USART1/I2C1 gave 33 changed registers and 0 errors, and an A-to-B diff over LPUART1 caught LPUART_TDR moving between real transmitted bytes. See docs/n6_kaldigimiz_yer.md.",
       "defaultPeripherals": [
         "RCC", "GPIOA", "GPIOB", "GPDMA", "HPDMA",
         "USART1", "LPUART1", "I2C1", "SPI1", "SAI1", "EXTI"

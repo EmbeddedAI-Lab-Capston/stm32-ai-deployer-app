@@ -419,23 +419,45 @@ STM32_Programmer_CLI aynı N6 çekirdeğini durdurabiliyor → gdbserver sınır
 donanım değil. Ölçülen alternatif: CLI tek çağrıda çok aralık okuyor,
 **312 ms → ~3.2 Hz**.
 
-**Sıradaki işler:**
-1. **RAM-boot'u uygulamaya bağla.** `PipelineRunner`/`Backend` N6 için flash
-   yerine: `stedgeai → derle → AXISRAM'e yaz → VTOR/CPACR/MSP/PC kur →
-   çalıştır`. `MSP`/`PC` imajın ilk 8 baytından okunmalı, sabitlenmemeli.
-   Öncesinde daima `mode=UR -run` ile gerçek reset (bayat `HARDFAULTACT`
-   SysTick'i maskeliyor).
-2. **Register Inspector'ı N6'da canlı doğrula.** `CliRegisterReader` zaten elle
-   doğrulanan komutun aynısını üretiyor; muhtemelen kod değişikliği gerekmiyor.
-3. **İzleyici için CLI arka ucu** (~3.2 Hz) — isteğe bağlı.
-4. **NPU register okuma.** SVD'de NPU bloğu yok; tam harita
+**Yapılanlar (2026-09-14, üç commit):**
+
+1. ~~**RAM-boot'u uygulamaya bağla.**~~ **Bitti** (`d2ef4b4`). `PipelineRunner`
+   N6 için `flash/n6_deploy_mode` ayarına bakıyor; varsayılan `"ram"`:
+   `stedgeai → derle → AXISRAM'e yaz → VTOR/CPACR/MSP/PC kur → çalıştır`.
+   `MSP`/`PC` imajın ilk 8 baytından okunuyor, sabit değil. Öncesinde daima
+   `mode=UR -run` ile gerçek reset (bayat `HARDFAULTACT` SysTick'i maskeliyor).
+   Deploy öncesi `SYSCFG_BOOTSR` okunup boot pinleri raporlanıyor; okunamıyorsa
+   kullanıcıya BOOT1 jumper'ını söyleyen net mesaj veriliyor. LRUN yolu
+   silinmedi, `"lrun"` ile erişilebilir. **Canlı doğrulandı:** uçtan uca
+   pipeline ~30 sn, `BOOT0=0 BOOT1=1`, çalışan firmware'de `CPACR=0x00F00000`,
+   `CFSR/HFSR=0`, inference 42 µs.
+2. ~~**Register Inspector'ı N6'da canlı doğrula.**~~ **Bitti** (kod değişikliği
+   gerekmedi). RCC/GPIOA/USART1/I2C1 snapshot'ı: **33 değişen register, 0 hata**,
+   `mode=HOTPLUG`, 2 sn'den kısa. **A→B farkı da çalışıyor:** LPUART1 üzerinde
+   `LPUART_TDR` (`0x46000C28`) `0x22` → `0x69` değişti — bunlar gerçekten
+   gönderilmekte olan JSON'ın baytları (`"` ve `i`). Kural motoru 0 ihlal
+   (sağlıklı donanımda beklenen). Ölü `fallbackConnectMode` alanı kaldırıldı:
+   hiç kullanılmıyordu ve RAM modunda UR fallback incelenen firmware'i
+   durduracağı için implemente edilmesi de yanlış olurdu.
+   **Bilinen davranış:** HOTPLUG boştaki boot ROM'a attach olamıyor, yani
+   snapshot almadan önce firmware yüklü ve çalışır olmalı.
+3. ~~**Pasif yakalama mantığını gözden geçir.**~~ **Bitti** (`0737900`).
+   `resetN6TargetForCapture()` artık deploy moduna göre davranıyor: `"lrun"`de
+   eskisi gibi resetliyor, `"ram"`de vektör tablosunu AXISRAM'den okuyup
+   doğruluyor, resetliyor ve imajı yeniden başlatıyor. Geçersiz imajda (güç
+   kesilmesi) reset'e hiç gitmiyor, uyarı verip çalışan firmware'i bozmuyor.
+   `-rst` → `-run` değişti: `-rst` sonrası karta HOTPLUG ile bağlanılamıyor.
+   Ortak adres/argüman mantığı `N6RamImage`'a taşındı + 12 birim testi.
+
+**Kalan:**
+
+4. **İzleyici için CLI arka ucu** (~3.2 Hz) — isteğe bağlı, gdbserver N6'da
+   kapalı olduğu için tek yol.
+5. **NPU register okuma.** SVD'de NPU bloğu yok; tam harita
    `C:\ST\STEdgeAI\4.0\Middlewares\ST\AI\Npu\Devices\STM32N6xx\ATON.h`'de
    (ST'nin iç adı **ATON**, "NPU" diye aramak sonuç vermez).
    `NPU_BASE_NS = 0x480E0000`. Önce NPU'yu fiilen kullanan bir model gerekli —
    mevcut MLP'de `RCC_AHB5ENR.NPUEN = 0`.
-5. **Pasif yakalama mantığını gözden geçir.** `resetN6TargetForCapture()`
-   flash-boot'u varsayıyor (kart kendi açılır). RAM boot'ta başlatan biz
-   olduğumuz için bu akış yeniden düşünülmeli.
 
 ---
 

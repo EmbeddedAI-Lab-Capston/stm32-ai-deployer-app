@@ -58,7 +58,6 @@ bool SvdCatalog::loadBoardsJson()
         m.device              = o.value(QStringLiteral("device")).toString();
         m.access              = o.value(QStringLiteral("access")).toString();
         m.connectMode         = o.value(QStringLiteral("connectMode")).toString();
-        m.fallbackConnectMode = o.value(QStringLiteral("fallbackConnectMode")).toString();
         m.notes               = o.value(QStringLiteral("notes")).toString();
         for (const QJsonValue &p : o.value(QStringLiteral("defaultPeripherals")).toArray())
             m.defaultPeripherals << p.toString();

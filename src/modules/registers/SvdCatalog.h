@@ -17,7 +17,6 @@ struct SvdBoardMapping
     QString     device;                 // "STM32H723ZGTx"
     QString     access;                 // "stable" | "experimental"
     QString     connectMode;            // "HOTPLUG"
-    QString     fallbackConnectMode;    // "UR" (N6)
     QString     notes;
     QStringList defaultPeripherals;
     QHash<QString, QString> rccOverrides;
