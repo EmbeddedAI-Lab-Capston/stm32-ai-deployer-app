@@ -132,6 +132,8 @@ set(PROJECT_SOURCES
     src/modules/debug/DebugLink.cpp
     src/modules/debug/MemReadProtocol.h
     src/modules/debug/MemReadProtocol.cpp
+    src/modules/debug/MemReadClient.h
+    src/modules/debug/MemReadClient.cpp
 
     src/modules/watcher/SymbolModel.h
     src/modules/watcher/NmSymbolParser.h
