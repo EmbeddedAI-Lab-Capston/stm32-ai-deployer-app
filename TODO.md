@@ -35,6 +35,52 @@ verir — önce Görev Yöneticisi'nden kapatın.
 
 ---
 
+## ▶ YENİ OTURUM BURADAN BAŞLASIN (son durum: 2026-09-15)
+
+**Dal:** `feature/register-inspector`, origin ile senkron, çalışma ağacı temiz.
+Son commit `c8aa03b`. main'e **hâlâ merge edilmedi**.
+
+**Son iki oturumda ne oldu (2026-09-14 / 15):** STM32N6 çözüldü ve İzleyici'ye
+ikinci bir okuma transport'u eklendi. Üç kart da artık tam işlevsel:
+
+| | F4 | H7 | N6 |
+|---|---|---|---|
+| Model yükleme | ✅ flash | ✅ flash | ✅ RAM (imzalama yok) |
+| Register Inspector | ✅ | ✅ | ✅ |
+| Değişken İzleyici | ✅ 200 Hz | ✅ 200 Hz | ✅ 200 Hz |
+
+Detaylar aşağıdaki "N6 çözüldü" bölümünde ve
+[`docs/memread_sidecar.md`](docs/memread_sidecar.md)'de.
+
+### Sıradaki iş — önerilen sıra
+
+Teknik derinlik yeterli; **eksik olan taraf teslim edilebilirlik.**
+
+1. **Demo senaryosu yaz (Aşama 8).** "Jüri karşısında 10 dakikada ne
+   göstereceğim" diye somut bir akış. Bunu yazmak, gerçekten neyin eksik
+   olduğunu ortaya çıkaracak — ve büyük ihtimalle o liste NPU register'ları
+   veya yeni özellikler içermeyecek.
+2. **Dağıtım / paketleme.** İki kez ertelendi. `stm32aid-memread.exe`
+   uygulamanın yanında bulunmak zorunda; Qt DLL'leri, `svd/`, `templates/`,
+   `watch/` de öyle. Demo günü seni durduracak şey bu.
+3. **Dalı main'e merge et.** Aylarca biriken tek uzun ömürlü dal; merge ne
+   kadar gecikirse o kadar büyüyor. Kural gereği "iş bitmeden merge yok"
+   deniyordu — iş artık büyük ölçüde bitti.
+4. **Aşama 5/6/7** (veritabanı, canlı dashboard, model karşılaştırma ekranı).
+
+### İsteğe bağlı / düşük öncelik
+
+- `MemReadClient` ve `MemReadWorker` için birim testi yok (sadece canlı
+  doğrulama var; CI'da koşmuyor, ileride regresyon yakalamaz).
+- `Backend.cpp` 4600+ satır — `WatchFacade` gibi bir alt cepheye bölünmesi.
+- NPU register'larını okumak — adres (`0x480E0000`) ve tanım kaynağı
+  (`ATON.h`) bulundu, ama önce NPU'yu fiilen kullanan bir model derlemek
+  gerekiyor. **Bitirme için gerekli değil.**
+- memread'i `IRegisterReader` olarak da sunmak (Register Inspector snapshot'ı
+  ~273 ms'den hızlanabilir).
+
+---
+
 ## Şu an nerede kaldık
 
 **Register Inspector + Değişken İzleyici (Faz 1–9) uygulandı ve bağımsız
@@ -651,7 +697,7 @@ Değişken İzleyici'nin dışında kalan aşamalar:
 |---|---|---|
 | 5 | Veritabanı ve kayıt | `analysis_records` tek-tablo şeması hâlâ geçerli; normalize 4-tablo hedefi (`docs/PROJECT.md`'de bahsi geçen) henüz implemente edilmedi |
 | 6 | Canlı dashboard | Başlanmadı |
-| 7 | Model karşılaştırma | Değişken İzleyici'nin profil karşılaştırma özelliği (Faz 8) bunun bir parçası sayılabilir — ama ekranda erişilemiyor (bkz. madde 5 yukarıda) |
+| 7 | Model karşılaştırma | Değişken İzleyici'nin profil karşılaştırma özelliği (Faz 8) bunun bir parçası; Analiz ekranındaki "İzleme Profilleri" sekmesiyle erişilebilir hâle geldi (2026-09-09) |
 | 8 | Bitirme demo hazırlığı | Başlanmadı |
 
 ---
