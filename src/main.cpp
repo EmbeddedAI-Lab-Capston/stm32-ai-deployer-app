@@ -137,6 +137,34 @@ int main(int argc, char *argv[])
 
         debugLink->setPaths(gdbServerPath, cubeProgrammerBinDir);
 
+        // The memread sidecar needs a directory that really contains
+        // CubeProgrammer_API.dll. STM32CubeIDE bundles a CubeProgrammer with the
+        // CLI but no API DLL, and that cut-down copy is a perfectly good -cp for
+        // gdbserver - so the two paths cannot be assumed to be the same one.
+        QString cubeProgrammerApiDir;
+        const QStringList apiCandidates{
+            cubeProgrammerBinDir,
+            QFileInfo(settings.programmerCliPath()).absolutePath(),
+            ToolDetector::detectCubeProgrammerBinDir(),
+        };
+        for (const QString &candidate : apiCandidates) {
+            if (candidate.isEmpty())
+                continue;
+            if (QFile::exists(QDir(candidate).filePath(QStringLiteral("CubeProgrammer_API.dll")))) {
+                cubeProgrammerApiDir = candidate;
+                break;
+            }
+        }
+        // The sidecar ships beside the application; CMake puts it there.
+        debugLink->setMemReadPaths(
+            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("stm32aid-memread.exe")),
+            cubeProgrammerApiDir);
+
+        // Chosen before the first retain(), since the transport cannot change
+        // while owners hold the link.
+        if (settings.linkBackend() == QStringLiteral("memread"))
+            debugLink->setBackend(DebugLink::Backend::MemRead);
+
         // arm-none-eabi-nm.exe (Degisken Izleyici symbol layer, Faz 3/4).
         QString armNmPath = settings.armNmPath();
         if (armNmPath.isEmpty() || !QFile::exists(armNmPath)) {

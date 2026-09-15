@@ -189,6 +189,20 @@ void AppSettings::setLastOutputDir(const QString &dir)
     s.setValue(kKeyLastOutputDir, dir);
 }
 
+QString AppSettings::linkBackend() const
+{
+    QSettings s;
+    const QString value = s.value(kKeyLinkBackend, QStringLiteral("gdb")).toString();
+    return value == QStringLiteral("memread") ? value : QStringLiteral("gdb");
+}
+
+void AppSettings::setLinkBackend(const QString &backend)
+{
+    QSettings s;
+    s.setValue(kKeyLinkBackend, backend == QStringLiteral("memread")
+                                    ? QStringLiteral("memread") : QStringLiteral("gdb"));
+}
+
 QString AppSettings::deployedModelName() const
 {
     QSettings s;

@@ -9,6 +9,7 @@
 class QThread;
 class GdbServerProcess;
 class DebugLinkWorker;
+class MemReadWorker;
 
 // ── DebugLink ─────────────────────────────────────────────────────────────
 // Main-thread facade over GdbServerProcess (main thread) + DebugLinkWorker
@@ -33,7 +34,22 @@ public:
     explicit DebugLink(QObject *parent = nullptr);
     ~DebugLink() override;
 
+    // Which transport carries reads. "gdb" drives ST-LINK_gdbserver over RSP;
+    // "memread" drives the stm32aid-memread sidecar, which is the only one that
+    // works on the STM32N6 and is measurably faster everywhere. Must be set
+    // before the first retain(); the default stays "gdb" so existing boards
+    // keep the proven path until this one has been lived with.
+    enum class Backend { Gdb, MemRead };
+    void setBackend(Backend backend);
+    Backend backend() const { return m_backend; }
+
     void setPaths(const QString &gdbServerPath, const QString &cubeProgrammerBinDir);
+    // Paths the MemRead backend needs: the sidecar executable, and a directory
+    // that actually holds CubeProgrammer_API.dll. That is NOT always the same
+    // directory gdbserver takes as -cp: STM32CubeIDE bundles a cut-down
+    // CubeProgrammer with the CLI but no API DLL, which works for gdbserver and
+    // not for this.
+    void setMemReadPaths(const QString &sidecarPath, const QString &cubeProgrammerApiDir);
     void setStlinkSerial(const QString &sn);
 
     DebugLinkState state() const { return m_state; }
@@ -81,6 +97,8 @@ signals:
     void requestReadRanges(quint32 batchId, const QVector<MemoryRequest> &requests);
     void requestStartSampling(const QVector<MemoryRequest> &plan, int targetRateHz);
     void requestStopSampling();
+    void requestOpenMemLink();
+    void requestCloseMemLink();
 
 private slots:
     void onServerReady(quint16 port);
@@ -97,9 +115,18 @@ private:
     void failOpenAttempt(const QString &message);
     void closeInternal();
 
+    void buildGdbBackend();
+    void buildMemReadBackend();
+
+    Backend           m_backend    = Backend::Gdb;
     GdbServerProcess *m_gdbProcess = nullptr;
     QThread          *m_thread     = nullptr;
     DebugLinkWorker  *m_worker     = nullptr;
+    MemReadWorker    *m_memWorker  = nullptr;
+    QString           m_sidecarPath;
+    QString           m_apiDir;
+    QString           m_cubeProgrammerBinDir;
+    QString           m_stlinkSerial;
 
     DebugLinkState m_state       = DebugLinkState::Closed;
     QString        m_lastError;

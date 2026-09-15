@@ -74,6 +74,13 @@ public:
     QString n6DeployMode() const;
     void    setN6DeployMode(const QString &mode);
 
+    // Which transport the Variable Watcher reads through:
+    //   "gdb"     - ST-LINK_gdbserver over RSP (default; proven on F4/H7)
+    //   "memread" - the stm32aid-memread sidecar, the only one that works on
+    //               the STM32N6 and measurably faster everywhere
+    QString linkBackend() const;
+    void    setLinkBackend(const QString &backend);
+
     // Last model deployed to the board through the pipeline
     QString deployedModelName() const;
     void    setDeployedModelName(const QString &name);
@@ -166,6 +173,7 @@ private:
     static constexpr auto kKeyLastModelDir     = "flash/last_model_dir";
     static constexpr auto kKeyLastOutputDir    = "flash/last_output_dir";
     static constexpr auto kKeyN6DeployMode     = "flash/n6_deploy_mode";
+    static constexpr auto kKeyLinkBackend      = "watch/link_backend";
     static constexpr auto kKeyDeployedModelName = "benchmark/deployed_model_name";
     static constexpr auto kKeyDeployedModelPath = "benchmark/deployed_model_path";
     static constexpr auto kKeyDeployedOutputDir = "benchmark/deployed_output_dir";

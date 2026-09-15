@@ -1,6 +1,7 @@
 #include "DebugLink.h"
 #include "DebugLinkWorker.h"
 #include "GdbServerProcess.h"
+#include "MemReadWorker.h"
 
 #include <QDebug>
 #include <QMetaObject>
@@ -13,6 +14,84 @@ DebugLink::DebugLink(QObject *parent) : QObject(parent)
     qRegisterMetaType<MemoryReply>();
     qRegisterMetaType<QVector<MemoryRequest>>();
     qRegisterMetaType<QVector<MemoryReply>>();
+
+    buildGdbBackend();
+}
+
+void DebugLink::setBackend(Backend backend)
+{
+    if (m_backend == backend)
+        return;
+    // Switching transports while owners hold the link would strand them on a
+    // worker that is about to disappear.
+    Q_ASSERT(m_refCount == 0);
+    if (m_refCount != 0)
+        return;
+
+    m_backend = backend;
+    if (backend == Backend::MemRead)
+        buildMemReadBackend();
+    else
+        buildGdbBackend();
+}
+
+void DebugLink::setMemReadPaths(const QString &sidecarPath, const QString &cubeProgrammerApiDir)
+{
+    m_sidecarPath = sidecarPath;
+    m_apiDir = cubeProgrammerApiDir;
+    if (m_memWorker)
+        m_memWorker->setPaths(m_sidecarPath, m_apiDir);
+}
+
+void DebugLink::buildMemReadBackend()
+{
+    if (m_memWorker)
+        return;
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait(3000);
+        delete m_thread;
+        m_thread = nullptr;
+        m_worker = nullptr;      // deleted by the thread's finished() hookup
+    }
+    delete m_gdbProcess;
+    m_gdbProcess = nullptr;
+
+    m_thread = new QThread(this);
+    m_memWorker = new MemReadWorker();
+    m_memWorker->setPaths(m_sidecarPath, m_apiDir);
+    m_memWorker->setStlinkSerial(m_stlinkSerial);
+    m_memWorker->moveToThread(m_thread);
+
+    // The two workers report the same events, so the existing handlers carry
+    // over unchanged and DebugLink's public surface does not move.
+    connect(m_memWorker, &MemReadWorker::opened, this, &DebugLink::onWorkerHandshakeSucceeded);
+    connect(m_memWorker, &MemReadWorker::failed, this, &DebugLink::onWorkerHandshakeFailed);
+    connect(m_memWorker, &MemReadWorker::closed, this, &DebugLink::onWorkerSocketClosed);
+    connect(m_memWorker, &MemReadWorker::logLine, this, &DebugLink::logLine);
+    connect(m_memWorker, &MemReadWorker::rangesRead, this, &DebugLink::rangesRead);
+    connect(m_memWorker, &MemReadWorker::rawSamplesReady, this, &DebugLink::rawSamplesReady);
+    connect(m_memWorker, &MemReadWorker::samplingStats, this, &DebugLink::samplingStats);
+    connect(m_memWorker, &MemReadWorker::coreHalted, this, [this]() {
+        m_coreRunning = false;
+        emit coreHalted();
+    });
+    connect(m_memWorker, &MemReadWorker::coreReset, this, &DebugLink::coreReset);
+
+    connect(this, &DebugLink::requestOpenMemLink,   m_memWorker, &MemReadWorker::openLink,       Qt::QueuedConnection);
+    connect(this, &DebugLink::requestCloseMemLink,  m_memWorker, &MemReadWorker::closeLink,      Qt::QueuedConnection);
+    connect(this, &DebugLink::requestReadRanges,    m_memWorker, &MemReadWorker::readRanges,     Qt::QueuedConnection);
+    connect(this, &DebugLink::requestStartSampling, m_memWorker, &MemReadWorker::startSampling,  Qt::QueuedConnection);
+    connect(this, &DebugLink::requestStopSampling,  m_memWorker, &MemReadWorker::stopSampling,   Qt::QueuedConnection);
+
+    connect(m_thread, &QThread::finished, m_memWorker, &QObject::deleteLater);
+    m_thread->start();
+}
+
+void DebugLink::buildGdbBackend()
+{
+    if (m_gdbProcess)
+        return;
 
     m_gdbProcess = new GdbServerProcess(this);
     connect(m_gdbProcess, &GdbServerProcess::ready,   this, &DebugLink::onServerReady);
@@ -57,13 +136,21 @@ DebugLink::~DebugLink()
 
 void DebugLink::setPaths(const QString &gdbServerPath, const QString &cubeProgrammerBinDir)
 {
-    m_gdbProcess->setServerPath(gdbServerPath);
-    m_gdbProcess->setCubeProgrammerBinDir(cubeProgrammerBinDir);
+    // Kept whichever backend is active, so switching later does not lose them.
+    m_cubeProgrammerBinDir = cubeProgrammerBinDir;
+    if (m_gdbProcess) {
+        m_gdbProcess->setServerPath(gdbServerPath);
+        m_gdbProcess->setCubeProgrammerBinDir(cubeProgrammerBinDir);
+    }
 }
 
 void DebugLink::setStlinkSerial(const QString &sn)
 {
-    m_gdbProcess->setStlinkSerial(sn);
+    m_stlinkSerial = sn;
+    if (m_gdbProcess)
+        m_gdbProcess->setStlinkSerial(sn);
+    if (m_memWorker)
+        m_memWorker->setStlinkSerial(sn);
 }
 
 // ── retain() / release() — see header for the binding contract ─────────────
@@ -75,8 +162,16 @@ void DebugLink::retain()
     if (m_refCount == 1) {
         m_lastError.clear();
         m_pendingClose = false;
-        setState(DebugLinkState::StartingServer);
-        m_gdbProcess->start();
+        if (m_backend == Backend::MemRead) {
+            // No server process and no port to wait for; the sidecar is
+            // launched by the worker itself as part of opening.
+            setState(DebugLinkState::Connecting);
+            emit requestOpenMemLink();
+        } else {
+            setState(DebugLinkState::StartingServer);
+            if (m_gdbProcess)
+                m_gdbProcess->start();
+        }
         return;
     }
 
@@ -119,10 +214,15 @@ void DebugLink::release()
 
 void DebugLink::shutdownNow()
 {
-    if (m_thread && m_thread->isRunning())
-        QMetaObject::invokeMethod(m_worker, &DebugLinkWorker::disconnectFromServer, Qt::BlockingQueuedConnection);
+    if (m_thread && m_thread->isRunning()) {
+        if (m_backend == Backend::MemRead && m_memWorker)
+            QMetaObject::invokeMethod(m_memWorker, &MemReadWorker::closeLink, Qt::BlockingQueuedConnection);
+        else if (m_worker)
+            QMetaObject::invokeMethod(m_worker, &DebugLinkWorker::disconnectFromServer, Qt::BlockingQueuedConnection);
+    }
 
-    m_gdbProcess->stopBlocking(2000);
+    if (m_gdbProcess)
+        m_gdbProcess->stopBlocking(2000);
 
     m_refCount     = 0;
     m_pendingClose = false;
@@ -148,7 +248,10 @@ void DebugLink::closeInternal()
         m_sampling = false;
         emit requestStopSampling();
     }
-    emit requestDisconnect();   // worker sends 'D', closes the socket, emits socketClosed()
+    if (m_backend == Backend::MemRead)
+        emit requestCloseMemLink();   // worker stops the sidecar, emits closed()
+    else
+        emit requestDisconnect();     // worker sends 'D', closes the socket, emits socketClosed()
 }
 
 // ── readRanges / sampling passthrough ───────────────────────────────────
@@ -222,13 +325,17 @@ void DebugLink::onWorkerHandshakeSucceeded(quint32 maxReadBytes, quint32 dhcsrVa
 
 void DebugLink::onWorkerHandshakeFailed(const QString &message)
 {
-    m_gdbProcess->stop();
+    // Null under the MemRead backend, which has no server process to stop -
+    // the sidecar shuts itself down when the worker closes its pipe.
+    if (m_gdbProcess)
+        m_gdbProcess->stop();
     failOpenAttempt(message);
 }
 
 void DebugLink::onWorkerSocketClosed()
 {
-    m_gdbProcess->stop();
+    if (m_gdbProcess)
+        m_gdbProcess->stop();
 
     const bool wasPendingClose = m_pendingClose;
     m_pendingClose = false;
