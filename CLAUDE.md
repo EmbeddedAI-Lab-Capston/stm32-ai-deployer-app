@@ -649,6 +649,14 @@ sıralı hücre listesini (tipsiz, `kind`'a göre anlam kazanır) tutar.
 // Kart adı -> [WatchItem] JSON eşlemesi
 "watch/items"
 
+// İzleyici okuma yolu: "memread" (varsayılan) | "gdb"
+// memread = stm32aid-memread yardımcı süreci (N6'da TEK seçenek, her yerde
+// daha güvenilir); CubeProgrammer API DLL'i veya sidecar yoksa otomatik gdb
+"watch/link_backend"
+
+// STM32N6 deploy modu: "ram" (varsayılan) | "lrun"
+"flash/n6_deploy_mode"
+
 // Varsayılan örnekleme hızı (Hz), varsayılan 200
 "watch/target_rate_hz"
 

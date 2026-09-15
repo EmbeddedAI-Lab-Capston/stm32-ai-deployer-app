@@ -156,14 +156,25 @@ int main(int argc, char *argv[])
             }
         }
         // The sidecar ships beside the application; CMake puts it there.
-        debugLink->setMemReadPaths(
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("stm32aid-memread.exe")),
-            cubeProgrammerApiDir);
+        const QString sidecarPath =
+            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("stm32aid-memread.exe"));
+        debugLink->setMemReadPaths(sidecarPath, cubeProgrammerApiDir);
 
         // Chosen before the first retain(), since the transport cannot change
-        // while owners hold the link.
-        if (settings.linkBackend() == QStringLiteral("memread"))
+        // while owners hold the link. memread needs two files that a machine
+        // may simply not have - a full STM32CubeProgrammer (STM32CubeIDE's
+        // bundled copy carries no API DLL) and the sidecar itself - so falling
+        // back to gdbserver keeps the watcher working instead of failing at the
+        // first connect with a message about a DLL the user never heard of.
+        const bool memReadAvailable =
+            !cubeProgrammerApiDir.isEmpty() && QFile::exists(sidecarPath);
+        if (settings.linkBackend() == QStringLiteral("memread") && memReadAvailable) {
             debugLink->setBackend(DebugLink::Backend::MemRead);
+        } else if (settings.linkBackend() == QStringLiteral("memread")) {
+            qWarning() << "memread backend unavailable (CubeProgrammer API dir:"
+                       << cubeProgrammerApiDir << "sidecar:" << sidecarPath
+                       << ") - falling back to gdbserver";
+        }
 
         // arm-none-eabi-nm.exe (Degisken Izleyici symbol layer, Faz 3/4).
         QString armNmPath = settings.armNmPath();

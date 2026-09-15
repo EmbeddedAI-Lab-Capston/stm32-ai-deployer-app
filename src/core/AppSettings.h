@@ -75,9 +75,13 @@ public:
     void    setN6DeployMode(const QString &mode);
 
     // Which transport the Variable Watcher reads through:
-    //   "gdb"     - ST-LINK_gdbserver over RSP (default; proven on F4/H7)
-    //   "memread" - the stm32aid-memread sidecar, the only one that works on
-    //               the STM32N6 and measurably faster everywhere
+    //   "memread" - the stm32aid-memread sidecar (default). The only transport
+    //               that works on the STM32N6, and it holds a requested rate
+    //               where RSP starts dropping: measured on H7 at 1000 Hz,
+    //               1000.0 Hz with 0 missed against gdb's 990.0 with 92.
+    //   "gdb"     - ST-LINK_gdbserver over RSP. Still fully supported, and
+    //               chosen automatically when the CubeProgrammer API DLL or the
+    //               sidecar is missing, since memread cannot run without them.
     QString linkBackend() const;
     void    setLinkBackend(const QString &backend);
 

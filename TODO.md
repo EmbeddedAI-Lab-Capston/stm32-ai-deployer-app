@@ -449,10 +449,36 @@ donanım değil. Ölçülen alternatif: CLI tek çağrıda çok aralık okuyor,
    `-rst` → `-run` değişti: `-rst` sonrası karta HOTPLUG ile bağlanılamıyor.
    Ortak adres/argüman mantığı `N6RamImage`'a taşındı + 12 birim testi.
 
-**Kalan:**
+4. ~~**İzleyici için CLI arka ucu** (~3.2 Hz).~~ **Bitti ve kapsamı büyüdü**
+   (2026-09-15, `6e2f278`/`e9951c6`/`30cfad1`). 3 Hz'e razı olmak gerekmedi:
+   ST, CLI'nin kendi kullandığı C API'sini (`CubeProgrammer_API.dll`) resmî
+   olarak dağıtıyor ve bağlantı açık tutulunca **530 Hz** çıkıyor. Süreç içine
+   yüklenemiyor — o DLL ST'nin Qt 6.10.2'sine bağlı, uygulama Qt 6.11 ve
+   Windows süreç başına tek `Qt6Core.dll` yüklüyor. Çözüm: **Qt'ye hiç
+   bağlanmayan `stm32aid-memread` yardımcı süreci** (`tools/memread/`),
+   stdin/stdout üzerinden `MemReadProtocol` konuşuyor. Yaşam döngüsü pipe'a
+   bağlı (port yok, dinlemede kalan sunucu yok — gdbserver'ın Windows'ta
+   ST-Link kilitleme sorununun tam tersi). Gözlemci ilkesi **yapısal**:
+   `allowedSymbols()` dışındaki hiçbir sembol çözümlenmiyor, yani
+   `writeMemory`/`massErase`/`sendResetCommand` erişilemez.
 
-4. **İzleyici için CLI arka ucu** (~3.2 Hz) — isteğe bağlı, gdbserver N6'da
-   kapalı olduğu için tek yol.
+   **Üç kartta da canlı doğrulandı (2026-09-15), 200 Hz hedefiyle 0 kaçırılan:**
+
+   | Kart | Hız | rtt | SysTick_LOAD → saat |
+   |---|---|---|---|
+   | F4 | 200.0 Hz | 0.92 ms | 167999 → 168 MHz |
+   | H7 | 200.4 Hz | 0.79 ms | 274999 → 275 MHz |
+   | N6 | 200.0 Hz | 0.70 ms | 599999 → 600 MHz |
+
+   Yüksek hızda fark açılıyor — H7'de 1000 Hz hedefiyle: **memread 1000.0 Hz /
+   0 kaçırılan**, gdb 990.0 Hz / 92 kaçırılan (memread tüm aralıkları tek
+   alışverişte topluyor, RSP aralık başına gidiş-dönüş yapıyor).
+
+   `watch/link_backend` varsayılanı bu yüzden **`"memread"`** yapıldı; DLL veya
+   sidecar yoksa otomatik `"gdb"`'ye düşüyor. gdb yolu regresyon testinden
+   geçti, silinmedi. Not: gdb `DHCSR.C_DEBUGEN`'i set ediyor, memread etmiyor.
+
+**Kalan:**
 5. **NPU register okuma.** SVD'de NPU bloğu yok; tam harita
    `C:\ST\STEdgeAI\4.0\Middlewares\ST\AI\Npu\Devices\STM32N6xx\ATON.h`'de
    (ST'nin iç adı **ATON**, "NPU" diye aramak sonuç vermez).
