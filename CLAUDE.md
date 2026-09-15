@@ -200,6 +200,7 @@ stm32-ai-deployer-app/
     ├── register_inspector_plan.md / _findings.md ← Register Inspector tasarım + doğrulama
     ├── variable_watcher_plan.md / _findings.md   ← Değişken İzleyici tasarım + doğrulama
     ├── verification_ecosystem_plan.md            ← DebugBridge/uiprobe UI doğrulama ekosistemi
+    ├── memread_sidecar.md                        ← stm32aid-memread yardımcı süreci (İzleyici'nin varsayılan okuma yolu)
     ├── memory_telemetry_plan.md                  ← Faz 10 planı: bellekten sensör/peripheral telemetrisi (SIRADAKİ İŞ)
     └── dev_machine_setup.md                      ← Yeni makinede tekrar çıkabilecek kurulum tuzakları
 ```
@@ -489,6 +490,24 @@ emit errorReceived(QJsonObject);
   yalnızca `takeSnapshot()` bu oturumda o kart için çalıştıysa doğru
   (`RegisterInspector::hasClockInfo()`); çalışmadıysa "bilinmiyor" olarak
   ele alınır, sessizce "açık" varsayılmaz.
+- **İzleyici'nin İKİ okuma transport'u vardır ve ikisi de korunur.** Varsayılan
+  `watch/link_backend = "memread"`: Qt'ye hiç bağlanmayan `stm32aid-memread`
+  yardımcı süreci, ST'nin resmî `CubeProgrammer_API.dll`'ini kalıcı bağlantıyla
+  kullanır. Ayrı süreç olması **zorunludur** — o DLL ST'nin Qt 6.10.2'sine
+  bağlıdır, uygulama Qt 6.11'dir ve Windows süreç başına tek `Qt6Core.dll`
+  yükler; süreç içine yükleme "the specified procedure could not be found" ile
+  düşer. `"gdb"` (ST-LINK_gdbserver + RSP) silinmez: F4/H7'de regresyondan
+  geçti ve API DLL'i / sidecar yoksa **otomatik ona düşülür**. Gözlemci ilkesi
+  memread'de yapısaldır — `CubeProgReader::allowedSymbols()` dışındaki hiçbir
+  sembol `GetProcAddress`'ten geçmez, yani `writeMemory`/`massErase`/
+  `sendResetCommand` erişilemez (RSP'deki `isAllowedOutgoing()` beyaz listesinin
+  karşılığı). **Ölçüldü (2026-09-15, üç kart):** 200 Hz hedefiyle F4 200.0 /
+  H7 200.4 / N6 200.0 Hz, hepsinde 0 kaçırılan 0 okuma hatası; H7'de 1000 Hz
+  hedefiyle memread 1000.0 Hz / 0 kaçırılan, gdb 990.0 Hz / 92 kaçırılan
+  (memread bir örneğin tüm aralıklarını tek alışverişte okur, RSP aralık başına
+  gidiş-dönüş yapar). gdb `DHCSR.C_DEBUGEN`'i set eder, memread etmez.
+  **N6'da gdbserver ayarlarını kurcalamayın** — 2026-09-14'te tüketildi.
+  Detay: [`docs/memread_sidecar.md`](docs/memread_sidecar.md).
 - **Demo güvenliği birinci sınıf yoldur:** kayıttan oynatma modu canlı yolun
   aynı sinyal zincirini kullanır; uygulamayla birlikte dağıtılan
   `watch/demo/h7_demo_trace.csv` sayesinde ekran ST-Link olmadan tam çalışır.

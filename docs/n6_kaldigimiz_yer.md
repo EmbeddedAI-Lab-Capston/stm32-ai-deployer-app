@@ -1,12 +1,16 @@
 # STM32N6 — Kaldığımız Yer
 
-Son güncelleme: **2026-09-14** (önceki sürüm: 2026-06-06)
+Son güncelleme: **2026-09-15** (baştan yazım: 2026-09-14, öncesi: 2026-06-06)
 
 > **Bu dosya 2026-09-14'te baştan yazıldı.** Önceki sürüm "flash/boot çözüldü,
 > sorun UART RX'te" diyordu ve bağlantı sorunlarını kalıcı bir ST-Link kısıtı
 > sanıyordu. **İkisi de yanlışmış.** Gerçek engel bir BOOT jumper pozisyonuydu;
 > bulunduktan sonra N6'da canlı bellek/register erişimi tamamen açıldı. Tarihsel
-> kayıt (UART komut-cevap serüveni) §9'da korundu.
+> kayıt (UART komut-cevap serüveni) §11'de korundu.
+>
+> **2026-09-15 eki:** §9'daki "İzleyici N6'da kapalı" sonucu artık geçerli değil.
+> gdbserver hâlâ N6'da oturum açamıyor, ama İzleyici ikinci bir transport
+> kazandı ve N6'da tam hızda çalışıyor — bkz. [`memread_sidecar.md`](memread_sidecar.md).
 
 ---
 
@@ -19,8 +23,8 @@ Son güncelleme: **2026-09-14** (önceki sürüm: 2026-06-06)
 | Model yükleyip çalıştırma | ✅ Çalışıyor — RAM'e, imzalama yok |
 | Inference | ✅ 42 µs @ 600 MHz |
 | Register Inspector | ✅ Yol açık (CLI arka ucu) |
-| Değişken İzleyici (200 Hz) | ❌ gdbserver N6'yı durduramıyor |
-| Değişken İzleyici (~3 Hz) | ⚠️ CLI arka ucu ile mümkün, henüz yazılmadı |
+| Değişken İzleyici | ✅ 200 Hz / 0 kaçırılan (memread arka ucu, §9) |
+| — gdbserver yolu | ❌ N6'da oturum açamıyor (kalıcı, §9) |
 | NPU iç register'ları | ⚠️ Adres ve tanımlar bulundu, henüz okunmadı |
 
 **Ön koşul:** kart **geliştirme boot** pozisyonunda olmalı (§3). Bu tek şart
@@ -260,19 +264,27 @@ Yani donanım halt'ı destekliyor; gdbserver'ın halt yöntemi N6'da işlemiyor.
 > Önceki dokümanlardaki "bilinen N6 ST-Link kısıtı" ifadesinin gerçek sebebi
 > budur. Genel bir ST-Link sorunu değil, gdbserver'a özgü.
 
-**Sonuç:** İzleyici'nin 200 Hz yolu N6'da kapalı. Alternatif ölçüldü —
-STM32_Programmer_CLI **tek çağrıda birden fazla aralık okuyabiliyor**
-(`-r32 A n -r32 B m ...`), ve bu çağrı **ortalama 312 ms** sürüyor → **~3.2 Hz**.
+**Sonuç (2026-09-15 itibarıyla ÇÖZÜLDÜ):** gdbserver yolu N6'da kapalı kaldı,
+ama İzleyici artık ikinci bir transport kullanıyor ve N6'da **tam hızda
+çalışıyor**.
 
-Bu 312 ms'nin neredeyse tamamı SWD değil, **süreç başlatma** maliyetidir (exe +
-DLL yükleme + USB tarama + bağlan/ayrıl). Gerçek SWD okuması 1 ms'nin altında.
-Yani 3.2 Hz donanımın değil, saniyede 3 kez program çalıştırmanın sınırı.
+ST, `STM32_Programmer_CLI`'nin içeride kullandığı C API'sini resmî olarak
+dağıtıyor (`STM32CubeProgrammer/api/` — header, DLL, dokümantasyon, örnek
+projeler). Bağlantı açık tutulunca 530 Hz çıkıyor. Süreç içine yüklenemiyor
+(ST'nin DLL'i Qt 6.10.2'ye bağlı, uygulama Qt 6.11), bu yüzden **Qt'ye hiç
+bağlanmayan `stm32aid-memread` yardımcı süreci** yazıldı.
 
-İleride istenirse `CubeProgrammer_API.dll` doğrudan linklenerek kalıcı bağlantı
-kurulabilir; bu süreç başlatma maliyetini sıfırlar ve gdbserver'a hiç ihtiyaç
-bırakmaz. Ayrı ve kayda değer bir iş, bugün yapılmadı.
+N6'da ölçülen: 200 Hz hedefiyle **200.0 Hz, 0 kaçırılan, 0 okuma hatası**,
+rtt 0.70 ms; 500 Hz hedefiyle 501.0 Hz. `SysTick_LOAD = 599999` okunuyor, yani
+600 MHz — kartın gerçek saatiyle birebir.
 
----
+Tam anlatım, protokol, tuzaklar ve üç kartın ölçüm tablosu:
+[`memread_sidecar.md`](memread_sidecar.md).
+
+> Tarihsel not: bu bölüm 2026-09-14'te "alternatif ~3.2 Hz'lik CLI yolu"
+> diyordu. O ölçüm doğruydu (her okumada süreç başlatmanın maliyeti), ama
+> kalıcı bağlantı seçeneği o gün fark edilmemişti. 3 Hz'e razı olmak
+> gerekmedi.
 
 ## 10. NPU görünürlüğü
 

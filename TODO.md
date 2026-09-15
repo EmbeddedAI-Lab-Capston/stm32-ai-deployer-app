@@ -478,6 +478,9 @@ donanım değil. Ölçülen alternatif: CLI tek çağrıda çok aralık okuyor,
    sidecar yoksa otomatik `"gdb"`'ye düşüyor. gdb yolu regresyon testinden
    geçti, silinmedi. Not: gdb `DHCSR.C_DEBUGEN`'i set ediyor, memread etmiyor.
 
+   **Tam referans:** [`docs/memread_sidecar.md`](docs/memread_sidecar.md) —
+   mimari, protokol, gözlemci güvencesi, ölçümler, tuzaklar, açık işler.
+
 **Kalan:**
 5. **NPU register okuma.** SVD'de NPU bloğu yok; tam harita
    `C:\ST\STEdgeAI\4.0\Middlewares\ST\AI\Npu\Devices\STM32N6xx\ATON.h`'de
