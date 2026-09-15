@@ -18,6 +18,7 @@
 #include "TestModelFootprint.h"
 #include "TestModelFitCheck.h"
 #include "TestN6RamImage.h"
+#include "TestMemReadProtocol.h"
 
 // Runs every suite with QTest::qExec and ORs the exit statuses, so a failure
 // in one suite doesn't stop the others from reporting (docs/variable_watcher_plan.md
@@ -44,5 +45,6 @@ int main(int argc, char **argv)
     { TestModelFootprint t;       status |= QTest::qExec(&t, argc, argv); }
     { TestModelFitCheck t;        status |= QTest::qExec(&t, argc, argv); }
     { TestN6RamImage t;           status |= QTest::qExec(&t, argc, argv); }
+    { TestMemReadProtocol t;      status |= QTest::qExec(&t, argc, argv); }
     return status;
 }

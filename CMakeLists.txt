@@ -130,6 +130,8 @@ set(PROJECT_SOURCES
     src/modules/debug/DebugLinkWorker.cpp
     src/modules/debug/DebugLink.h
     src/modules/debug/DebugLink.cpp
+    src/modules/debug/MemReadProtocol.h
+    src/modules/debug/MemReadProtocol.cpp
 
     src/modules/watcher/SymbolModel.h
     src/modules/watcher/NmSymbolParser.h
@@ -294,6 +296,34 @@ target_include_directories(STM32AiDeployer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/quick
 )
+
+# ── stm32aid-memread ────────────────────────────────────────────────────────
+# Read-only memory server that keeps one CubeProgrammer connection open, so the
+# watcher can sample at hundreds of hertz instead of paying process startup per
+# read. It MUST NOT link Qt: CubeProgrammer_API.dll brings ST's own Qt 6.10.2,
+# and Windows loads one DLL of a given name per process, so a Qt-linked build
+# collides with it ("the specified procedure could not be found").
+add_executable(stm32aid-memread
+    tools/memread/main.cpp
+    tools/memread/CubeProgReader.h
+    tools/memread/CubeProgReader.cpp
+    src/modules/debug/MemReadProtocol.h
+    src/modules/debug/MemReadProtocol.cpp
+)
+target_include_directories(stm32aid-memread PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/memread
+)
+set_target_properties(stm32aid-memread PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    # Nothing here has Q_OBJECT, and keeping Qt's tooling off this target makes
+    # the "links no Qt" guarantee visible in the build files, not just implied.
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+)
+# The deployer launches it from its own directory, so it has to be built first.
+add_dependencies(STM32AiDeployer stm32aid-memread)
 
 set_target_properties(STM32AiDeployer PROPERTIES
     WIN32_EXECUTABLE TRUE
