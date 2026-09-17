@@ -96,7 +96,7 @@ ham adres desteğiyle NPU register alanı tarandı; asılı stream engine'in
 okuduğu adres harici flash çıktı).
 
 Tam kayıt: [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md)
-§8.8 · teşhis ekran görüntüleri `out/n6_npu_diag_20260916/`
+§8.8 · teşhis ekran görüntüleri `docs/n6_npu_diag/`
 
 **Açık alt soru:** NPU'nun xSPI2'den okuması neden çalışmıyor? Ağır modele
 (efficientnet_v2B1_240, ağırlıkları iç RAM'e sığmaz) geçince çözmek gerekecek.

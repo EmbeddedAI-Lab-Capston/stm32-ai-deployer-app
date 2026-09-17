@@ -567,7 +567,7 @@ bizim zaten takip ettiğimiz makaleye yönlendiriyor, ek bilgi yok.
 
 ### Teşhis 2 — kendi aracımızla NPU register taraması (2026-09-16 akşamı)
 
-Tam kayıt + ekran görüntüleri: `out/n6_npu_diag_20260916/`.
+Tam kayıt + ekran görüntüleri: `docs/n6_npu_diag/`.
 
 Uygulamanın Değişken İzleyici'si N6'ya bağlandı ve **200.0 Hz'de, 0 kaçırılan,
 0 okuma hatasıyla** NPU register alanını (`0x480E0000`, SVD'si yok, ham adres)
@@ -628,7 +628,7 @@ düzeltme korundu: NVIC açılış sırası ve DBGMCU uykuda-debug.
 ### Teşhis 3 — tüm pin durumlarının dökümü (2026-09-17)
 
 12 GPIO portunun (`A–H`, `N–Q`) `MODER/OTYPER/OSPEEDR/PUPDR/IDR/ODR/AFRL/AFRH`
-register'ları tek tek okundu (`out/n6_npu_diag_20260916/gpio_dump.txt`).
+register'ları tek tek okundu (`docs/n6_npu_diag/gpio_dump.txt`).
 **Yalnızca iki port yapılandırılmış:**
 
 | Port | Ne |
