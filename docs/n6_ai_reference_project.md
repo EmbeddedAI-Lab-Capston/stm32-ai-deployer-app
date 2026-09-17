@@ -366,8 +366,15 @@ STM32_Programmer_CLI -c port=SWD sn=<SN> mode=HOTPLUG \
 STM32_Programmer_CLI -c port=SWD sn=<SN> mode=UR -halt \
     -w Template_LRUN_FSBL.bin 0x34180400 \
     -w32 0xE000ED08 0x34180400 \
-    -coreReg MSP=0x341FFD00 PC=0x3418F530 -run
+    -coreReg MSP=0x341FFD00 PC=0x3418F5B8 -run
 ```
+
+> ⚠ `PC`, FSBL'in **o anki** derlemesinin `Reset_Handler`'ıdır — FSBL her
+> yeniden derlendiğinde değişebilir (ilk yazımda `0x3418F530` idi; 2026-09-17
+> 00:05 derlemesinde `0x3418F5B8`). Ezbere yazmayın, ELF'ten okuyun:
+> `arm-none-eabi-nm Boot/Debug/Template_LRUN_FSBL.elf | grep Reset_Handler`.
+> Kart güç kesilip açıldığında (geliştirme boot modunda) Appli kendiliğinden
+> başlamaz — adım 4 yeniden çalıştırılır.
 
 ### Doğrulama (gözle değil, register'dan)
 
@@ -808,6 +815,98 @@ olarak [`TODO.md`](../TODO.md)'ye taşınmalı.
 öldü; her seferinde `mode=UR` ile geri dönüldü (`0x34000000` → `0x324D5453`
 = "STM2", imzalı image başlığı). Proje, RISAF çağrıları devre dışı bırakılmış
 **hata ayıklanabilir** hâlde bırakıldı: `stage=8, status=1, count=0`.
+
+---
+
+## 8.9 Döngü kapandı — çalışan NPU kendi aracımızla izlendi (2026-09-17)
+
+İlk kez araç *bozuk* değil *çalışan* firmware'i izledi. Tamamı uygulama
+üzerinden (DebugBridge/uiprobe ile sürülerek), memread transport'u ile:
+
+| | |
+|---|---|
+| ELF eşleşmesi | ✅ SP `0x34200000`, reset `0x34009dc9`, VTOR `0x34000400` |
+| Örnekleme | **200.4 Hz**, 1 blok/örnek, RTT 0.70 ms, 0 kaçırılan, 0 okuma hatası |
+| `g_ai_last_inference_us` | **3.693 – 3.706 ms** (ort. 3.695) |
+| `g_ai_infer_count` | ~**8.0 inference/s** — `HAL_Delay(120)` + 3.7 ms ile tutarlı |
+| `g_ai_last_class` / güven | 10 / %78–87 |
+| Hız tutarlılık rozeti | "8.0 Hz gözlendi · beyan 3695 µs ile tutarlı" |
+| Kayıt | 30.03 s, 6006 örnek, rol etiketli CSV; oynatmada aynı değerler |
+
+Kayıt + ekran görüntüleri: `out/n6_npu_watch/` (gitignored).
+
+**Yolda çıkan ve düzeltilenler:**
+
+- **AI preset'i bu firmware'i tanımıyordu.** `xcubeai_runtime` yalnızca
+  `NN_Instance_Default` arıyordu; ST'nin şablonu *adlı* örnek bildiriyor
+  (`LL_ATON_DECLARE_NAMED_NN_INSTANCE_AND_INTERFACE(network)` →
+  `NN_Instance_network`). Güven sembolü de burada `g_ai_last_confidence_pct`.
+  İkisi `watch/watch_presets.json`'a eklendi — C++ değişmedi.
+- **İzleyici araç çubuğundaki ELF yolu hep "ELF yüklenmedi" gösteriyordu.**
+  Bağlama NOTIFY'sız bir `Q_INVOKABLE` çağırıyordu, yani bir kez
+  değerlendirilip donuyordu. `watchSymbolsLoaded` sinyaline bağlandı.
+
+**Gözlemler (düzeltilmedi):**
+
+- `core_memory` preset'inin üç kalemi bu firmware'de anlamsız:
+  `__sbrk_heap_end` = 0 (malloc yok), `_end` adresinde `0xFFFFFFFF`,
+  `stackWatermark` = "0 B" (yığın boyanmamış — CLAUDE.md'de bilinen sınırlama).
+  Üstelik 2048 baytlık bölge taraması hızı **200 → 110 Hz**'e düşürdü
+  (3 blok, RTT 9 ms). Demo için bu kalemler kaldırılmalı.
+- Kayıt başlığında `model=` boş: model adı yalnızca kendi pipeline'ımızla
+  deploy edilince biliniyor.
+- `closeWatchLink()` sonrası `stm32aid-memread` bu sefer **çıktı** — TODO'daki
+  "ST-Link'i bırakmıyor" maddesi sağlıklı hedefte tekrarlanmadı; asılı
+  firmware'e özgü olabilir, kapatılmış sayılmamalı.
+
+---
+
+## 8.10 BME280 eklendi — sensör + NPU aynı ekranda (2026-09-17)
+
+**Bağlantı:** Arduino D15 = PH9 (I2C1_SCL), D14 = PC1 (I2C1_SDA), 3V3, GND;
+adres `0x76`. Önce firmware'siz, SWD üzerinden I2C1 elle sürülerek doğrulandı
+(ACK + chip ID `0x60`).
+
+**Firmware değişikliği (`n6_ai_node/Appli`):**
+
+- `bme280.c/h` ve `telemetry.c/h` `templates/`'ten kopyalandı (placeholder'lar
+  çözüldü); `AppS/.project`'e bunlar + `stm32n6xx_hal_i2c(_ex).c` eklendi,
+  `HAL_I2C_MODULE_ENABLED` açıldı.
+- `HAL_I2C_MspInit`: PH9/PC1 AF4 open-drain, iç pull-up yok (modülde var),
+  `HAL_PWREx_EnableVddIO4/5()`. **1.8 V aralığı hiçbir yerde seçilmiyor.**
+- I2C1 zamanlaması `0xF0F6313D` (~100 kHz, PCLK1 = 200 MHz).
+- Sensör hatası inference döngüsünü **durdurmaz** (`Error_Handler` yok):
+  durum `g_sensor_i2c_ok / _read_ok / _read_count / _fail_count`'ta; okuma
+  500 ms'de bir, başarısızsa 2 s'de bir yeniden init.
+- Her inference sonrası `g_telemetry` seqlock ile dolduruluyor → İzleyici'nin
+  mevcut `sensor_memory` preset'i **hiç C++/JSON değişikliği olmadan** tanıdı.
+
+**Canlı ölçüm (İzleyici, 200 Hz, 0 kaçırılan, ELF eşleşiyor):**
+
+| | min | max | ort |
+|---|---|---|---|
+| Sıcaklık | 23.02 °C | 23.05 °C | 23.03 °C |
+| Nem | %46.20 | %46.32 | %46.26 |
+| Basınç | 1001.15 hPa | 1001.30 hPa | 1001.23 hPa |
+| Inference | 3.700 ms | 3.707 ms | 3.703 ms |
+
+Ekran görüntüsü: `out/n6_npu_watch/watch_bme280_npu.png` (gitignored).
+
+**Açık kalanlar:**
+
+- **Sınıf sabit girdiye rağmen 6 (%87) ↔ 10 (%66–76) arasında salınıyor.**
+  Önceki derlemede 30 s boyunca hep 10'du ama güven %78–87 arasında
+  oynuyordu — yani NPU çıktısı zaten deterministik değildi; yeni derleme
+  bunu sınıf değişimine taşıdı. Girdi sabit olduğuna göre beklenen tamamen
+  deterministik çıktı; muhtemel şüpheliler cache temizleme/geçersizleme
+  sırası veya CPU'da koşan 2 epoch'un başlatılmamış belleği. İncelenmeli.
+- **İzleyici'de üç sensör kalemi de `g_telemetry` etiketiyle, birimsiz
+  görünüyor** — hangisinin sıcaklık olduğu ekrandan anlaşılmıyor. Preset
+  kalemleri rol/etiket/birim taşımalı. Demo için düzeltilmeli.
+- **`readErrors` seqlock atmalarını da sayıyor.** Görülen 15/39 değeri 3'ün
+  katı (yalnızca 3 korumalı kalem) — gerçek okuma hatası değil, firmware'in
+  yazma ortasında yakalanan örnekler. UI bunu "okuma hatası" gibi
+  gösteriyor; ayrı sayılmalı.
 
 ---
 

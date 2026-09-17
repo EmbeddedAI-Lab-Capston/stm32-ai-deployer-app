@@ -37,18 +37,27 @@ verir — önce Görev Yöneticisi'nden kapatın.
 
 ## ▶ YENİ OTURUM BURADAN BAŞLASIN (son durum: 2026-09-17)
 
-### Hemen yapılacak üç adım
+### Hemen yapılacak adımlar
 
-1. **Döngüyü kapat:** uygulamayı aç, N6'yı seç,
-   `n6_ai_node/STM32CubeIDE/AppS/Debug/Template_LRUN_AppS.elf`'i İzleyici'ye
-   yükle, `g_ai_infer_count` / `g_ai_last_inference_us` / `g_ai_last_class` /
-   `g_ai_last_confidence_pct` sembollerini izle. **Çalışan NPU'nun canlı
-   metriklerini kendi aracımızla göster**, kaydet, ekran görüntüsü al.
-   (Şimdiye kadar araç hep *bozuk* firmware'i teşhis etti; bu, *çalışanı*
-   izlediği ilk sefer olacak — demo malzemesinin kendisi.)
-2. **BME280'i bağla** — "gerçek hayat" kolu. ⚠ OTP HSLV sigortası **yanık**,
-   yani kullanılacak I2C pinlerinin VDDIO domain'i ve gerilimi şemadan
-   doğrulanmadan sensör bağlanmamalı (2.5 V üstü = çip hasarı).
+1. ~~**Döngüyü kapat**~~ ✅ **Tamam (2026-09-17)** — çalışan NPU'nun metrikleri
+   İzleyici'de canlı: 200.4 Hz / 0 kaçırılan, inference **3.69 ms**,
+   ~8 inference/s, class 10 / %78–87; 30 s rol etiketli kayıt + oynatma +
+   profil. Yolda AI preset'i (`NN_Instance_network`) ve donuk ELF yolu
+   etiketi düzeltildi. Kayıt/ekran görüntüleri `out/n6_npu_watch/`.
+   Detay: [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md) §8.9
+2. ~~**BME280'i bağla**~~ ✅ **Bağlandı ve doğrulandı (2026-09-17)** — Arduino
+   **D15 = PH9 (I2C1_SCL)**, **D14 = PC1 (I2C1_SDA)**, 3V3, GND (ST'nin kendi
+   `I2C_TwoBoards_RestartAdvComIT` örneğinin pinleri, AF4). Firmware'siz, SWD
+   üzerinden I2C1 elle sürülerek: adres **0x76** ACK, chip ID (`0xD0`) =
+   **`0x60`** (BME280). HSLV: yanık sigortalar yalnızca VDDIO2/VDDIO3 (XSPI
+   veri yolları); PC1 muhtemelen VDDIO5'te ama o sigorta yanık değil, 3.3 V
+   güvenli. Testte `PWR_SVMCR1/2` `VDDIO4SV/VDDIO5SV` bitleri
+   önceden set edildi (`HAL_PWREx_EnableVddIO4/5()` karşılığı); gerekli olup
+   olmadıkları ayrıca denenmedi — firmware'de de çağırmak güvenli taraf.
+   ✅ **Firmware'e eklendi, canlı:** İzleyici'de 23.0 °C / %46.3 / 1001.2 hPa
+   + NPU 3.70 ms aynı ekranda, 200 Hz. Detay ve açık kalanlar (sınıf
+   salınımı, `g_telemetry` etiketleri, `readErrors`'un seqlock atmalarını
+   sayması): [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md) §8.10
 3. **Ağır model / NPU-CPU karşılaştırması** — tek bloke iş. Önce NPU'nun
    xSPI2'den okuyamaması çözülmeli (efficientnet ağırlıkları iç RAM'e sığmaz).
 
@@ -86,7 +95,8 @@ Detaylar aşağıdaki "N6 çözüldü" bölümünde ve
 
 `n6_ai_node/` altında, ST'nin kendi araçlarıyla elde üretilen bir STM32N6
 projesi var ve **Neural-ART NPU üzerinde inference çalışıyor**
-(mobilenet_v1_0.25_96, **3.69 ms**, saniyede ~25 inference). Tam LRUN zinciri
+(mobilenet_v1_0.25_96, **3.69 ms**, döngüdeki `HAL_Delay(120)` yüzünden
+saniyede ~8 inference — İzleyici'yle ölçüldü). Tam LRUN zinciri
 kartta kanıtlandı: kart debugger olmadan, tek başına flash'tan açılıyor.
 
 **Kök neden (iki gün süren teşhis):** NPU, memory-mapped harici flash'tan
@@ -109,6 +119,8 @@ N6 teşhisi sırasında bulundu — hepsi canlı gözlemle, tahmin değil:
    (`registerStage: error`). CLI arka ucu o durumda hedefe erişemiyor.
 2. **`closeWatchLink()` ST-Link'i bırakmıyor** — `stm32aid-memread.exe`
    çalışmaya devam ediyor, uygulama kapatılana kadar başka araç bağlanamıyor.
+   *(2026-09-17: sağlıklı hedefte tekrarlanmadı — sidecar temiz çıktı; asılı
+   firmware'e özgü olabilir, açık kalsın.)*
 3. **Uyku moduna giren hedefte gözlem modeli kırılıyor.** Firmware WFE'ye
    park edince debug erişim portu düşüyor (`DEV_AP_ACCESS_ERROR`);
    `DBGMCU_CR.DBG_SLEEP` açmak yetmedi. Tam gözlem gereken anda körleşiyoruz.
