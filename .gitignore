@@ -78,3 +78,16 @@ stm32-h7-projects/
 
 # Kisisel ogrenme notu (git disi)
 docs/n6_ogrenme_notlari.md
+
+# N6 referans projesi: SDK junction'i ve derleme ciktilari (yerel)
+n6_ai_node/sdk
+n6_ai_node/ai_runtime
+n6_ai_node/AI/gen_ram/
+n6_ai_node/AI/generated/*.onnx
+n6_ai_node/AI/generated/*_Q.json
+n6_ai_node/AI/generated/network_c_info.json
+n6_ai_node/AI/generated/*.raw
+n6_ai_node/AI/generated/network_data.xSPI2.bin
+n6_ai_node/Model/
+n6_ai_node/STM32CubeIDE/*/Debug/
+n6_ai_node/STM32CubeIDE/*/Release/

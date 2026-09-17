@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workspace>
+  <project>
+    <path>$WS_DIR$\Appli\Template_FSBL_LRUN_Appli.ewp</path>
+  </project><project>
+    <path>$WS_DIR$\FSBL\Template_FSBL_LRUN_FSBL.ewp</path>
+  </project>
+  <batchBuild />
+</workspace>
