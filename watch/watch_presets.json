@@ -34,12 +34,13 @@
     },
     {
       "id": "xcubeai_runtime", "label": "X-CUBE-AI calisma zamani",
-      "requiresAnySymbol": ["s_network", "net_exec_ctx", "g_npu_exec_ctx", "NN_Instance_Default"],
+      "requiresAnySymbol": ["s_network", "net_exec_ctx", "g_npu_exec_ctx", "NN_Instance_Default", "NN_Instance_network"],
       "items": [
         { "role": "inferenceUs", "symbol": "g_ai_last_inference_us", "type": "u32", "scale": 0.001, "unit": "ms" },
         { "role": "inferCount",  "symbol": "g_ai_infer_count",       "type": "u32" },
         { "role": "lastClass",   "symbol": "g_ai_last_class",        "type": "u8"  },
-        { "role": "confidence",  "symbol": "g_ai_last_confidence",   "type": "u8", "unit": "%" }
+        { "role": "confidence",  "symbol": "g_ai_last_confidence",   "type": "u8", "unit": "%" },
+        { "role": "confidence",  "symbol": "g_ai_last_confidence_pct", "type": "u32", "unit": "%" }
       ]
     },
     {

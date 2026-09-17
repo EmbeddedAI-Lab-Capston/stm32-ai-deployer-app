@@ -21,6 +21,14 @@ RowLayout {
 
     function rateLabel(hz) { return hz === 0 ? "Maks" : (hz + " Hz") }
 
+    // NOTE: watchElfPath() is a plain invokable with no NOTIFY, so a binding on
+    // it is evaluated once and goes stale. Mirror it and refresh on load.
+    property string _elfPath: _hasBackend ? backend.watchElfPath() : ""
+    Connections {
+        target: root._hasBackend ? backend : null
+        function onWatchSymbolsLoaded(count) { root._elfPath = backend.watchElfPath() }
+    }
+
     AppButton {
         objectName: "watch.connectButton"
         text: (root._hasBackend && backend.watchLinkOpen) ? "Bağlantıyı Kapat" : "Bağlan"
@@ -35,8 +43,7 @@ RowLayout {
     Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: Theme.border }
 
     Text {
-        text: root._hasBackend && backend.watchElfPath().length > 0
-              ? backend.watchElfPath() : "ELF yüklenmedi"
+        text: root._elfPath.length > 0 ? root._elfPath : "ELF yüklenmedi"
         color: Theme.textMuted
         font.family: Theme.monoFamily
         font.pixelSize: Theme.fontXs

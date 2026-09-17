@@ -26,7 +26,7 @@ Item {
         SectionHeader {
             id: hdr
             title: "Değişken İzleyici"
-            subtitle: "GDB Remote Serial Protocol üzerinden canlı bellek okuma — hedef durdurulmaz, reset atılmaz"
+            subtitle: "ST-Link üzerinden canlı bellek okuma — hedef durdurulmaz, reset atılmaz"
             Layout.fillWidth: true
             Layout.fillHeight: false
         }
