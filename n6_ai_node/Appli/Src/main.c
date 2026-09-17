@@ -27,6 +27,8 @@
 #include "mcu_cache.h"
 #include "ll_aton_rt_user_api.h"
 #include "network.h"
+#include "bme280.h"
+#include "telemetry.h"
 
 /* NOTE: ll_aton_runtime.c already defines NPU0_IRQHandler (ATON_STD_IRQ_LINE is
    0). The application must not provide one - it only has to unmask the line in
@@ -79,8 +81,17 @@ volatile uint32_t g_led_active;      /* 1 once the LED is owned by the tick hook
 volatile uint32_t g_probe_weights;   /* first word of the weight blob, expect 0xE6DEE804 */
 volatile uint32_t g_probe_aton_id;   /* ATON ID register, 0 would mean the NPU is dark  */
 
+/* BME280 on I2C1. A missing or failing sensor must never stop the inference
+   loop, so its state is reported here instead of going to Error_Handler(). */
+I2C_HandleTypeDef hi2c1;
+volatile uint32_t g_sensor_i2c_ok;     /* 1 = HAL_I2C_Init succeeded */
+volatile uint32_t g_sensor_read_ok;    /* 1 = last BME280 read succeeded */
+volatile uint32_t g_sensor_read_count;
+volatile uint32_t g_sensor_fail_count;
+
 static uint8_t *buffer_in;
 static uint8_t *buffer_out;
+static float    s_sensor[3];           /* temperature C, humidity %, pressure hPa */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -92,6 +103,9 @@ static void SetClockSleepMode(void);
 static void DWT_Init(void);
 static void FillStaticInput(uint8_t *buf, uint32_t len);
 static void ReadClassification(const uint8_t *buf, uint32_t len);
+static void MX_I2C1_Init(void);
+static void Sensor_Poll(void);
+static void Telemetry_Publish(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -200,6 +214,12 @@ int main(void)
   /* Static input: the point of this build is a repeatable measurement, not a
      real classification, so the tensor is a fixed deterministic pattern. */
   FillStaticInput(buffer_in, LL_ATON_NETWORK_IN_1_SIZE_BYTES);
+
+  g_boot_stage = 9U;
+  MX_I2C1_Init();
+  if (g_sensor_i2c_ok != 0U)
+    Sensor_Init(&hi2c1);
+  g_boot_stage = 10U;
 /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -237,6 +257,9 @@ int main(void)
 
     g_ai_infer_count++;
     g_ai_status = 2U;
+
+    Sensor_Poll();
+    Telemetry_Publish();
 
     HAL_Delay(120);
 /* USER CODE END WHILE */
@@ -394,6 +417,80 @@ static void ReadClassification(const uint8_t *buf, uint32_t len)
   }
   g_ai_last_class          = best_index;
   g_ai_last_confidence_pct = ((uint32_t)best_value * 100U) / 255U;
+}
+
+/**
+  * @brief I2C1 at ~100 kHz for the BME280.
+  * @note  PCLK1 is 200 MHz here (PLL1 1200 MHz / IC2 3 / AHB 2 / APB1 1, set by
+  *        the FSBL). PRESC=15 gives an 80 ns tick: SCLDEL=15 (1280 ns),
+  *        SDADEL=6 (560 ns), SCLH=0x31 (4.0 us), SCLL=0x3D (5.0 us) - standard mode, so
+  *        the breakout's own 10k pull-ups are comfortably fast enough.
+  */
+static void MX_I2C1_Init(void)
+{
+  hi2c1.Instance              = I2C1;
+  hi2c1.Init.Timing           = 0xF0F6313DU;
+  hi2c1.Init.OwnAddress1      = 0U;
+  hi2c1.Init.AddressingMode   = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode  = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2      = 0U;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode  = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode    = I2C_NOSTRETCH_DISABLE;
+
+  g_sensor_i2c_ok = (HAL_I2C_Init(&hi2c1) == HAL_OK &&
+                     HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) == HAL_OK)
+                    ? 1U : 0U;
+}
+
+/**
+  * @brief Reads the BME280 twice a second, re-initialising it while it fails.
+  * @note  The sensor runs in normal mode with a 1 s standby, so polling faster
+  *        than this only re-reads the same conversion. A read that fails keeps
+  *        the previous values and says so through g_sensor_read_ok - the host
+  *        must not mistake a failed read for a real zero.
+  */
+static void Sensor_Poll(void)
+{
+  static uint32_t last_read_ms;
+  static uint32_t last_init_ms;
+  const uint32_t now = HAL_GetTick();
+
+  if (g_sensor_i2c_ok == 0U || (now - last_read_ms) < 500U)
+    return;
+  last_read_ms = now;
+
+  if (Sensor_Read(s_sensor, 3U) == HAL_OK)
+  {
+    g_sensor_read_ok = 1U;
+    g_sensor_read_count++;
+    return;
+  }
+
+  g_sensor_read_ok = 0U;
+  g_sensor_fail_count++;
+  if ((now - last_init_ms) >= 2000U)
+  {
+    last_init_ms = now;
+    Sensor_Init(&hi2c1);     /* sensor plugged in late, or recovering */
+  }
+}
+
+/** @brief Mirrors the latest sensor and inference results into g_telemetry. */
+static void Telemetry_Publish(void)
+{
+  Telemetry_BeginWrite();
+  g_telemetry.sensor[0]      = s_sensor[0];
+  g_telemetry.sensor[1]      = s_sensor[1];
+  g_telemetry.sensor[2]      = s_sensor[2];
+  g_telemetry.sensor_count   = 3U;
+  g_telemetry.sensor_ok      = g_sensor_read_ok;
+  g_telemetry.inf_us         = g_ai_last_inference_us;
+  g_telemetry.infer_count    = g_ai_infer_count;
+  g_telemetry.cycle++;
+  g_telemetry.class_id       = g_ai_last_class;
+  g_telemetry.confidence_pct = g_ai_last_confidence_pct;
+  Telemetry_EndWrite();
 }
 /* USER CODE END 4 */
 

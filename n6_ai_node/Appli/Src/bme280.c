@@ -1,0 +1,153 @@
+/* bme280.c - BME280 I2C driver (temperature / humidity / pressure)
+ * Protocol: I2C @ I2C1, SDA=PC1 (Arduino D14), SCL=PH9 (Arduino D15)
+ * Address : 0x76
+ * Copied from templates/sensors/BME280 with the placeholders resolved.
+ */
+
+#include "bme280.h"
+#include <string.h>
+
+static I2C_HandleTypeDef *s_hi2c = NULL;
+static HAL_StatusTypeDef s_init_status = HAL_ERROR;
+
+static uint16_t dig_T1;
+static int16_t  dig_T2, dig_T3;
+static uint16_t dig_P1;
+static int16_t  dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
+static uint8_t  dig_H1;
+static int16_t  dig_H2;
+static uint8_t  dig_H3;
+static int16_t  dig_H4, dig_H5;
+static int8_t   dig_H6;
+static int32_t  t_fine;
+
+static HAL_StatusTypeDef reg_read(I2C_HandleTypeDef *hi2c, uint8_t reg,
+                                  uint8_t *buf, uint16_t len)
+{
+    return HAL_I2C_Mem_Read(hi2c, BME280_HAL_ADDR, reg,
+                            I2C_MEMADD_SIZE_8BIT, buf, len, 100);
+}
+
+static HAL_StatusTypeDef reg_write(I2C_HandleTypeDef *hi2c, uint8_t reg,
+                                   uint8_t val)
+{
+    return HAL_I2C_Mem_Write(hi2c, BME280_HAL_ADDR, reg,
+                             I2C_MEMADD_SIZE_8BIT, &val, 1, 100);
+}
+
+HAL_StatusTypeDef BME280_Init(I2C_HandleTypeDef *hi2c)
+{
+    uint8_t chip_id = 0;
+    HAL_StatusTypeDef ret = reg_read(hi2c, BME280_REG_CHIP_ID, &chip_id, 1);
+    if (ret != HAL_OK || chip_id != BME280_CHIP_ID_VAL)
+        return HAL_ERROR;
+
+    ret = reg_write(hi2c, BME280_REG_RESET, 0xB6);
+    if (ret != HAL_OK) return ret;
+    HAL_Delay(10);
+
+    uint8_t calib[26];
+    ret = reg_read(hi2c, 0x88, calib, 26);
+    if (ret != HAL_OK) return ret;
+
+    dig_T1 = (uint16_t)(calib[1]  << 8 | calib[0]);
+    dig_T2 = (int16_t) (calib[3]  << 8 | calib[2]);
+    dig_T3 = (int16_t) (calib[5]  << 8 | calib[4]);
+    dig_P1 = (uint16_t)(calib[7]  << 8 | calib[6]);
+    dig_P2 = (int16_t) (calib[9]  << 8 | calib[8]);
+    dig_P3 = (int16_t) (calib[11] << 8 | calib[10]);
+    dig_P4 = (int16_t) (calib[13] << 8 | calib[12]);
+    dig_P5 = (int16_t) (calib[15] << 8 | calib[14]);
+    dig_P6 = (int16_t) (calib[17] << 8 | calib[16]);
+    dig_P7 = (int16_t) (calib[19] << 8 | calib[18]);
+    dig_P8 = (int16_t) (calib[21] << 8 | calib[20]);
+    dig_P9 = (int16_t) (calib[23] << 8 | calib[22]);
+    dig_H1 = calib[25];
+
+    uint8_t hum[7];
+    ret = reg_read(hi2c, 0xE1, hum, 7);
+    if (ret != HAL_OK) return ret;
+
+    dig_H2 = (int16_t)(hum[1] << 8 | hum[0]);
+    dig_H3 = hum[2];
+    dig_H4 = (int16_t)(((int8_t)hum[3] << 4) | (hum[4] & 0x0F));
+    dig_H5 = (int16_t)(((int8_t)hum[5] << 4) | (hum[4] >> 4));
+    dig_H6 = (int8_t)hum[6];
+
+    ret = reg_write(hi2c, BME280_REG_CTRL_HUM, 0x01);
+    if (ret != HAL_OK) return ret;
+    ret = reg_write(hi2c, BME280_REG_CONFIG, 0xA0);
+    if (ret != HAL_OK) return ret;
+    ret = reg_write(hi2c, BME280_REG_CTRL_MEAS, 0x27);
+    if (ret != HAL_OK) return ret;
+
+    return HAL_OK;
+}
+
+HAL_StatusTypeDef BME280_ReadAll(I2C_HandleTypeDef *hi2c, BME280_Data *data)
+{
+    uint8_t raw[8];
+    HAL_StatusTypeDef ret = reg_read(hi2c, BME280_REG_PRESS_MSB, raw, 8);
+    if (ret != HAL_OK) return ret;
+
+    int32_t adc_P = (int32_t)(((uint32_t)raw[0] << 12) | ((uint32_t)raw[1] << 4) | (raw[2] >> 4));
+    int32_t adc_T = (int32_t)(((uint32_t)raw[3] << 12) | ((uint32_t)raw[4] << 4) | (raw[5] >> 4));
+    int32_t adc_H = (int32_t)(((uint32_t)raw[6] << 8)  |  (uint32_t)raw[7]);
+
+    int32_t var1 = (((adc_T >> 3) - ((int32_t)dig_T1 << 1)) * (int32_t)dig_T2) >> 11;
+    int32_t var2 = (((((adc_T >> 4) - (int32_t)dig_T1) *
+                    ((adc_T >> 4) - (int32_t)dig_T1)) >> 12) *
+                    (int32_t)dig_T3) >> 14;
+    t_fine = var1 + var2;
+    data->temperature_c = (float)((t_fine * 5 + 128) >> 8) / 100.0f;
+
+    double pv1 = (double)t_fine / 2.0 - 64000.0;
+    double pv2 = pv1 * pv1 * (double)dig_P6 / 32768.0;
+    pv2 += pv1 * (double)dig_P5 * 2.0;
+    pv2 = pv2 / 4.0 + (double)dig_P4 * 65536.0;
+    pv1 = ((double)dig_P3 * pv1 * pv1 / 524288.0 + (double)dig_P2 * pv1) / 524288.0;
+    pv1 = (1.0 + pv1 / 32768.0) * (double)dig_P1;
+    if (pv1 == 0.0) {
+        data->pressure_hpa = 0.0f;
+    } else {
+        double p = 1048576.0 - (double)adc_P;
+        p = (p - pv2 / 4096.0) * 6250.0 / pv1;
+        pv1 = (double)dig_P9 * p * p / 2147483648.0;
+        pv2 = p * (double)dig_P8 / 32768.0;
+        p += (pv1 + pv2 + (double)dig_P7) / 16.0;
+        data->pressure_hpa = (float)(p / 100.0);
+    }
+
+    double h = (double)t_fine - 76800.0;
+    h = (adc_H - ((double)dig_H4 * 64.0 + (double)dig_H5 / 16384.0 * h)) *
+        ((double)dig_H2 / 65536.0 * (1.0 + (double)dig_H6 / 67108864.0 * h *
+        (1.0 + (double)dig_H3 / 67108864.0 * h)));
+    h *= 1.0 - (double)dig_H1 * h / 524288.0;
+    if (h > 100.0) h = 100.0;
+    if (h < 0.0) h = 0.0;
+    data->humidity_pct = (float)h;
+
+    return HAL_OK;
+}
+
+void Sensor_Init(I2C_HandleTypeDef *hi2c)
+{
+    s_hi2c = hi2c;
+    s_init_status = BME280_Init(hi2c);
+}
+
+HAL_StatusTypeDef Sensor_Read(float *out, uint16_t len)
+{
+    BME280_Data d = {0};
+    if (!s_hi2c || s_init_status != HAL_OK)
+        return HAL_ERROR;
+
+    HAL_StatusTypeDef ret = BME280_ReadAll(s_hi2c, &d);
+    if (ret != HAL_OK)
+        return ret;
+
+    float vals[3] = { d.temperature_c, d.humidity_pct, d.pressure_hpa };
+    for (uint16_t i = 0; i < len; i++)
+        out[i] = vals[i % 3];
+    return HAL_OK;
+}
