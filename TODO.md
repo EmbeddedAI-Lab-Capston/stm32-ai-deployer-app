@@ -35,7 +35,37 @@ verir — önce Görev Yöneticisi'nden kapatın.
 
 ---
 
-## ▶ YENİ OTURUM BURADAN BAŞLASIN (son durum: 2026-09-15)
+## ▶ YENİ OTURUM BURADAN BAŞLASIN (son durum: 2026-09-17)
+
+### Hemen yapılacak üç adım
+
+1. **Döngüyü kapat:** uygulamayı aç, N6'yı seç,
+   `n6_ai_node/STM32CubeIDE/AppS/Debug/Template_LRUN_AppS.elf`'i İzleyici'ye
+   yükle, `g_ai_infer_count` / `g_ai_last_inference_us` / `g_ai_last_class` /
+   `g_ai_last_confidence_pct` sembollerini izle. **Çalışan NPU'nun canlı
+   metriklerini kendi aracımızla göster**, kaydet, ekran görüntüsü al.
+   (Şimdiye kadar araç hep *bozuk* firmware'i teşhis etti; bu, *çalışanı*
+   izlediği ilk sefer olacak — demo malzemesinin kendisi.)
+2. **BME280'i bağla** — "gerçek hayat" kolu. ⚠ OTP HSLV sigortası **yanık**,
+   yani kullanılacak I2C pinlerinin VDDIO domain'i ve gerilimi şemadan
+   doğrulanmadan sensör bağlanmamalı (2.5 V üstü = çip hasarı).
+3. **Ağır model / NPU-CPU karşılaştırması** — tek bloke iş. Önce NPU'nun
+   xSPI2'den okuyamaması çözülmeli (efficientnet ağırlıkları iç RAM'e sığmaz).
+
+### Kartın bırakıldığı durum (N6)
+
+- **Boot modu:** geliştirme (BOOT0=0, BOOT1=1 → `BOOTSR = 0x2`), debug açık
+- **Harici flash:** FSBL `0x70000000` · Appli `0x70100000` · ağırlık blob'u
+  `0x71000000` (firmware açılışta `0x342E0000`'a kopyalıyor)
+- **CN9 jumper `5-6`** — USB CN10'dayken hedefi besleyen tek konum
+- Geliştirme modunda firmware'i başlatma komutu:
+  `docs/n6_ai_reference_project.md` §8.5 "Çalışan prosedür"
+- ⚠ Uygulamayı kapatmadan `STM32_Programmer_CLI` bağlanamaz — memread sidecar
+  ST-Link'i bırakmıyor (bilinen eksik, yukarıda listeli)
+
+---
+
+## ▶ ÖNCEKİ DURUM (2026-09-15)
 
 **Dal:** `feature/register-inspector`, origin ile senkron, çalışma ağacı temiz.
 Son commit `c8aa03b`. main'e **hâlâ merge edilmedi**.
@@ -51,6 +81,40 @@ ikinci bir okuma transport'u eklendi. Üç kart da artık tam işlevsel:
 
 Detaylar aşağıdaki "N6 çözüldü" bölümünde ve
 [`docs/memread_sidecar.md`](docs/memread_sidecar.md)'de.
+
+### 🆕 N6 referans AI projesi — NPU ÇALIŞIYOR (2026-09-17)
+
+`n6_ai_node/` altında, ST'nin kendi araçlarıyla elde üretilen bir STM32N6
+projesi var ve **Neural-ART NPU üzerinde inference çalışıyor**
+(mobilenet_v1_0.25_96, **3.69 ms**, saniyede ~25 inference). Tam LRUN zinciri
+kartta kanıtlandı: kart debugger olmadan, tek başına flash'tan açılıyor.
+
+**Kök neden (iki gün süren teşhis):** NPU, memory-mapped harici flash'tan
+(xSPI2) ağırlıkları okuyamıyor — CPU okuyabildiği hâlde. Ağırlıklar iç RAM'e
+alınınca çözüldü. **Bunu bulan ölçüm bizim aracımızdan geldi** (İzleyici'nin
+ham adres desteğiyle NPU register alanı tarandı; asılı stream engine'in
+okuduğu adres harici flash çıktı).
+
+Tam kayıt: [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md)
+§8.8 · teşhis ekran görüntüleri `out/n6_npu_diag_20260916/`
+
+**Açık alt soru:** NPU'nun xSPI2'den okuması neden çalışmıyor? Ağır modele
+(efficientnet_v2B1_240, ağırlıkları iç RAM'e sığmaz) geçince çözmek gerekecek.
+
+### ⚑ Aracın gerçek senaryoda ortaya çıkan eksikleri
+
+N6 teşhisi sırasında bulundu — hepsi canlı gözlemle, tahmin değil:
+
+1. **Register Inspector N6'da asılı firmware üzerinde bağlanamıyor**
+   (`registerStage: error`). CLI arka ucu o durumda hedefe erişemiyor.
+2. **`closeWatchLink()` ST-Link'i bırakmıyor** — `stm32aid-memread.exe`
+   çalışmaya devam ediyor, uygulama kapatılana kadar başka araç bağlanamıyor.
+3. **Uyku moduna giren hedefte gözlem modeli kırılıyor.** Firmware WFE'ye
+   park edince debug erişim portu düşüyor (`DEV_AP_ACCESS_ERROR`);
+   `DBGMCU_CR.DBG_SLEEP` açmak yetmedi. Tam gözlem gereken anda körleşiyoruz.
+4. **DebugBridge `props` uzun listeleri kırpıyor** — 26 izleme kaleminin
+   yalnızca son 21'i döndü, ilk eklenenler kaybolmuş gibi göründü ve teşhis
+   sırasında yanlış yola sürükledi.
 
 ### Sıradaki iş — önerilen sıra
 
