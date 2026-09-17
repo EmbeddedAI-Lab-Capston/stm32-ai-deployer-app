@@ -11,9 +11,51 @@ Rectangle {
     id: root
 
     readonly property bool _hasBackend: (typeof backend !== "undefined" && backend)
-    property var _rows: []
 
-    function refresh() { _rows = root._hasBackend ? backend.watchItems : [] }
+    // The live value / min / max / mean columns churn at 10 Hz, but the set
+    // of watched items itself almost never changes. Binding the ListView
+    // straight to backend.watchItems - a plain JS array that Backend
+    // rebuilds in full on every read - made every refresh a full Qt Quick
+    // model reset, which snapped the view back to the top and made it
+    // impossible to scroll through the list while sampling. Same root cause
+    // as the Terminal fix in 9f71c57, different shape: here the rows have a
+    // stable identity (`id`), so instead of mirroring inserts/removes we
+    // write the changed cells back in place.
+    //
+    // When the id sequence is unchanged (the common case) only fields that
+    // actually differ are written with setProperty() - a genuine in-place
+    // update Qt Quick applies without touching the scroll position or
+    // recreating delegates (so the "Etkin" checkbox keeps its state too).
+    // A full rebuild happens only when the watched items really change.
+    ListModel { id: _model }
+
+    readonly property var _fields: ["label", "role", "address", "kind", "type", "format",
+                                    "scale", "offset", "unit", "enabled", "source", "color",
+                                    "hasValue", "liveValue", "minValue", "maxValue", "meanValue"]
+
+    function refresh() {
+        const rows = root._hasBackend ? backend.watchItems : []
+
+        let sameItems = (rows.length === _model.count)
+        for (let i = 0; sameItems && i < rows.length; ++i)
+            sameItems = (_model.get(i).id === rows[i].id)
+
+        if (!sameItems) {
+            _model.clear()
+            for (let j = 0; j < rows.length; ++j)
+                _model.append(rows[j])
+            return
+        }
+
+        for (let k = 0; k < rows.length; ++k) {
+            const cur = _model.get(k)
+            for (let f = 0; f < root._fields.length; ++f) {
+                const key = root._fields[f]
+                if (cur[key] !== rows[k][key])
+                    _model.setProperty(k, key, rows[k][key])
+            }
+        }
+    }
 
     Component.onCompleted: refresh()
     Connections {
@@ -84,7 +126,7 @@ Rectangle {
                 id: list
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                model: root._rows
+                model: _model
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar { width: 8 }
@@ -104,60 +146,60 @@ Rectangle {
 
                         CheckBox {
                             Layout.preferredWidth: root.colWidths[0]
-                            checked: modelData.enabled === true
-                            onToggled: backend.updateWatchItem(modelData.id, { enabled: checked })
+                            checked: model.enabled === true
+                            onToggled: backend.updateWatchItem(model.id, { enabled: checked })
                         }
                         Text {
-                            text: modelData.label || ""
+                            text: model.label || ""
                             color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
                             Layout.preferredWidth: root.colWidths[1]
                         }
                         Text {
-                            text: modelData.address || ""
+                            text: model.address || ""
                             color: Theme.textMuted; font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
                             Layout.preferredWidth: root.colWidths[2]
                         }
                         Text {
-                            text: (modelData.type || "").toUpperCase()
+                            text: (model.type || "").toUpperCase()
                             color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
                             Layout.preferredWidth: root.colWidths[3]
                         }
                         Text {
-                            text: modelData.format || ""
+                            text: model.format || ""
                             color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
                             Layout.preferredWidth: root.colWidths[4]
                         }
                         Text {
-                            text: modelData.scale !== undefined ? modelData.scale : ""
+                            text: model.scale !== undefined ? model.scale : ""
                             color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
                             Layout.preferredWidth: root.colWidths[5]
                         }
                         Text {
-                            text: modelData.unit || ""
+                            text: model.unit || ""
                             color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
                             Layout.preferredWidth: root.colWidths[6]
                         }
                         Text {
-                            text: modelData.liveValue || "—"
-                            color: modelData.hasValue ? Theme.cyan : Theme.textFaint
+                            text: model.liveValue || "—"
+                            color: model.hasValue ? Theme.cyan : Theme.textFaint
                             font.family: Theme.monoFamily; font.pixelSize: Theme.fontSm; font.weight: Font.DemiBold
                             elide: Text.ElideRight
                             Layout.preferredWidth: root.colWidths[7]
                         }
                         Text {
-                            text: modelData.minValue || "—"
+                            text: model.minValue || "—"
                             color: Theme.textMuted; font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
                             Layout.preferredWidth: root.colWidths[8]
                         }
                         Text {
-                            text: modelData.maxValue || "—"
+                            text: model.maxValue || "—"
                             color: Theme.textMuted; font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
                             Layout.preferredWidth: root.colWidths[9]
                         }
                         Text {
-                            text: modelData.meanValue || "—"
+                            text: model.meanValue || "—"
                             color: Theme.textMuted; font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
                             Layout.preferredWidth: root.colWidths[10]
                         }
@@ -170,7 +212,7 @@ Rectangle {
                             MouseArea {
                                 id: delM; anchors.fill: parent; hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: backend.removeWatchItem(modelData.id)
+                                onClicked: backend.removeWatchItem(model.id)
                             }
                         }
                     }
@@ -178,7 +220,7 @@ Rectangle {
             }
 
             Text {
-                visible: root._rows.length === 0
+                visible: _model.count === 0
                 Layout.fillWidth: true
                 Layout.topMargin: Theme.spacingLg
                 horizontalAlignment: Text.AlignHCenter

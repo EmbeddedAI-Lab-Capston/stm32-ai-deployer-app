@@ -4287,9 +4287,27 @@ void Backend::evaluateWatchRules()
 
     const double now = m_eventLog.now();
     const QVector<TraceEvent> recent = m_eventLog.eventsBetween(now - 5.0, now);
-    m_watchViolationsCache = TimeSeriesRuleEngine::evaluate(m_tsRules, m_watcher->items(),
-                                                             m_watcher->buffer(), now, recent);
-    emit watchViolationsChanged();
+    const QVector<TsRuleViolation> fresh =
+        TimeSeriesRuleEngine::evaluate(m_tsRules, m_watcher->items(),
+                                       m_watcher->buffer(), now, recent);
+
+    // A still-standing violation is re-reported on every 4 Hz pass with a new
+    // `t`/`value`, so emitting unconditionally reset the feed's model four
+    // times a second and fought the user's scroll position — the same defect
+    // the watch item table had. The cache is always refreshed; only the
+    // notification is skipped while the *set* of violations is unchanged
+    // (a direct read still returns the fresh t/value/detail).
+    bool sameSet = (fresh.size() == m_watchViolationsCache.size());
+    for (int i = 0; sameSet && i < fresh.size(); ++i) {
+        const TsRuleViolation &a = fresh.at(i);
+        const TsRuleViolation &b = m_watchViolationsCache.at(i);
+        sameSet = (a.ruleId == b.ruleId && a.itemId == b.itemId
+                   && a.severity == b.severity && a.message == b.message);
+    }
+
+    m_watchViolationsCache = fresh;
+    if (!sameSet)
+        emit watchViolationsChanged();
 }
 
 QVariantList Backend::watchViolations() const
