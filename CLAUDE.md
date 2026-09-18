@@ -392,7 +392,11 @@ emit errorReceived(QJsonObject);
   kayan pencere z-skoru, doğrusal trend/drift (R² kapısıyla) ve olay
   korelasyon kapısı. ML tabanlı anomali tespiti YAPILMAZ — ground truth yok,
   savunulamaz. Her ihlal, hangi sayının hangi eşiği nasıl aştığını `detail`
-  alanında taşır.
+  alanında taşır. **Süreli eşik (`sustainMs`) örnekle-tut anlamındadır:**
+  pencere başında (`t0`) geçerli olan değer `t0`'dan önceki son örnektir ve o
+  da koşulu sağlamalıdır; `t0`'dan önce örnek yoksa kanıt yok sayılır. (2026-09-18'e
+  kadar motor `t0`'dan sonraki 1 ms içinde bir örnek istiyordu — gerçek hızlarda
+  nadiren tuttuğu için süreli kurallar titreşiyordu.)
 - **İki kural motoru birleştirilmez:** `RuleEngine` anlık register durumunu
   (`svd/rules.json`), `TimeSeriesRuleEngine` pencere üzerindeki davranışı
   (`watch/watch_rules.json`) değerlendirir. Mevcut `RuleEngine` değiştirilmez.

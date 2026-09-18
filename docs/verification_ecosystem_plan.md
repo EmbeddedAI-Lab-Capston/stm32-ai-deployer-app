@@ -1022,14 +1022,11 @@ sorusunun cevabı burada.
 
 ### 12.1 Bilinen sınırlar (canlı kullanımda bulundu)
 
-- **`invoke` map/nesne argümanı gönderemez.** `DebugBridge` JSON argümanını
-  doğru çevirir, ama `uiprobe.ps1 -MethodArgs` bir `string[]` — her argüman
-  JSON **string** olarak gider. `QVariantMap` bekleyen bir metoda
-  (`updateWatchItem(id, {label:...})`) giden string boş map'e döner ve çağrı
-  **sessizce hiçbir şey yapmaz** (`ok:true` yine döner). String → bool/int/
-  double dönüşümleri ise çalışır (`"false"`, `"200"`). Map gereken yerde ya
-  skaler argümanlı ayrı bir invokable kullanın (ör. `setWatchItemPlotVisible`)
-  ya da betiğe gerçek JSON argüman desteği ekleyin (açık iş).
+- **`invoke` ile liste/map argümanı: `-ArgsJson` kullanın.** `-MethodArgs` bir
+  `string[]` — her argüman JSON string olarak gider ve `QVariantMap`/
+  `QStringList` bekleyen metotlarda çağrı **sessizce hiçbir şey yapmaz**
+  (`ok:true` yine döner). `-ArgsJson '[0, ["RCC","I2C1"]]'` ham JSON dizisini
+  olduğu gibi gönderir (2026-09-18'de eklendi).
 - **`props` uzun listeleri kırpar** — 26 izleme kaleminden yalnızca son 21'i
   döndü (TODO.md'de açık). Uzun listelerde toplam sayıyı ayrıca doğrulayın.
 - **`log` dosyası çalıştırmalar arasında paylaşılır**, yani eski bir oturumun

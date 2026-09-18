@@ -390,6 +390,11 @@ STM32_Programmer_CLI -c port=SWD sn=<SN> mode=UR -halt \
 > Not: LED_GREEN, BSP'de `LED3` = **GPIOG pin 0** (README'deki PG.00 ile
 > uyumlu). Peripheral'lar güvenli alias'tan (`0x56...`) okunuyor; güvensiz
 > alias (`0x46...`) sıfır dönüyor.
+>
+> ⚠ **Genel kural değil (2026-09-18):** Register Inspector güvensiz alias'tan
+> (`0x46...`, SVD'deki adres) okuyor ve Appli çalışırken RCC/GPIOC/GPIOH/I2C1
+> için **gerçek** değerleri aldı (ör. `I2C_TIMINGR = 0xF0F6313D`). Bu notun
+> geçerli olduğu koşul (FSBL aşaması / farklı RIF ayarı) doğrulanmadı.
 
 ---
 
@@ -1002,6 +1007,79 @@ bellek yerleşimi güncel değil — yanıltıcı, model yeniden üretildiğinde
 
 ---
 
+## 8.12 Hata enjeksiyonu — araç sessiz bir arızayı teşhis etti (2026-09-18)
+
+§6'daki "aracın asıl iddiası": hatasız bir sistemde register'lara bakmak bir
+şey anlatmaz; kasıtlı bozulmuş bir derlemede araç kök nedeni bulmalı.
+
+### Arıza: I2C1 saati açılmamış
+
+`n6_ai_node/Appli/Inc/fault_inject.h` → `FAULT_I2C1_CLOCK_OFF` (varsayılan
+**0**; 1 yapıp yeniden derleyince MSP `__HAL_RCC_I2C1_CLK_ENABLE()`'ı "unutur").
+Gerçek projelerde sık görülen bir hata. Firmware hangi arızanın açık olduğunu
+**hiçbir yerde bildirmez** — bulmak aracın işi.
+
+**Kartta gözlenen (tahmin değil, ölçüm):**
+
+| | Sağlıklı | Arızalı |
+|---|---|---|
+| NPU inference | ✅ 3.77 ms, sınıf 1 | ✅ aynen — kart "canlı" görünür |
+| `HAL_I2C_Init()` → `g_sensor_i2c_ok` | 1 | **1** — saatsiz peripheral'a yazma sessizce yok olur, HAL yine `HAL_OK` döner |
+| Sensör okuma (başarılı / hata) | 12 / 0 | **0 / 17** |
+| BME280 değerleri | 24 °C / %45 / 1000 hPa | 0 / 0 / 0 |
+
+### Teşhis — iki araç, iki yarım
+
+**1. İzleyici "ne" olduğunu söyler.** `sensor_memory` preset'ine
+`g_telemetry.sensor_ok` (+40) eklendi; `watch_rules.json`'a
+`sensor_read_failing` kuralı (`sensorOk == 0`, 2 s süreli, `error`). Arızalı
+kartta: *"g_telemetry.sensor_ok: sensor 2 s'dir okunamiyor (sensor_ok=0.00) —
+firmware calisiyor ama sensor verisi bayat"*, **20 yoklamanın 20'sinde** ayakta.
+
+**2. Register Inspector "neden" olduğunu söyler.** RCC + I2C1 + GPIOC + GPIOH:
+
+- Tek snapshot (arızalı kart): **I2C1 "clock off"** (register'ları okunamaz),
+  GPIOC/GPIOH "clock on" ve pinler AF4 açık-drain → *pinler I2C için hazır,
+  peripheral'ın saati yok.* Kablo/pin şüphesi baştan elenir.
+- **A (arızalı) → B (düzeltilmiş) farkı:** "12 register, **1 field**
+  değişmiş" → **`RCC.RCC_APB1LENR.I2C1EN: 0 → 1`** ("I2C1 enable"); I2C1'in 11
+  register'ı "Durum değişti: clock-off → ok". Kök neden tek satır.
+
+Ekran görüntüleri: `out/n6_fault/01_watcher_fault.png`,
+`02_register_fault.png`, `03_register_diff.png` (gitignored).
+
+### Demo için hazır image'lar
+
+`out/n6_fault/` (gitignored — makineye özel): `Appli-trusted_HEALTHY.bin` /
+`Appli-trusted_FAULT_i2c1_clock_off.bin` ve eşleşen `.elf`'ler. Geçiş = image'ı
+`0x70100000`'a **`mode=UR`** ile yazıp FSBL'i başlatmak (§8.5 adım 3-4), derleme
+gerekmez. Başka makinede: `FAULT_I2C1_CLOCK_OFF`'u 1/0 yapıp iki kez derleyin.
+
+### Yolda bulunan ve düzeltilenler
+
+- **İzleyici'nin süreli eşik kuralları titreşiyordu (Faz 8'den beri).** Motor,
+  pencerenin başından sonraki ilk örneğin `t0`'a 1 ms'den yakın olmasını
+  istiyordu; 200 Hz'de örnekler 5 ms arayla geldiği için bu değerlendirmelerin
+  ~%20'sinde tutuyordu → kural çoğu zaman sessiz. Arızalı kartta kural 6 s
+  boyunca hiç görünmedi. Düzeltme: `t0` anında geçerli olan değer =
+  `t0`'dan önceki son örnek (örnekle-tut); öncesinde örnek yoksa tetiklenmez.
+  İki regresyon testi (biri düzeltmeden önce kaldığı gösterildi).
+- **`uiprobe.ps1 -ArgsJson`**: liste/map argümanı artık gönderilebiliyor
+  (`takeRegisterSnapshot` için gerekliydi; `updateWatchItem`'ın sessizce
+  çalışmaması da çözüldü).
+
+### Aracın sınırı (bu senaryoda görülen)
+
+Register **kural motoru** (`svd/rules.json`) bu arızayı kendiliğinden
+işaretlemiyor: kuralları tek peripheral içinde (`ifField` → `thenRegister`)
+çalışıyor, "RCC'de saati kapalı ama pinleri bu peripheral'a ayrılmış" gibi
+peripheral'lar arası bir koşulu ifade edemiyor. CLAUDE.md gereği mevcut
+`RuleEngine` değiştirilmedi; teşhisi snapshot'taki `clock off` durumu ve A→B
+farkı taşıyor. Pin → peripheral eşlemesi aile başına veri gerektirir (SVD'de
+yok) — ileride düşünülebilir.
+
+---
+
 ## 9. Sıradaki somut adım
 
 1. ~~FW_N6 sürümünü çöz~~ ✅ v1.4.0 kuruldu (2026-09-16).
@@ -1011,9 +1089,9 @@ bellek yerleşimi güncel değil — yanıltıcı, model yeniden üretildiğinde
 4. ~~NPU'da tek inference~~ ✅ (§8.8) · ~~telemetri + İzleyici~~ ✅ (§8.9) ·
    ~~BME280~~ ✅ (§8.10) · ~~doğru ve deterministik sonuç~~ ✅ (§8.11) ·
    ~~stack boyama~~ ✅ (§8.11)
-5. **Sıradaki: hata enjeksiyonu** (§6) — kasıtlı bozuk bir derleme (ör. I2C1
-   clock'u kapalı, ya da NPU RIF izolasyonu eksik) + Register Inspector ile
-   snapshot/reset-farkı teşhisi. Aracın asıl iddiası.
+5. ~~Hata enjeksiyonu~~ ✅ (§8.12) — I2C1 saati kapalı varyantı; İzleyici
+   kuralı + Register Inspector A→B farkı kök nedeni buldu. İkinci bir varyant
+   (NPU RIF izolasyonu eksik) istenirse aynı `fault_inject.h` anahtarıyla eklenir.
 6. Ağır model (efficientnet) — xSPI2 okuma sorunu çözülmeden bloke.
 
 **Yan iş (açık):** kendi uygulamamızın `N6RamImage::armArgs()` yolu HOTPLUG

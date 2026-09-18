@@ -66,8 +66,12 @@ verir — önce Görev Yöneticisi'nden kapatın.
    **PC referansıyla birebir** (LiteRT, orijinal `.tflite`): sınıf 1, %47.
    Stack boyama da eklendi: N6'da 2 KB stack'in **yalnızca 600 B'ı boş**.
    Detay: [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md) §8.11
-4. **Sıradaki N6 işi: hata enjeksiyonu** — kasıtlı bozuk derleme + Register
-   Inspector teşhisi (referans projenin §6'sı, "aracın asıl iddiası").
+4. ~~**Hata enjeksiyonu**~~ ✅ **Tamam (2026-09-18)** — `fault_inject.h`
+   `FAULT_I2C1_CLOCK_OFF`: NPU çalışırken sensör sessizce ölüyor. İzleyici'nin
+   yeni `sensor_read_failing` kuralı "ne"yi, Register Inspector'ın A→B farkı
+   (`RCC_APB1LENR.I2C1EN 0→1`, I2C1 "clock off") "neden"i buldu. Yolda
+   **İzleyici'nin süreli eşik kurallarının Faz 8'den beri titreştiği** bulunup
+   düzeltildi. Demo image'ları `out/n6_fault/`. Detay: §8.12
 5. **Ağır model / NPU-CPU karşılaştırması** — tek bloke iş. Önce NPU'nun
    xSPI2'den okuyamaması çözülmeli (efficientnet ağırlıkları iç RAM'e sığmaz).
 6. ⚠ **N6'da harici flash'a daima `mode=UR` ile yaz** — firmware çalışırken
