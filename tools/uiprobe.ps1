@@ -12,6 +12,7 @@
       .\tools\uiprobe.ps1 props -Object appState
       .\tools\uiprobe.ps1 click -Name watch.startButton
       .\tools\uiprobe.ps1 invoke -Object backend -Method scanTools
+      .\tools\uiprobe.ps1 invoke -Object backend -Method takeRegisterSnapshot -ArgsJson '[0, ["RCC","I2C1"]]'
       .\tools\uiprobe.ps1 log -Lines 30
       .\tools\uiprobe.ps1 quit
 #>
@@ -30,6 +31,10 @@ param(
     [int]$Lines = 40,
     [string]$Method,
     [string[]]$MethodArgs = @(),
+    # Raw JSON array of invoke arguments, sent verbatim - the only way to pass
+    # a list or map argument (-MethodArgs sends every argument as a string).
+    #   -ArgsJson '[0, ["RCC","I2C1"]]'   -ArgsJson '["<id>", {"label":"x"}]'
+    [string]$ArgsJson,
     [string]$Pipe = "stm32aid-debug",
     [string]$ExeDir = "C:\dev\stm32-ai-deployer-app\build"
 )
@@ -99,6 +104,15 @@ switch ($Command) {
     }
 }
 
-$response = Send-BridgeCommand ($request | ConvertTo-Json -Compress)
+$body = $request | ConvertTo-Json -Compress -Depth 10
+if ($Command -eq "invoke" -and $ArgsJson) {
+    # Validate, but inject the caller's text as-is: a round trip through
+    # PowerShell objects would unroll one-element arrays and flatten maps.
+    try { $parsed = ConvertFrom-Json $ArgsJson } catch { Write-Output "ERROR: -ArgsJson is not valid JSON"; exit 1 }
+    if (-not $ArgsJson.TrimStart().StartsWith("[")) { Write-Output "ERROR: -ArgsJson must be a JSON array"; exit 1 }
+    $request.Remove("args")
+    $body = ($request | ConvertTo-Json -Compress -Depth 10).TrimEnd("}") + ',"args":' + $ArgsJson.Trim() + "}"
+}
+$response = Send-BridgeCommand $body
 if ($null -eq $response) { exit 1 }
 Write-Output $response
