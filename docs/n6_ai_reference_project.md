@@ -900,9 +900,14 @@ Ekran görüntüsü: `out/n6_npu_watch/watch_bme280_npu.png` (gitignored).
   bunu sınıf değişimine taşıdı. Girdi sabit olduğuna göre beklenen tamamen
   deterministik çıktı; muhtemel şüpheliler cache temizleme/geçersizleme
   sırası veya CPU'da koşan 2 epoch'un başlatılmamış belleği. İncelenmeli.
-- **İzleyici'de üç sensör kalemi de `g_telemetry` etiketiyle, birimsiz
-  görünüyor** — hangisinin sıcaklık olduğu ekrandan anlaşılmıyor. Preset
-  kalemleri rol/etiket/birim taşımalı. Demo için düzeltilmeli.
+- ~~**İzleyici'de üç sensör kalemi de `g_telemetry` etiketiyle, birimsiz
+  görünüyor**~~ ✅ **Düzeltildi (2026-09-17):** preset kalemleri artık
+  isteğe bağlı `label` taşıyor (yoksa `sembol+offset`), ve bir preset
+  `relabels` ile başka preset'in ürettiği rolleri adlandırabiliyor.
+  `bme280_labels` (`BME280_ReadAll` varsa) → "BME280 sicaklik °C / nem % /
+  basinc hPa"; `mpu6050_labels` (`MPU6050_ReadAll` varsa) → ax/ay/az m/s².
+  Sensör adı C++'ta yok; rol (`sensor0`…) değişmediği için profil
+  karşılaştırması etkilenmez. Kartta canlı doğrulandı.
 - **`readErrors` seqlock atmalarını da sayıyor.** Görülen 15/39 değeri 3'ün
   katı (yalnızca 3 korumalı kalem) — gerçek okuma hatası değil, firmware'in
   yazma ortasında yakalanan örnekler. UI bunu "okuma hatası" gibi

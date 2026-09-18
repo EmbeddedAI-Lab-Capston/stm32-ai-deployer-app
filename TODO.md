@@ -55,11 +55,39 @@ verir — önce Görev Yöneticisi'nden kapatın.
    önceden set edildi (`HAL_PWREx_EnableVddIO4/5()` karşılığı); gerekli olup
    olmadıkları ayrıca denenmedi — firmware'de de çağırmak güvenli taraf.
    ✅ **Firmware'e eklendi, canlı:** İzleyici'de 23.0 °C / %46.3 / 1001.2 hPa
-   + NPU 3.70 ms aynı ekranda, 200 Hz. Detay ve açık kalanlar (sınıf
-   salınımı, `g_telemetry` etiketleri, `readErrors`'un seqlock atmalarını
-   sayması): [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md) §8.10
+   + NPU 3.70 ms aynı ekranda, 200 Hz. Sensör kalemleri artık
+   "BME280 sicaklik °C" vb. adlarla görünüyor (preset `relabels`). Açık
+   kalanlar (sınıf salınımı, `readErrors`'un seqlock atmalarını sayması): [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md) §8.10
 3. **Ağır model / NPU-CPU karşılaştırması** — tek bloke iş. Önce NPU'nun
    xSPI2'den okuyamaması çözülmeli (efficientnet ağırlıkları iç RAM'e sığmaz).
+
+### İzleyici ekranı iyileştirmeleri (2026-09-17, canlı doğrulandı N6 + H7)
+
+- ✅ `stackWatermark` artık yalnızca `StackPaint_Init` olan firmware'de
+  öneriliyor (N6'da 54 → 200 Hz, iki sahte "stack bitti" alarmı gitti).
+- ✅ "AI Presetlerini Uygula" ikinci kez basınca satırları çiftlemiyor.
+- ✅ Kural İhlalleri ve RAM Bütçesi katlanabilir (başlığa tıkla), durum
+  `ui/watch_collapsed/<panel>`'de kalıcı. Katlıyken yeni ihlal paneli
+  açmaz, sayaç kırmızıya döner.
+- ✅ Tabloda **"Grafik"** sütunu: okumayı durdurmadan izi grafikten çıkarır,
+  örnekleme sürerken de değiştirilebilir.
+- ✅ **Grafik lejantı Faz 6'dan beri hiç görünmüyordu** —
+  `backend.watchItems()` bir property'yi fonksiyon gibi çağırıyor, saniyede
+  25 `TypeError` atıyordu. Düzeltildi; lejant çok satırlıysa alta sarıyor.
+
+**Bulunan ama dokunulmayanlar:**
+
+- **İzleme listesi uygulama yeniden açılınca geri gelmiyor.**
+  `VariableWatcher::saveItems()` her değişiklikte yazıyor ama `loadItems()`
+  hiçbir yerden çağrılmıyor. Kasıtlı mı bilinmiyor: eski ELF'in adresleriyle
+  otomatik geri yüklemek, firmware değişmişse sessizce yanlış adres okumak
+  demek. Karar gerekiyor (ör. yalnızca aynı ELF yolu + ELF eşleşmesi varsa
+  geri yükle).
+- **Düşük hızda grafik noktalı görünüyor.** Örnek aralığı piksel sütunu
+  süresinden uzun olunca (10 s pencere ≈ 1450 px → ~145 Hz altı) çoğu sütun
+  boş kalıyor ve `TracePlot` gerçek kopukluk gibi yalnızca nokta çiziyor
+  (H7'de stack taramasıyla 56 Hz'de görüldü). Boş sütunlar ile gerçek veri
+  kaybı ayrılmalı.
 
 ### Kartın bırakıldığı durum (N6)
 
