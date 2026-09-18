@@ -508,6 +508,16 @@ emit errorReceived(QJsonObject);
   gidiş-dönüş yapar). gdb `DHCSR.C_DEBUGEN`'i set eder, memread etmez.
   **N6'da gdbserver ayarlarını kurcalamayın** — 2026-09-14'te tüketildi.
   Detay: [`docs/memread_sidecar.md`](docs/memread_sidecar.md).
+- **Araç CPU'nun gördüğünü okur, NPU/DMA'nın gördüğünü değil.** Cache'li
+  çekirdeklerde (Cortex-M55 kesin, H7'nin M7'si de D-cache'li) debugger bellek
+  okumaları D-cache ile **tutarlıdır**: İzleyici ve Register Inspector bir
+  adresteki değeri CPU'nun göreceği şekilde gösterir. RAM'i doğrudan okuyan
+  bir usta (NPU, DMA) ise cache'te kirli kalmış satırların **eski** RAM
+  içeriğini görür. Yani "debugger dökümü doğru" ≠ "NPU doğru veriyi okuyor".
+  N6'da bu yüzden bir cache-temizleme hatası bir kez yanlışlıkla elendi
+  (2026-09-18, `docs/n6_ai_reference_project.md` §8.11). Bir hızlandırıcı/DMA
+  sonucu açılış içinde sabit ama açılıştan açılışa farklıysa, CPU'nun yazıp
+  cache dışı ustanın okuduğu tamponlarda eksik `clean` aranmalı.
 - **Demo güvenliği birinci sınıf yoldur:** kayıttan oynatma modu canlı yolun
   aynı sinyal zincirini kullanır; uygulamayla birlikte dağıtılan
   `watch/demo/h7_demo_trace.csv` sayesinde ekran ST-Link olmadan tam çalışır.

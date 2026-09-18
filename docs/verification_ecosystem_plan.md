@@ -1020,6 +1020,24 @@ sorusunun cevabı burada.
 **Kural:** önce `dump`/`props`/`log`. `shot` yalnızca gerçekten *görsel* bir
 şey doğrulanacaksa.
 
+### 12.1 Bilinen sınırlar (canlı kullanımda bulundu)
+
+- **`invoke` map/nesne argümanı gönderemez.** `DebugBridge` JSON argümanını
+  doğru çevirir, ama `uiprobe.ps1 -MethodArgs` bir `string[]` — her argüman
+  JSON **string** olarak gider. `QVariantMap` bekleyen bir metoda
+  (`updateWatchItem(id, {label:...})`) giden string boş map'e döner ve çağrı
+  **sessizce hiçbir şey yapmaz** (`ok:true` yine döner). String → bool/int/
+  double dönüşümleri ise çalışır (`"false"`, `"200"`). Map gereken yerde ya
+  skaler argümanlı ayrı bir invokable kullanın (ör. `setWatchItemPlotVisible`)
+  ya da betiğe gerçek JSON argüman desteği ekleyin (açık iş).
+- **`props` uzun listeleri kırpar** — 26 izleme kaleminden yalnızca son 21'i
+  döndü (TODO.md'de açık). Uzun listelerde toplam sayıyı ayrıca doğrulayın.
+- **`log` dosyası çalıştırmalar arasında paylaşılır**, yani eski bir oturumun
+  hatalarını da gösterir. "Hata hâlâ var mı" sorusunda satır zaman damgasını
+  sürecin başlangıç zamanıyla karşılaştırın (2026-09-17'de bir düzeltme bu
+  yüzden ilk bakışta işe yaramamış göründü).
+- PowerShell betik tuzakları için: `docs/dev_machine_setup.md` §4.4.
+
 ---
 
 ## 13. Tam yeniden yapılandırma (gerekirse)

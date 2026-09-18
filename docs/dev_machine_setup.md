@@ -99,6 +99,43 @@ $env:PATH = "<QT_ROOT>\<versiyon>\mingw_64\bin;<QT_ROOT>\Tools\CMake_64\bin;<QT_
 ctest --test-dir build --output-on-failure
 ```
 
+### 4.1 Test çıktısı kabukta görünmüyor — başarısız testin mesajını görmek
+
+**Gözlem (2026-09-17, bu makine):** `STM32AiDeployerTests.exe`'nin QTest
+çıktısı (stdout) bash, PowerShell ve `Start-Process -RedirectStandardOutput`
+ile yakalanınca **0 bayt** geliyor; `ctest --output-on-failure` da boş
+basıyor. stderr ise geçiyor (ör. "Unknown test function"). `tests/CMakeLists.txt`
+konsol alt sistemini zorlasa da durum bu. **Çıkış kodu güvenilir** — geçti/kaldı
+için ona bakılabilir.
+
+`-o dosya,txt` çalışır ama `tests/main.cpp` her suite'i ayrı `QTest::qExec`
+ile koşturduğu için dosyayı **her suite üzerine yazar** — geriye yalnızca son
+suite'in (`TestMemReadProtocol`) çıktısı kalır. Bir hatanın mesajını görmek
+için geçici olarak `main.cpp`'yi tek suite'e indirip `-o` ile çalıştırın,
+sonra `git checkout tests/main.cpp` ile geri alın.
+
+### 4.2 Kaynak dosyayı programla geri yüklemek eski bir test binary'si bırakabilir
+
+Bir kaynak dosyayı script ile değiştirip geri yazmak (ör. bir testi kasıtlı
+bozup düzeltmek), dosyanın zaman damgasını obje dosyasından **eski**
+bırakabilir; `make` onu yeniden derlemez ve test binary'si bozuk sürümle
+kalır — "geri aldım ama test hâlâ kalıyor" diye görünür (2026-09-17'de
+yaşandı). Geri yükledikten sonra `touch <dosya>` ile yeniden derlemeye zorlayın.
+
+### 4.3 `watch/*.json` değişiklikleri derleme olmadan uygulamaya ulaşmaz
+
+Uygulama `watch_presets.json` / `watch_rules.json`'ı kaynak ağaçtan değil,
+POST_BUILD adımının `build/watch/`'a yaptığı **kopyadan** okur ve yalnızca
+açılışta bir kez yükler. JSON'u düzenledikten sonra yeniden derleyin (veya
+dosyayı `build/watch/`'a kopyalayın) **ve** uygulamayı yeniden başlatın.
+
+### 4.4 `uiprobe.ps1` betiği yazarken PowerShell alias tuzakları
+
+Yardımcı fonksiyonlara kısa ad vermeyin — yerleşik alias'ların arkasında
+kalır ve sessizce başka komut çalışır: `R` = `Invoke-History`,
+`rd` = `Remove-Item` (!), `H` = `Get-History`. `Get-ItemBox` gibi fiil-isim
+adları kullanın.
+
 ---
 
 ## 5. ST kurulum dosyaları tarayıcıdan hesapla indirilmeli, otomatikleştirilemez

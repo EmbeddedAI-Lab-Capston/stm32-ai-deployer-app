@@ -871,6 +871,31 @@ Kayıt + ekran görüntüleri: `out/n6_npu_watch/` (gitignored).
 adres `0x76`. Önce firmware'siz, SWD üzerinden I2C1 elle sürülerek doğrulandı
 (ACK + chip ID `0x60`).
 
+**Pin seçimi ve HSLV:** pinler ST'nin kendi `I2C_TwoBoards_RestartAdvComIT`
+örneğinden (AF4). Yanık HSLV sigortaları yalnızca VDDIO2/VDDIO3 (XSPI veri
+yolları; OTP word 124 = `0x18000`). SDMMC2 örneklerine göre PC1 muhtemelen
+VDDIO5'te, ama o sigorta yanık değil → 3.3 V güvenli. Hasar, sigorta yanıkken
+yazılımın `VDDIOxVRSEL` ile 1.8 V aralığını seçmesiyle olur; sigortanın
+kendisi değil (SVD açıklaması).
+
+**Yöntem — sensörü firmware'siz SWD ile yoklamak** (yeni bir I2C cihazında
+tekrar kullanılabilir; çekirdek boot ROM'da boşta beklerken yapıldı):
+
+1. Kablo kontrolü: pinleri giriş yap (`MODER` bitleri `00`, pull yok), `IDR`
+   oku → modülün kendi pull-up'ları varsa SDA/SCL ikisi de `1`.
+2. Saatler: `RCC_AHB4ENSR` (GPIOC/H), `RCC_APB1LENSR` bit 21 (I2C1);
+   güvenli alias `0x56028A5C` / `0x56028A64`. `PWR_SVMCR1/2` bit 8
+   (`VDDIO4SV`/`VDDIO5SV`) — yalnızca SV, **`VRSEL`'e dokunulmaz**.
+3. Pinler: `AFRx` = 4, `OTYPER` açık-drain, `MODER` = `10`.
+4. I2C1 (`0x50005400`): `TIMINGR` yavaş bir değer (`0xF0424040`), `CR1.PE=1`;
+   `CR2` = adres `0xEC` + `NBYTES=1` + `START` → `ISR.TXIS=1` ve `NACKF=0`
+   ise cihaz ACK verdi; `TXDR=0xD0`, sonra `CR2` okuma + `AUTOEND` → `RXDR`.
+
+**Tuzak:** `STM32_Programmer_CLI -w32` her yazmadan sonra adresi geri okuyup
+doğrular. `RCC_*ENSR` gibi "yaz-1-set" register'ları 0 okunduğu, `CR2.START`
+ise kendiliğinden temizlendiği için CLI **"Failed to download data"** der —
+ama yazma yapılmıştır. Sonucu ayrı bir okumayla (ör. `RCC_*ENR`) doğrulayın.
+
 **Firmware değişikliği (`n6_ai_node/Appli`):**
 
 - `bme280.c/h` ve `telemetry.c/h` `templates/`'ten kopyalandı (placeholder'lar
@@ -947,7 +972,10 @@ sıfırlamak (sonuç yine açılıştan açılışa değişti) — geri alındı
   → sınıf 1, %47.
 - PC referansı (orijinal `.tflite`, LiteRT, aynı girdi `buf[i]=i&0xFF`, uint8
   ölçek 0.0078431 / sıfır 127): **`0.2383 0.4727 0.0547 0.0000 0.2383`**, sınıf 1,
-  %47.3 — **dört ondalığa kadar aynı.**
+  %47.3 — **dört ondalığa kadar aynı.** Betik: `n6_ai_node/tools/ref_infer.py`
+  (kurulum ve çalıştırma dosyanın başında). Model veya girdi değişirse kart
+  sonucu bununla yeniden karşılaştırılmalı — "deterministik" tek başına
+  "doğru" demek değildir.
 - İzleyici'de 15 s boyunca sınıf ve güven min = max.
 - Inference süresi 3.70 → **3.76 ms** oldu (+60 µs). Zamanlanan bölge değişmedi;
   fark büyük ihtimalle artık gerçek girdiyle hesap yapılmasından (önceki ölçüm
