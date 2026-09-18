@@ -42,6 +42,11 @@
 			<locationURI>PARENT-2-PROJECT_LOC/Appli/Src/bme280.c</locationURI>
 		</link>
 		<link>
+			<name>Src/stack_paint.c</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/Appli/Src/stack_paint.c</locationURI>
+		</link>
+		<link>
 			<name>Src/telemetry.c</name>
 			<type>1</type>
 			<locationURI>PARENT-2-PROJECT_LOC/Appli/Src/telemetry.c</locationURI>

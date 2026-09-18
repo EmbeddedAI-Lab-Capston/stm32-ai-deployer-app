@@ -28,6 +28,7 @@
 #include "ll_aton_rt_user_api.h"
 #include "network.h"
 #include "bme280.h"
+#include "stack_paint.h"
 #include "telemetry.h"
 
 /* NOTE: ll_aton_runtime.c already defines NPU0_IRQHandler (ATON_STD_IRQ_LINE is
@@ -42,6 +43,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/* Where the weights ship (memory-mapped external flash) and where the
+   network reads them (npuRAM5, the weight base in network.c). */
+#define WEIGHTS_FLASH_ADDR  (0x71000000UL)
+#define WEIGHTS_RAM_ADDR    (0x342E0000UL)
+#define WEIGHTS_SIZE        (229601UL)
 
 /* USER CODE END PD */
 
@@ -121,6 +127,11 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+  /* Paint the unused stack first, before any deep call, so the Variable
+     Watcher's stackWatermark scan reads real headroom. ST's startup code does
+     not paint it, and an unpainted stack reads as ~0 B free. */
+  StackPaint_Init();
+
   /* System clock already configured, simply SystemCoreClock init */
   SystemCoreClockUpdate();
   /* USER CODE END 1 */
@@ -174,8 +185,17 @@ int main(void)
      weights belong at 0x342E0000 (npuRAM5) rather than being read in place
      from the memory-mapped flash. They still *ship* in the flash, so copy them
      across once, after SystemInit_Post() has powered those RAMs up. */
-  memcpy((void *)0x342E0000UL, (const void *)0x71000000UL, 229601U);
-  g_probe_ramweights = *(volatile uint32_t *)0x342E0000UL;
+  memcpy((void *)WEIGHTS_RAM_ADDR, (const void *)WEIGHTS_FLASH_ADDR, WEIGHTS_SIZE);
+  /* NOTE: the copy goes through the CPU's D-cache, but the NPU reads RAM
+     directly. Without this clean, the tail of the blob stayed dirty in the
+     cache and the NPU read whatever an earlier boot had left there - and
+     that tail holds the per-layer quantisation vectors (A_vector/C_vector at
+     +228480..+229040). Result: a class that was stable within a boot but
+     changed from one boot to the next. A debugger dump of this region looked
+     correct, because on Cortex-M55 debug reads are coherent with the D-cache;
+     only the NPU saw the stale bytes. */
+  mcu_cache_clean_range(WEIGHTS_RAM_ADDR, WEIGHTS_RAM_ADDR + WEIGHTS_SIZE);
+  g_probe_ramweights = *(volatile uint32_t *)WEIGHTS_RAM_ADDR;
 
   g_boot_stage = 41U;
   g_probe_aton_id  = *(volatile uint32_t *)0x480E0000UL;   /* NPU register space */
@@ -211,10 +231,6 @@ int main(void)
        fast blink     -> inferences are completing */
   g_led_active = 1U;
 
-  /* Static input: the point of this build is a repeatable measurement, not a
-     real classification, so the tensor is a fixed deterministic pattern. */
-  FillStaticInput(buffer_in, LL_ATON_NETWORK_IN_1_SIZE_BYTES);
-
   g_boot_stage = 9U;
   MX_I2C1_Init();
   if (g_sensor_i2c_ok != 0U)
@@ -230,6 +246,15 @@ int main(void)
     uint32_t start_cycles;
 
     g_ai_status = 1U;
+
+    /* Static input: the point of this build is a repeatable measurement, not a
+       real classification, so the tensor is a fixed deterministic pattern.
+       NOTE: it must be refilled before EVERY run. The input buffer lives
+       inside the activation memory ("input/output buffers are included in
+       activations", generate report) and later layers reuse that region, so
+       after one inference it no longer holds the input. Filling it once made
+       every later run classify a different leftover tensor. */
+    FillStaticInput(buffer_in, LL_ATON_NETWORK_IN_1_SIZE_BYTES);
 
     /* The NPU reads the input through its own path, so the CPU's dirty cache
        lines have to reach memory first. */
@@ -401,22 +426,33 @@ static void FillStaticInput(uint8_t *buf, uint32_t len)
     buf[i] = (uint8_t)(i & 0xFFU);
 }
 
-/** @brief Picks the argmax of the quantised output vector. */
+/**
+  * @brief Picks the argmax of the output vector.
+  * @note  The output is NOT quantised: the network ends in Softmax followed by
+  *        a DequantizeLinear, so it is float32 probabilities (1x5, 20 bytes -
+  *        DataType_FLOAT / nbits 32 in network.c). Scanning it byte by byte
+  *        reported a byte offset inside the float array as the "class".
+  */
 static void ReadClassification(const uint8_t *buf, uint32_t len)
 {
+  const float *probs = (const float *)buf;
+  const uint32_t count = len / sizeof(float);
   uint32_t best_index = 0U;
-  uint8_t  best_value = 0U;
+  float    best_value = probs[0];
 
-  for (uint32_t i = 0U; i < len; ++i)
+  for (uint32_t i = 1U; i < count; ++i)
   {
-    if (buf[i] > best_value)
+    if (probs[i] > best_value)
     {
-      best_value = buf[i];
+      best_value = probs[i];
       best_index = i;
     }
   }
+  if (best_value < 0.0f) best_value = 0.0f;
+  if (best_value > 1.0f) best_value = 1.0f;
+
   g_ai_last_class          = best_index;
-  g_ai_last_confidence_pct = ((uint32_t)best_value * 100U) / 255U;
+  g_ai_last_confidence_pct = (uint32_t)(best_value * 100.0f + 0.5f);
 }
 
 /**
