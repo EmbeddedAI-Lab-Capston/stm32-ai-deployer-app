@@ -13,10 +13,27 @@ Rectangle {
     readonly property bool _hasBackend: (typeof backend !== "undefined" && backend)
     readonly property var _violations: _hasBackend ? backend.watchViolations : []
 
+    // Collapsed = header line only. A new violation deliberately does NOT
+    // expand the panel (that would shove the item table around mid-session);
+    // the count in the header turns red instead.
+    property bool collapsed: false
+    readonly property int headerHeight: header.implicitHeight + 2 * Theme.spacingSm
+
     color: Theme.bgElevated
     radius: Theme.radiusSm
-    border.color: Theme.border
-    implicitHeight: 120
+    border.color: (root.collapsed && root._violations.length > 0) ? Theme.danger : Theme.border
+    implicitHeight: root.collapsed ? root.headerHeight : 120
+
+    Component.onCompleted: {
+        if (root._hasBackend)
+            root.collapsed = backend.watchPanelCollapsed("rules")
+    }
+
+    function toggle() {
+        root.collapsed = !root.collapsed
+        if (root._hasBackend)
+            backend.setWatchPanelCollapsed("rules", root.collapsed)
+    }
 
     function colorFor(sev) {
         if (sev === "error") return Theme.danger
@@ -30,7 +47,18 @@ Rectangle {
         spacing: 4
 
         RowLayout {
+            id: header
+            objectName: "watch.ruleFeedHeader"
             Layout.fillWidth: true
+            spacing: Theme.spacingSm
+
+            TapHandler { onTapped: root.toggle() }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+
+            CollapseChevron {
+                collapsed: root.collapsed
+                Layout.alignment: Qt.AlignVCenter
+            }
             Text {
                 text: "Kural İhlalleri"
                 color: Theme.text
@@ -38,14 +66,18 @@ Rectangle {
             }
             Item { Layout.fillWidth: true }
             Text {
+                objectName: "watch.ruleFeedCount"
                 text: root._violations.length + " aktif"
-                color: root._violations.length > 0 ? Theme.warning : Theme.textFaint
+                color: root._violations.length === 0 ? Theme.textFaint
+                       : (root.collapsed ? Theme.danger : Theme.warning)
                 font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                font.weight: (root.collapsed && root._violations.length > 0) ? Font.DemiBold : Font.Normal
             }
         }
 
         ListView {
             id: list
+            visible: !root.collapsed
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -75,7 +107,7 @@ Rectangle {
         }
 
         Text {
-            visible: root._violations.length === 0
+            visible: !root.collapsed && root._violations.length === 0
             Layout.alignment: Qt.AlignHCenter
             text: "İhlal yok"
             color: Theme.textFaint

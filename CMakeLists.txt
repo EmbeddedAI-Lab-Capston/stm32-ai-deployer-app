@@ -231,6 +231,7 @@ qt_add_qml_module(STM32AiDeployer
         qml/mock/MockData.qml
         qml/components/AppButton.qml
         qml/components/Card.qml
+        qml/components/CollapseChevron.qml
         qml/components/DataTable.qml
         qml/components/ComboField.qml
         qml/components/FormField.qml

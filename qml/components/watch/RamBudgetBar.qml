@@ -19,7 +19,22 @@ Rectangle {
         return (Number(bytes) / 1024).toFixed(1) + " KB"
     }
 
-    implicitHeight: root._ok ? 64 : 34
+    // Collapsed = summary line only (used/total and the collision pill stay
+    // visible, so collapsing never hides a RAM collision).
+    property bool collapsed: false
+
+    Component.onCompleted: {
+        if (root._hasBackend)
+            root.collapsed = backend.watchPanelCollapsed("ramBudget")
+    }
+
+    function toggle() {
+        root.collapsed = !root.collapsed
+        if (root._hasBackend)
+            backend.setWatchPanelCollapsed("ramBudget", root.collapsed)
+    }
+
+    implicitHeight: (root._ok && !root.collapsed) ? 64 : 34
     color: Theme.bgElevated
     radius: Theme.radiusMd
     border.color: root._collision ? Theme.danger : Theme.border
@@ -42,10 +57,18 @@ Rectangle {
 
         // ── Summary line ─────────────────────────────────────────────────
         RowLayout {
+            objectName: "watch.ramBudgetHeader"
             visible: root._ok
             Layout.fillWidth: true
             spacing: Theme.spacingSm
 
+            TapHandler { onTapped: root.toggle() }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+
+            CollapseChevron {
+                collapsed: root.collapsed
+                Layout.alignment: Qt.AlignVCenter
+            }
             Text {
                 text: "RAM Bütçesi"
                 color: Theme.text
@@ -76,7 +99,7 @@ Rectangle {
 
         // ── Stacked bar: static | heap | free | stack ───────────────────────
         Rectangle {
-            visible: root._ok
+            visible: root._ok && !root.collapsed
             Layout.fillWidth: true
             Layout.preferredHeight: 18
             radius: Theme.radiusSm

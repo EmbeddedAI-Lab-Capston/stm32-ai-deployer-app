@@ -447,6 +447,18 @@ void AppSettings::setWatchRecordDir(const QString &dir)
     s.setValue(kKeyWatchRecordDir, dir);
 }
 
+bool AppSettings::watchPanelCollapsed(const QString &panel) const
+{
+    QSettings s;
+    return s.value(QLatin1String(kKeyWatchCollapsedPrefix) + panel, false).toBool();
+}
+
+void AppSettings::setWatchPanelCollapsed(const QString &panel, bool collapsed)
+{
+    QSettings s;
+    s.setValue(QLatin1String(kKeyWatchCollapsedPrefix) + panel, collapsed);
+}
+
 void AppSettings::addCustomBoard(const BoardInfo &board)
 {
     if (board.name.trimmed().isEmpty())

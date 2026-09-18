@@ -66,11 +66,15 @@ Item {
                 SplitView.minimumHeight: 120
             }
 
+            // NOTE: collapse is enforced through minimum/maximumHeight, not
+            // preferredHeight — dragging a SplitView handle overwrites
+            // preferredHeight and would silently break a binding on it.
             WatchRuleFeed {
                 id: ruleFeed
                 objectName: "watch.ruleFeed"
                 SplitView.preferredHeight: 120
-                SplitView.minimumHeight: 80
+                SplitView.minimumHeight: ruleFeed.collapsed ? ruleFeed.headerHeight : 80
+                SplitView.maximumHeight: ruleFeed.collapsed ? ruleFeed.headerHeight : Number.POSITIVE_INFINITY
             }
         }
 

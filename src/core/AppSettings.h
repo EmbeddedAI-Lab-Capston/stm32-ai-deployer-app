@@ -163,6 +163,11 @@ public:
     QString watchRecordDir() const;
     void    setWatchRecordDir(const QString &dir);
 
+    // Watch screen: whether a secondary panel ("rules", "ramBudget") is
+    // collapsed to its header line. Default false (expanded).
+    bool watchPanelCollapsed(const QString &panel) const;
+    void setWatchPanelCollapsed(const QString &panel, bool collapsed);
+
 private:
     static constexpr auto kKeyCliPath          = "programmer/cli_path";
     static constexpr auto kKeyComPort          = "serial/last_com_port";
@@ -198,4 +203,5 @@ private:
     static constexpr auto kKeyLastWatchElfPath = "watch/last_elf_path";
     static constexpr auto kKeyWatchTargetRateHz = "watch/target_rate_hz";
     static constexpr auto kKeyWatchRecordDir   = "watch/record_dir";
+    static constexpr auto kKeyWatchCollapsedPrefix = "ui/watch_collapsed/";   // + panel name
 };

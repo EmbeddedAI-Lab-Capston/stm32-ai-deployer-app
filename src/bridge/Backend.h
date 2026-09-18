@@ -288,6 +288,10 @@ public:
     Q_INVOKABLE void openWatchLink();
     Q_INVOKABLE void closeWatchLink();
 
+    // Collapsed state of the watch screen's secondary panels, persisted.
+    Q_INVOKABLE bool watchPanelCollapsed(const QString &panel) const;
+    Q_INVOKABLE void setWatchPanelCollapsed(const QString &panel, bool collapsed);
+
     // Symbols
     Q_INVOKABLE QString      watchElfPath() const;
     Q_INVOKABLE QString      suggestedElfPath() const;   // deployedModelOutputDir()/build/*.elf
@@ -299,6 +303,7 @@ public:
     Q_INVOKABLE void addWatchAddress(const QString &addrHex, const QString &type, const QString &label);
     Q_INVOKABLE void updateWatchItem(const QString &id, const QVariantMap &props);
     Q_INVOKABLE void removeWatchItem(const QString &id);
+    Q_INVOKABLE void setWatchItemPlotVisible(const QString &id, bool visible);   // allowed while sampling
     Q_INVOKABLE void clearWatchItems();
 
     // Run
