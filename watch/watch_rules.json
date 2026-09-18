@@ -11,6 +11,13 @@
       "message": "{label}: yalnizca {value} B stack bosluk kaldi (esik {threshold} B)"
     },
     {
+      "id": "sensor_read_failing",
+      "severity": "error",
+      "appliesToRole": "sensorOk",
+      "type": "threshold", "op": "==", "value": 0, "sustainMs": 2000,
+      "message": "{label}: sensor 2 s'dir okunamiyor (sensor_ok={value}) - firmware calisiyor ama sensor verisi bayat"
+    },
+    {
       "id": "heap_leak_drift",
       "severity": "warning",
       "appliesToRole": "heapEnd",
