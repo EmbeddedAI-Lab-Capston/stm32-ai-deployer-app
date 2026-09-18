@@ -21,6 +21,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 /* USER CODE BEGIN Includes */
+#include "fault_inject.h"
 
 /* USER CODE END Includes */
 
@@ -110,7 +111,9 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
   gpio.Pin = GPIO_PIN_9;
   HAL_GPIO_Init(GPIOH, &gpio);
 
+#if !FAULT_I2C1_CLOCK_OFF
   __HAL_RCC_I2C1_CLK_ENABLE();
+#endif
 }
 
 void HAL_I2C_MspDeInit(I2C_HandleTypeDef *hi2c)
