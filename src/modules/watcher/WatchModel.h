@@ -28,7 +28,8 @@ struct WatchItem
     double         scale = 1.0;
     double         offset = 0.0;
     QString        unit;
-    bool           enabled = true;
+    bool           enabled = true;       // sampled at all (WatchPlanBuilder skips disabled items)
+    bool           plotVisible = true;   // drawn in the plot; purely visual, still sampled/recorded
     QString        source;        // "elf:<symbol>" | "manual"
     QString        color;         // line colour assigned from Theme
     int            laneIndex = -1; // Faz 6 plot lane; -1 = auto (own lane, in list order)

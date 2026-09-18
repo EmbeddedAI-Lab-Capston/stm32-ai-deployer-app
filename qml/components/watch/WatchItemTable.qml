@@ -30,7 +30,7 @@ Rectangle {
     ListModel { id: _model }
 
     readonly property var _fields: ["label", "role", "address", "kind", "type", "format",
-                                    "scale", "offset", "unit", "enabled", "source", "color",
+                                    "scale", "offset", "unit", "enabled", "plotVisible", "source", "color",
                                     "hasValue", "liveValue", "minValue", "maxValue", "meanValue"]
 
     function refresh() {
@@ -69,8 +69,11 @@ Rectangle {
         onTriggered: root.refresh()
     }
 
-    readonly property var colWidths: [44, 160, 120, 56, 56, 74, 64, 110, 96, 96, 96, 40]
-    readonly property var colTitles: ["Etkin", "Etiket", "Adres", "Tip", "Biçim", "Ölçek", "Birim",
+    // "Etkin" = sampled at all; "Grafik" = drawn in the plot only. They are
+    // separate on purpose: hiding a trace to declutter the plot must not stop
+    // reading it, its statistics or the rules watching it.
+    readonly property var colWidths: [44, 48, 160, 120, 56, 56, 74, 64, 110, 96, 96, 96, 40]
+    readonly property var colTitles: ["Etkin", "Grafik", "Etiket", "Adres", "Tip", "Biçim", "Ölçek", "Birim",
                                        "Canlı Değer", "Min", "Max", "Ort", ""]
     function naturalWidth() {
         var total = Theme.spacingMd * 2
@@ -149,62 +152,72 @@ Rectangle {
                             checked: model.enabled === true
                             onToggled: backend.updateWatchItem(model.id, { enabled: checked })
                         }
+                        CheckBox {
+                            objectName: "watch.plotVisible." + index
+                            Layout.preferredWidth: root.colWidths[1]
+                            enabled: model.enabled === true
+                            checked: model.plotVisible !== false
+                            onToggled: backend.setWatchItemPlotVisible(model.id, checked)
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 400
+                            ToolTip.text: "Grafikte göster — kapatınca okuma ve istatistik sürer, yalnızca çizilmez"
+                        }
                         Text {
                             text: model.label || ""
                             color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSm
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
-                            Layout.preferredWidth: root.colWidths[1]
+                            Layout.preferredWidth: root.colWidths[2]
                         }
                         Text {
                             text: model.address || ""
                             color: Theme.textMuted; font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
-                            Layout.preferredWidth: root.colWidths[2]
+                            Layout.preferredWidth: root.colWidths[3]
                         }
                         Text {
                             text: (model.type || "").toUpperCase()
                             color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
-                            Layout.preferredWidth: root.colWidths[3]
+                            Layout.preferredWidth: root.colWidths[4]
                         }
                         Text {
                             text: model.format || ""
                             color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
-                            Layout.preferredWidth: root.colWidths[4]
+                            Layout.preferredWidth: root.colWidths[5]
                         }
                         Text {
                             text: model.scale !== undefined ? model.scale : ""
                             color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
-                            Layout.preferredWidth: root.colWidths[5]
+                            Layout.preferredWidth: root.colWidths[6]
                         }
                         Text {
                             text: model.unit || ""
                             color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
-                            Layout.preferredWidth: root.colWidths[6]
+                            Layout.preferredWidth: root.colWidths[7]
                         }
                         Text {
                             text: model.liveValue || "—"
                             color: model.hasValue ? Theme.cyan : Theme.textFaint
                             font.family: Theme.monoFamily; font.pixelSize: Theme.fontSm; font.weight: Font.DemiBold
                             elide: Text.ElideRight
-                            Layout.preferredWidth: root.colWidths[7]
+                            Layout.preferredWidth: root.colWidths[8]
                         }
                         Text {
                             text: model.minValue || "—"
                             color: Theme.textMuted; font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
-                            Layout.preferredWidth: root.colWidths[8]
+                            Layout.preferredWidth: root.colWidths[9]
                         }
                         Text {
                             text: model.maxValue || "—"
                             color: Theme.textMuted; font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
-                            Layout.preferredWidth: root.colWidths[9]
+                            Layout.preferredWidth: root.colWidths[10]
                         }
                         Text {
                             text: model.meanValue || "—"
                             color: Theme.textMuted; font.family: Theme.monoFamily; font.pixelSize: Theme.fontXs
-                            Layout.preferredWidth: root.colWidths[10]
+                            Layout.preferredWidth: root.colWidths[11]
                         }
                         Rectangle {
-                            Layout.preferredWidth: root.colWidths[11]
+                            Layout.preferredWidth: root.colWidths[12]
                             Layout.preferredHeight: 24
                             radius: Theme.radiusSm
                             color: delM.containsMouse ? Theme.alpha(Theme.danger, 0.18) : "transparent"

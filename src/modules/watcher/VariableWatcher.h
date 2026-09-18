@@ -48,6 +48,10 @@ public:
     void    removeItem(const QString &id);
     void    clearItems();
 
+    // The one item edit allowed while sampling: it only changes what the
+    // plot draws, not what is read, so the sampling plan stays valid.
+    void    setItemPlotVisible(const QString &id, bool visible);
+
     void start(int targetRateHz);   // 0 = max
     void stop();
     bool isRunning() const { return m_running; }

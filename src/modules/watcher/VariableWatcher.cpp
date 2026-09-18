@@ -182,6 +182,18 @@ void VariableWatcher::updateItem(const QString &id, const QVariantMap &props)
     }
 }
 
+void VariableWatcher::setItemPlotVisible(const QString &id, bool visible)
+{
+    for (WatchItem &item : m_items) {
+        if (item.id != id) continue;
+        if (item.plotVisible != visible) {
+            item.plotVisible = visible;
+            emit itemsChanged();
+        }
+        return;
+    }
+}
+
 void VariableWatcher::removeItem(const QString &id)
 {
     if (m_running) {
@@ -522,6 +534,7 @@ void VariableWatcher::saveItems(const QString &boardName)
         o[QStringLiteral("offset")]      = it.offset;
         o[QStringLiteral("unit")]        = it.unit;
         o[QStringLiteral("enabled")]     = it.enabled;
+        o[QStringLiteral("plotVisible")] = it.plotVisible;
         o[QStringLiteral("source")]      = it.source;
         o[QStringLiteral("color")]       = it.color;
         o[QStringLiteral("laneIndex")]   = it.laneIndex;
@@ -552,6 +565,7 @@ void VariableWatcher::loadItems(const QString &boardName)
         it.offset      = o.value(QStringLiteral("offset")).toDouble(0.0);
         it.unit        = o.value(QStringLiteral("unit")).toString();
         it.enabled     = o.value(QStringLiteral("enabled")).toBool(true);
+        it.plotVisible = o.value(QStringLiteral("plotVisible")).toBool(true);
         it.source      = o.value(QStringLiteral("source")).toString();
         it.color       = o.value(QStringLiteral("color")).toString();
         it.laneIndex   = o.value(QStringLiteral("laneIndex")).toInt(-1);

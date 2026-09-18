@@ -20,7 +20,7 @@ Item {
     property real _windowEnd: 1.0
     property real pinnedCursorTime: -1   // set by clicking an event marker
 
-    property var _rows: []   // legend: backend.watchItems() rows
+    property var _rows: []   // legend: backend.watchItems rows
 
     function refreshFrame() {
         if (!root._hasBackend) return
@@ -38,7 +38,10 @@ Item {
         plot.laneCount = Math.max(1, maxLane)
 
         plot.events = backend.watchEvents(_windowStart, plot.windowEnd)
-        _rows = backend.watchItems()
+        // NOTE: watchItems is a Q_PROPERTY, not an invokable. Calling it as a
+        // function threw a TypeError on every frame since Faz 6, so the legend
+        // and the hover value box never had any rows to show.
+        _rows = backend.watchItems
     }
 
     Timer {
@@ -57,23 +60,35 @@ Item {
             Layout.fillWidth: true
             spacing: Theme.spacingMd
 
-            Repeater {
-                model: root._rows
-                delegate: RowLayout {
-                    spacing: 4
-                    visible: modelData.enabled
-                    Rectangle { width: 10; height: 10; radius: 2; color: modelData.color || Theme.textFaint }
-                    Text {
-                        text: modelData.label + (modelData.hasValue ? ("  " + modelData.liveValue) : "")
-                        color: Theme.textMuted
-                        font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+            // Flow, not a row: with many traces a single row ran off the right
+            // edge and pushed the zoom hint out with it. Hidden entries take
+            // no space in a positioner.
+            Flow {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
+                spacing: Theme.spacingMd
+
+                Repeater {
+                    model: root._rows
+                    delegate: Row {
+                        spacing: 4
+                        visible: modelData.enabled && modelData.plotVisible !== false
+                        Rectangle {
+                            width: 10; height: 10; radius: 2
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: modelData.color || Theme.textFaint
+                        }
+                        Text {
+                            text: modelData.label + (modelData.hasValue ? ("  " + modelData.liveValue) : "")
+                            color: Theme.textMuted
+                            font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
+                        }
                     }
                 }
             }
 
-            Item { Layout.fillWidth: true }
-
             Text {
+                Layout.alignment: Qt.AlignTop
                 text: root.windowSec.toFixed(0) + " s pencere — tekerlek: yakınlaştır/uzaklaştır"
                 color: Theme.textFaint
                 font.family: Theme.fontFamily; font.pixelSize: Theme.fontXs
@@ -132,7 +147,7 @@ Item {
                     Repeater {
                         model: root._rows
                         delegate: Text {
-                            visible: modelData.enabled
+                            visible: modelData.enabled && modelData.plotVisible !== false
                             property var v: cursorBox._values[modelData.id]
                             text: modelData.label + ": " + (v ? v.formatted : "—")
                             color: modelData.color || Theme.text
