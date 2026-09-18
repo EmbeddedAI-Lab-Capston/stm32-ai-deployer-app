@@ -391,3 +391,58 @@ void TestTimeSeriesRuleEngine::disabledRuleIsParsedButNeverEvaluated()
     QCOMPARE(violations.size(), 1);         // only the enabled one fired
     QCOMPARE(violations.first().ruleId, QStringLiteral("on"));
 }
+
+// Real sampling never lands on the window start. The engine used to demand a
+// sample within 1 ms after t0; at 200 Hz (5 ms apart) that held on ~1 pass in
+// 5, so every sustained threshold rule flickered on and off instead of
+// standing. Found live on the N6 with a sensor that had been failing for
+// seconds while the rule feed stayed empty.
+void TestTimeSeriesRuleEngine::thresholdSustainedFiresWhenNoSampleLandsNearWindowStart()
+{
+    TraceBuffer buf;
+    buf.configure(1, 10000);
+    for (int i = 0; i <= 400; ++i)                 // 2 s at 200 Hz, all == 0
+        appendSample(buf, 0.0025 + i * 0.005, 0.0);
+
+    TsRule rule;
+    rule.id = "sensor_read_failing";
+    rule.appliesToRole = "sensorOk";
+    rule.type = TsConditionType::Threshold;
+    rule.op = "==";
+    rule.value = 0;
+    rule.sustainMs = 1000;
+    rule.message = "{label}";
+
+    const QList<WatchItem> items = { makeItem("i1", "sensor_ok", "sensorOk") };
+    // Evaluated between two samples, as the 4 Hz timer does: the first sample
+    // after t0 is 2 ms away, i.e. outside the old 1 ms tolerance.
+    const double now = buf.lastTime() + 0.003;
+    const auto violations = TimeSeriesRuleEngine::evaluate({rule}, items, buf, now, {});
+    QCOMPARE(violations.size(), 1);
+}
+
+// Sample-and-hold: the value in force at t0 is the last sample BEFORE t0, so
+// it has to satisfy the condition too - otherwise a condition that became
+// true a moment after t0 would already count as sustained for the full span.
+void TestTimeSeriesRuleEngine::thresholdSustainedUsesTheValueHeldAtWindowStart()
+{
+    TraceBuffer buf;
+    buf.configure(1, 10000);
+    appendSample(buf, 0.0, 1.0);                   // healthy, held until 0.95
+    for (int i = 0; i <= 20; ++i)                  // failing only from 0.95 on
+        appendSample(buf, 0.95 + i * 0.05, 0.0);
+
+    TsRule rule;
+    rule.id = "sensor_read_failing";
+    rule.appliesToRole = "sensorOk";
+    rule.type = TsConditionType::Threshold;
+    rule.op = "==";
+    rule.value = 0;
+    rule.sustainMs = 1000;
+    rule.message = "{label}";
+
+    const QList<WatchItem> items = { makeItem("i1", "sensor_ok", "sensorOk") };
+    // now = 1.9 -> t0 = 0.9, which the healthy sample at 0.0 still covers.
+    const auto violations = TimeSeriesRuleEngine::evaluate({rule}, items, buf, 1.9, {});
+    QCOMPARE(violations.size(), 0);
+}

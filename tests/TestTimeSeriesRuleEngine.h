@@ -13,6 +13,8 @@ private slots:
     void gateRejectsAnEventOutsideTheWindowOnEitherSide();
     void thresholdSingleSampleUnderSustainMsIsNotAViolation();
     void thresholdSustainedOverWindowIsAViolationWithCorrectTime();
+    void thresholdSustainedFiresWhenNoSampleLandsNearWindowStart();
+    void thresholdSustainedUsesTheValueHeldAtWindowStart();
     void zscoreSpikeIsDetectedWithExpectedZ();
     void zscoreBelowMinSamplesIsNotAViolation();
     void driftRisingSeriesIsDetectedWithSlopeAndR2();

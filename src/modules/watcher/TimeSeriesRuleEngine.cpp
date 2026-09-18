@@ -9,6 +9,11 @@
 
 namespace {
 
+// How far before a sustained threshold's window start to look for the sample
+// that was in force at that moment. A longer gap than this counts as "no
+// evidence" - at any usable sampling rate (>= 1 Hz) a sample is always found.
+constexpr double kSustainLookbackSec = 1.0;
+
 bool checkOp(double value, const QString &op, double threshold)
 {
     if (op == QStringLiteral("<"))  return value < threshold;
@@ -125,17 +130,25 @@ QVector<TsRuleViolation> TimeSeriesRuleEngine::evaluate(const QVector<TsRule> &r
                     satisfied = checkOp(value, rule.op, rule.value);
                 } else {
                     const double t0 = now - rule.sustainMs / 1000.0;
-                    const QVector<RawSample> win = buffer.rawWindow(i, t0, now);
-                    if (win.isEmpty())
-                        continue;
-                    // Require history actually reaching back to (near) t0 —
-                    // otherwise a single recent sample under threshold would
-                    // false-positive as "sustained" on no evidence at all.
-                    if (win.first().t > t0 + 0.001)
+                    // Sample-and-hold: the value in force at t0 is the last
+                    // sample at or before t0, so the window starts there.
+                    // NOTE: requiring a sample within 1 ms AFTER t0 (the old
+                    // rule) almost never held at real rates - at 200 Hz the
+                    // gap is up to 5 ms - so sustained rules flickered.
+                    const QVector<RawSample> win =
+                        buffer.rawWindow(i, t0 - kSustainLookbackSec, now);
+                    int start = -1;
+                    for (int k = win.size() - 1; k >= 0; --k) {
+                        if (win.at(k).t <= t0) { start = k; break; }
+                    }
+                    // No sample at or before t0 (within the lookback) means no
+                    // evidence the condition held for the whole span - a single
+                    // recent sample must not count as "sustained".
+                    if (start < 0)
                         continue;
                     satisfied = true;
-                    for (const RawSample &s : win) {
-                        if (!checkOp(s.v, rule.op, rule.value)) { satisfied = false; break; }
+                    for (int k = start; k < win.size(); ++k) {
+                        if (!checkOp(win.at(k).v, rule.op, rule.value)) { satisfied = false; break; }
                     }
                     value = win.last().v;
                     t     = win.last().t;
