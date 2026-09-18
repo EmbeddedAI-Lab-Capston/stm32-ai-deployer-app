@@ -1,6 +1,7 @@
 #include "TestWatchPresetMatcher.h"
 #include "modules/watcher/WatchPresetMatcher.h"
 
+#include <QFile>
 #include <QTest>
 
 namespace {
@@ -181,4 +182,111 @@ void TestWatchPresetMatcher::guardSymbolsResolveIntoWatchItemGuardAddresses()
     QCOMPARE(out.size(), 1);
     QCOMPARE(out.first().guardBeginAddr, quint64(0x24000100));
     QCOMPARE(out.first().guardEndAddr, quint64(0x24000100 + 88));
+}
+
+// Several items reading fields of one struct symbol used to all be labelled
+// with the bare symbol name, so the item table showed three identical
+// "g_telemetry" rows. An explicit JSON label wins; otherwise the offset is
+// appended so the rows can still be told apart.
+void TestWatchPresetMatcher::itemsIntoOneStructAreLabelledApart()
+{
+    const QByteArray json = R"({"presets":[{"id":"sensor_memory","always":true,"items":[
+        {"role":"sensor0","label":"g_telemetry.sensor[0]","symbol":"g_telemetry","offset_bytes":4,"type":"f32"},
+        {"role":"sensor1","symbol":"g_telemetry","offset_bytes":8,"type":"f32"},
+        {"role":"base","symbol":"g_telemetry","type":"u32"}]}]})";
+    QString error;
+    const QList<WatchPreset> presets = WatchPresetMatcher::loadPresetsFromJson(json, &error);
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+
+    const QList<Symbol> symbols = { makeSymbol("g_telemetry", 0x24000100) };
+    const QList<WatchItem> out = WatchPresetMatcher::resolveSuggestions(presets, symbols);
+
+    QCOMPARE(out.size(), 3);
+    QCOMPARE(out.at(0).label, QStringLiteral("g_telemetry.sensor[0]"));
+    QCOMPARE(out.at(1).label, QStringLiteral("g_telemetry+8"));
+    QCOMPARE(out.at(2).label, QStringLiteral("g_telemetry"));
+}
+
+// A sensor preset names the generic sensor slots only when its driver is
+// linked into the firmware; without that symbol the slots keep their
+// neutral names, and a relabel preset listed BEFORE the item-producing one
+// still applies.
+void TestWatchPresetMatcher::relabelAppliesOnlyWhenItsSymbolIsPresent()
+{
+    const QByteArray json = R"({"presets":[
+        {"id":"bme280_labels","requiresAnySymbol":["BME280_ReadAll"],"relabels":[
+            {"role":"sensor0","label":"BME280 sicaklik","unit":"C"},
+            {"role":"sensor1","label":"BME280 nem"}]},
+        {"id":"sensor_memory","requiresAnySymbol":["g_telemetry"],"items":[
+            {"role":"sensor0","label":"g_telemetry.sensor[0]","symbol":"g_telemetry","offset_bytes":4,"type":"f32"},
+            {"role":"sensor1","label":"g_telemetry.sensor[1]","symbol":"g_telemetry","offset_bytes":8,"type":"f32","unit":"raw"}]}]})";
+    QString error;
+    const QList<WatchPreset> presets = WatchPresetMatcher::loadPresetsFromJson(json, &error);
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+
+    const QList<Symbol> withoutDriver = { makeSymbol("g_telemetry", 0x24000100) };
+    QList<WatchItem> out = WatchPresetMatcher::resolveSuggestions(presets, withoutDriver);
+    QCOMPARE(out.size(), 2);
+    QCOMPARE(out.at(0).label, QStringLiteral("g_telemetry.sensor[0]"));
+    QCOMPARE(out.at(0).unit, QString());
+
+    const QList<Symbol> withDriver = { makeSymbol("g_telemetry", 0x24000100),
+                                       makeSymbol("BME280_ReadAll", 0x08001000) };
+    out = WatchPresetMatcher::resolveSuggestions(presets, withDriver);
+    QCOMPARE(out.size(), 2);
+    QCOMPARE(out.at(0).label, QStringLiteral("BME280 sicaklik"));
+    QCOMPARE(out.at(0).unit, QStringLiteral("C"));
+    QCOMPARE(out.at(0).role, QStringLiteral("sensor0"));   // role untouched: profile comparison keys on it
+    QCOMPARE(out.at(1).label, QStringLiteral("BME280 nem"));
+    QCOMPARE(out.at(1).unit, QStringLiteral("raw"));       // a relabel without "unit" keeps the item's unit
+}
+
+// The shipped watch_presets.json itself: a firmware that never painted its
+// stack (it has _sstack/_estack but no StackPaint_Init) must not get a
+// stackWatermark row, because its scan would read ~0 B and raise a false
+// "stack exhausted" alarm. A pipeline build that paints still gets it.
+void TestWatchPresetMatcher::stackWatermarkNeedsPaintedStack()
+{
+    const QString path = QFINDTESTDATA("../watch/watch_presets.json");
+    QVERIFY2(!path.isEmpty(), "watch/watch_presets.json not found");
+    QFile file(path);
+    QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(file.fileName()));
+    QString error;
+    const QList<WatchPreset> presets = WatchPresetMatcher::loadPresetsFromJson(file.readAll(), &error);
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+
+    const auto hasWatermark = [](const QList<WatchItem> &items) {
+        for (const WatchItem &i : items)
+            if (i.role == QStringLiteral("stackWatermark")) return true;
+        return false;
+    };
+
+    QList<Symbol> unpainted = { makeSymbol("_sstack", 0x341ff800, true),
+                                makeSymbol("_estack", 0x34200000) };
+    QVERIFY(!hasWatermark(WatchPresetMatcher::resolveSuggestions(presets, unpainted)));
+
+    QList<Symbol> painted = unpainted;
+    painted << makeSymbol("StackPaint_Init", 0x08001e54);
+    QVERIFY(hasWatermark(WatchPresetMatcher::resolveSuggestions(presets, painted)));
+}
+
+void TestWatchPresetMatcher::applyingTwiceDoesNotDuplicateItems()
+{
+    WatchItem existing;
+    existing.address = 0x3401e494;
+    existing.kind = WatchItemKind::Scalar;
+
+    WatchItem same = existing;          // already watched
+    WatchItem sameAddrRegion = existing;
+    sameAddrRegion.kind = WatchItemKind::RegionScan;   // different kind: a separate row
+    WatchItem other;
+    other.address = 0x3401e498;
+    other.kind = WatchItemKind::Scalar;
+
+    const QList<WatchItem> out = WatchPresetMatcher::withoutAlreadyWatched(
+        { same, sameAddrRegion, other }, { existing });
+
+    QCOMPARE(out.size(), 2);
+    QCOMPARE(out.at(0).kind, WatchItemKind::RegionScan);
+    QCOMPARE(out.at(1).address, quint64(0x3401e498));
 }

@@ -17,6 +17,7 @@
 struct WatchPresetItem
 {
     QString        role;
+    QString        label;           // optional; empty = symbol name (+offset when non-zero)
     QString        symbol;          // scalar items
     WatchValueType type = WatchValueType::U32;
     DisplayFormat  format = DisplayFormat::Dec;
@@ -45,12 +46,25 @@ struct WatchPresetItem
     int            rateHz = 0;
 };
 
+// Renames items another preset produced, by role. Lets a sensor-specific
+// preset (gated on e.g. the BME280 driver's symbol) say what the generic
+// g_telemetry.sensor[N] slots mean, without the generic preset — or any C++ —
+// knowing which sensor is fitted.
+struct WatchPresetRelabel
+{
+    QString role;
+    QString label;
+    bool    hasUnit = false;
+    QString unit;
+};
+
 struct WatchPreset
 {
     QString id, label;
     bool    always = false;
     QStringList requiresAnySymbol;
     QList<WatchPresetItem> items;
+    QList<WatchPresetRelabel> relabels;
 };
 
 class WatchPresetMatcher
@@ -67,9 +81,17 @@ public:
     // Resolves every item of every applicable preset against symbols into
     // concrete WatchItem suggestions (address filled in; id left empty —
     // the caller assigns a fresh one only for items it actually adds).
-    // Items whose symbol can't be found are skipped, not errors.
+    // Items whose symbol can't be found are skipped, not errors. Relabels of
+    // every applicable preset are applied last, so their order in the JSON
+    // relative to the presets that produce the items does not matter.
     static QList<WatchItem> resolveSuggestions(const QList<WatchPreset> &presets,
                                                 const QList<Symbol> &symbols);
+
+    // Drops suggestions already on the watch list (same address and kind), so
+    // applying presets twice does not double every row - and with it every
+    // rule violation and the sampling cost of a region scan.
+    static QList<WatchItem> withoutAlreadyWatched(const QList<WatchItem> &suggestions,
+                                                  const QList<WatchItem> &existing);
 
     // "<sym>", "<sym>-<sym2>", or "<sym>+<sym2>" — resolves each operand via
     // the symbol table (using its VALUE if addressIsValue, else its

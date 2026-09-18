@@ -520,12 +520,15 @@ emit errorReceived(QJsonObject);
   32-bit kelimenin bayt ofseti = kalan stack boşluğu (B) olarak raporlanır;
   `Backend::applyWatchPresets()` artık RegionScan önerilerini atlamıyor,
   `watch/watch_rules.json`'daki iki `stackWatermark` kuralı da tekrar
-  etkin. **Bilinen sınırlama:** bu pipeline'la derlenmemiş (boyamayan) bir
-  firmware izlenirse tarama ilk kelimede hemen uyuşmazlık bulur ve boşluk
-  "~0 B" (yanıltıcı biçimde kritik) görünür — kalem başına ayrı bir
-  "kullanılamıyor" göstergesi YOKTUR; tek koruma genel ELF-eşleşme
-  banner'ıdır (`watchElfMatch`). Yorumlayan kişi ~0 B'lik bir okumayı gerçek
-  bir taşma ile "bu ELF hiç boyamadı" ihtimalini ayırt etmelidir.
+  etkin. **Boyamayan firmware (2026-09-17'den beri):** boyamayan bir
+  firmware'de tarama ilk kelimede uyuşmazlık bulur ve "~0 B" (yanıltıcı
+  biçimde kritik) okur, üstelik her örnekte tüm bölgeyi okuduğu için hızı
+  düşürür (N6 referans projesinde 200 → ~54 Hz ölçüldü). Bu yüzden
+  `stackWatermark` preset'i artık ayrı bir `stack_watermark` preset'inde ve
+  **`requiresAnySymbol: ["StackPaint_Init"]`** ile kapılı — boyama kodu
+  ELF'te yoksa kalem hiç önerilmez. **Kalan sınırlama:** kullanıcı bu kalemi
+  elle "Adres Ekle" ile eklerse aynı yanıltıcı ~0 B yine görülebilir; kalem
+  başına ayrı bir "kullanılamıyor" göstergesi hâlâ YOKTUR.
   Detay: `docs/variable_watcher_findings.md` Bölüm 17.3 ve
   `docs/variable_watcher_review.md`.
 
@@ -681,6 +684,10 @@ sıralı hücre listesini (tipsiz, `kind`'a göre anlam kazanır) tutar.
 
 // Yeni izleme kayıtları için önerilen klasör
 "watch/record_dir"
+
+// İzleyici ekranında ikincil panellerin katlanmış durumu (bool, varsayılan false)
+// <panel> = "rules" (Kural İhlalleri) | "ramBudget" (RAM Bütçesi)
+"ui/watch_collapsed/<panel>"
 ```
 
 > Tam ve güncel anahtar tanımları için tek doğruluk kaynağı:

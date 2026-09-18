@@ -15,4 +15,8 @@ private slots:
     void regionScanSkippedWhenNoAlternativeResolves();
     void offsetBytesIsAddedToSymbolAddress();
     void guardSymbolsResolveIntoWatchItemGuardAddresses();
+    void itemsIntoOneStructAreLabelledApart();
+    void relabelAppliesOnlyWhenItsSymbolIsPresent();
+    void stackWatermarkNeedsPaintedStack();
+    void applyingTwiceDoesNotDuplicateItems();
 };

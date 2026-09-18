@@ -44,6 +44,7 @@ QList<WatchPreset> WatchPresetMatcher::loadPresetsFromJson(const QByteArray &jso
             const QJsonObject io = iv.toObject();
             WatchPresetItem item;
             item.role   = io.value(QStringLiteral("role")).toString();
+            item.label  = io.value(QStringLiteral("label")).toString();
             item.unit   = io.value(QStringLiteral("unit")).toString();
             item.scale  = io.value(QStringLiteral("scale")).toDouble(1.0);
             item.type   = watchValueTypeFromString(io.value(QStringLiteral("type")).toString());
@@ -79,7 +80,33 @@ QList<WatchPreset> WatchPresetMatcher::loadPresetsFromJson(const QByteArray &jso
             }
             preset.items.append(item);
         }
+
+        for (const QJsonValue &rv : o.value(QStringLiteral("relabels")).toArray()) {
+            const QJsonObject ro = rv.toObject();
+            WatchPresetRelabel relabel;
+            relabel.role  = ro.value(QStringLiteral("role")).toString();
+            relabel.label = ro.value(QStringLiteral("label")).toString();
+            relabel.hasUnit = ro.contains(QStringLiteral("unit"));
+            relabel.unit  = ro.value(QStringLiteral("unit")).toString();
+            if (!relabel.role.isEmpty())
+                preset.relabels.append(relabel);
+        }
         out.append(preset);
+    }
+    return out;
+}
+
+QList<WatchItem> WatchPresetMatcher::withoutAlreadyWatched(const QList<WatchItem> &suggestions,
+                                                           const QList<WatchItem> &existing)
+{
+    QList<WatchItem> out;
+    for (const WatchItem &s : suggestions) {
+        bool watched = false;
+        for (const WatchItem &e : existing) {
+            if (e.address == s.address && e.kind == s.kind) { watched = true; break; }
+        }
+        if (!watched)
+            out.append(s);
     }
     return out;
 }
@@ -178,7 +205,14 @@ QList<WatchItem> WatchPresetMatcher::resolveSuggestions(const QList<WatchPreset>
                 continue;   // symbol not present in this firmware — skip, not an error
 
             WatchItem item;
-            item.label   = pi.symbol;
+            // Several items can point into one struct symbol; the bare symbol
+            // name would make them indistinguishable in the item table.
+            if (!pi.label.isEmpty())
+                item.label = pi.label;
+            else if (pi.offsetBytes != 0)
+                item.label = QStringLiteral("%1+%2").arg(pi.symbol).arg(pi.offsetBytes);
+            else
+                item.label = pi.symbol;
             item.role     = pi.role;
             item.address = sym->address + quint64(pi.offsetBytes);
             item.kind     = WatchItemKind::Scalar;
@@ -205,6 +239,19 @@ QList<WatchItem> WatchPresetMatcher::resolveSuggestions(const QList<WatchPreset>
                 }
             }
             out.append(item);
+        }
+    }
+
+    for (const WatchPreset &preset : applicable) {
+        for (const WatchPresetRelabel &relabel : preset.relabels) {
+            for (WatchItem &item : out) {
+                if (item.role != relabel.role)
+                    continue;
+                if (!relabel.label.isEmpty())
+                    item.label = relabel.label;
+                if (relabel.hasUnit)
+                    item.unit = relabel.unit;
+            }
         }
     }
     return out;

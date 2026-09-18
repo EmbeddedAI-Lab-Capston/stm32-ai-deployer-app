@@ -5,7 +5,14 @@
       "id": "core_memory", "label": "Bellek sagligi", "always": true,
       "items": [
         { "role": "heapEnd", "symbol": "__sbrk_heap_end", "type": "u32", "format": "hex" },
-        { "role": "bssEnd",  "symbol": "_end",            "type": "u32", "format": "hex", "constant": true },
+        { "role": "bssEnd",  "symbol": "_end",            "type": "u32", "format": "hex", "constant": true }
+      ]
+    },
+    {
+      "id": "stack_watermark", "label": "Stack watermark (yalnizca boyanan stack)",
+      "_note": "Gated on StackPaint_Init: the scan only means something when the firmware painted the stack with the pattern first. On a firmware that did not, the very first word mismatches and the item reads ~0 B - a false 'stack exhausted' alarm - while scanning the whole region every sample cuts the sample rate (200 -> ~54 Hz measured on the N6 reference project).",
+      "requiresAnySymbol": ["StackPaint_Init"],
+      "items": [
         { "role": "stackWatermark", "kind": "regionScan",
           "regionFrom": ["_sstack", "_estack-_Min_Stack_Size"],
           "regionTo": "_estack", "pattern": "0xA5A5A5A5", "unit": "B", "rateHz": 2 }
@@ -15,21 +22,39 @@
       "id": "sensor_memory", "label": "Sensor ham degerleri (bellek, UART gerekmez)",
       "requiresAnySymbol": ["g_telemetry"],
       "items": [
-        { "role": "sensor0", "symbol": "g_telemetry", "offset_bytes": 4,  "type": "f32", "unit": "",
+        { "role": "sensor0", "label": "g_telemetry.sensor[0]", "symbol": "g_telemetry", "offset_bytes": 4,  "type": "f32", "unit": "",
           "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
           "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } },
-        { "role": "sensor1", "symbol": "g_telemetry", "offset_bytes": 8,  "type": "f32", "unit": "",
+        { "role": "sensor1", "label": "g_telemetry.sensor[1]", "symbol": "g_telemetry", "offset_bytes": 8,  "type": "f32", "unit": "",
           "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
           "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } },
-        { "role": "sensor2", "symbol": "g_telemetry", "offset_bytes": 12, "type": "f32", "unit": "",
+        { "role": "sensor2", "label": "g_telemetry.sensor[2]", "symbol": "g_telemetry", "offset_bytes": 12, "type": "f32", "unit": "",
           "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
           "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } },
-        { "role": "memInferUs",   "symbol": "g_telemetry", "offset_bytes": 44, "type": "u32", "unit": "us",
+        { "role": "memInferUs", "label": "g_telemetry.inf_us",   "symbol": "g_telemetry", "offset_bytes": 44, "type": "u32", "unit": "us",
           "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
           "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } },
-        { "role": "memInferCount", "symbol": "g_telemetry", "offset_bytes": 48, "type": "u32",
+        { "role": "memInferCount", "label": "g_telemetry.infer_count", "symbol": "g_telemetry", "offset_bytes": 48, "type": "u32",
           "guardBegin": { "symbol": "g_telemetry", "offset_bytes": 0 },
           "guardEnd":   { "symbol": "g_telemetry", "offset_bytes": 88 } }
+      ]
+    },
+    {
+      "id": "bme280_labels", "label": "BME280 sensor kanallari",
+      "requiresAnySymbol": ["BME280_ReadAll"],
+      "relabels": [
+        { "role": "sensor0", "label": "BME280 sicaklik", "unit": "°C" },
+        { "role": "sensor1", "label": "BME280 nem",      "unit": "%" },
+        { "role": "sensor2", "label": "BME280 basinc",   "unit": "hPa" }
+      ]
+    },
+    {
+      "id": "mpu6050_labels", "label": "MPU6050 sensor kanallari",
+      "requiresAnySymbol": ["MPU6050_ReadAll"],
+      "relabels": [
+        { "role": "sensor0", "label": "MPU6050 ax", "unit": "m/s²" },
+        { "role": "sensor1", "label": "MPU6050 ay", "unit": "m/s²" },
+        { "role": "sensor2", "label": "MPU6050 az", "unit": "m/s²" }
       ]
     },
     {

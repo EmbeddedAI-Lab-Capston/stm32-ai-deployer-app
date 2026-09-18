@@ -3663,6 +3663,7 @@ QVariantList Backend::watchItems() const
         m[QStringLiteral("offset")]  = it.offset;
         m[QStringLiteral("unit")]    = it.unit;
         m[QStringLiteral("enabled")] = it.enabled;
+        m[QStringLiteral("plotVisible")] = it.plotVisible;
         m[QStringLiteral("source")]  = it.source;
         m[QStringLiteral("color")]   = it.color;
 
@@ -3752,6 +3753,16 @@ QString Backend::suggestedElfPath() const
     return elfs.isEmpty() ? QString() : buildDir.absoluteFilePath(elfs.first());
 }
 
+bool Backend::watchPanelCollapsed(const QString &panel) const
+{
+    return AppSettings().watchPanelCollapsed(panel);
+}
+
+void Backend::setWatchPanelCollapsed(const QString &panel, bool collapsed)
+{
+    AppSettings().setWatchPanelCollapsed(panel, collapsed);
+}
+
 void Backend::loadWatchElf(const QString &path)
 {
     if (!m_watcher) return;
@@ -3823,6 +3834,13 @@ void Backend::removeWatchItem(const QString &id)
     if (m_state) m_watcher->saveItems(m_state->activeBoard().name);
 }
 
+void Backend::setWatchItemPlotVisible(const QString &id, bool visible)
+{
+    if (!m_watcher) return;
+    m_watcher->setItemPlotVisible(id, visible);
+    if (m_state) m_watcher->saveItems(m_state->activeBoard().name);
+}
+
 void Backend::clearWatchItems()
 {
     if (!m_watcher) return;
@@ -3884,11 +3902,12 @@ QVariantList Backend::watchPlotFrame(int columns, double windowSec)
 
     // Resolve lane indices: an explicit item.laneIndex >= 0 wins (lets the
     // user superimpose two items by giving them the same lane); otherwise
-    // each enabled item gets its own lane, in list order.
+    // each enabled, plot-visible item gets its own lane, in list order - a
+    // hidden item gives its lane up, so the remaining traces get the height.
     QVector<int> resolvedLane(items.size(), -1);
     int autoLane = 0;
     for (int i = 0; i < items.size(); ++i) {
-        if (!items.at(i).enabled) continue;
+        if (!items.at(i).enabled || !items.at(i).plotVisible) continue;
         int lane = items.at(i).laneIndex;
         if (lane < 0) lane = autoLane++;
         else autoLane = qMax(autoLane, lane + 1);
@@ -4351,7 +4370,9 @@ QVariantList Backend::watchPresetSuggestions() const
 void Backend::applyWatchPresets()
 {
     if (!m_watcher) return;
-    const QList<WatchItem> suggestions = WatchPresetMatcher::resolveSuggestions(m_watchPresets, m_watcher->symbols());
+    const QList<WatchItem> suggestions = WatchPresetMatcher::withoutAlreadyWatched(
+        WatchPresetMatcher::resolveSuggestions(m_watchPresets, m_watcher->symbols()),
+        m_watcher->items());
     for (const WatchItem &it : suggestions) {
         // RegionScan items (byte-pattern watermark scan) use the same
         // address-based add path as a scalar; addAddress()'s ELF-range
