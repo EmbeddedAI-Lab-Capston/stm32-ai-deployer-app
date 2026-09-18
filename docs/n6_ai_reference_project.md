@@ -747,6 +747,10 @@ g_ai_last_cycles        2 216 917         @ 600 MHz CPU
 g_ai_last_class         10                guven %84
 ```
 
+> ⚠ **Düzeltme (2026-09-18):** buradaki ve §8.9/§8.10'daki sınıf/güven
+> değerleri geçersizdir — firmware float32 çıktıyı bayt bayt okuyordu, "10"
+> float dizisinin içindeki bir bayt indeksiydi. Doğru okuma ve kök nedenler: §8.11.
+
 ### Neden bu, gözlemlerimizin hepsini açıklıyor
 
 Teşhis 2'de asılı olan üç stream engine'den **STRENG7 tam da
@@ -829,7 +833,7 @@ olarak [`TODO.md`](../TODO.md)'ye taşınmalı.
 | Örnekleme | **200.4 Hz**, 1 blok/örnek, RTT 0.70 ms, 0 kaçırılan, 0 okuma hatası |
 | `g_ai_last_inference_us` | **3.693 – 3.706 ms** (ort. 3.695) |
 | `g_ai_infer_count` | ~**8.0 inference/s** — `HAL_Delay(120)` + 3.7 ms ile tutarlı |
-| `g_ai_last_class` / güven | 10 / %78–87 |
+| `g_ai_last_class` / güven | 10 / %78–87 (**geçersiz** — bkz. §8.11: bayt indeksiydi, sınıf değil) |
 | Hız tutarlılık rozeti | "8.0 Hz gözlendi · beyan 3695 µs ile tutarlı" |
 | Kayıt | 30.03 s, 6006 örnek, rol etiketli CSV; oynatmada aynı değerler |
 
@@ -894,7 +898,8 @@ Ekran görüntüsü: `out/n6_npu_watch/watch_bme280_npu.png` (gitignored).
 
 **Açık kalanlar:**
 
-- **Sınıf sabit girdiye rağmen 6 (%87) ↔ 10 (%66–76) arasında salınıyor.**
+- ~~**Sınıf sabit girdiye rağmen 6 (%87) ↔ 10 (%66–76) arasında salınıyor.**~~
+  ✅ **Çözüldü (2026-09-18), üç ayrı hata — §8.11.**
   Önceki derlemede 30 s boyunca hep 10'du ama güven %78–87 arasında
   oynuyordu — yani NPU çıktısı zaten deterministik değildi; yeni derleme
   bunu sınıf değişimine taşıdı. Girdi sabit olduğuna göre beklenen tamamen
@@ -915,15 +920,73 @@ Ekran görüntüsü: `out/n6_npu_watch/watch_bme280_npu.png` (gitignored).
 
 ---
 
+## 8.11 NPU sonucu doğru ve deterministik — üç hata (2026-09-18)
+
+Sabit girdiye farklı sınıf dönmesi tek bir hata değil, üç ayrı hataydı.
+Her biri ayrı ayrı ölçüldü; sonuç **PC'deki referansla birebir** eşleşiyor.
+
+| # | Hata | Nasıl bulundu | Düzeltme |
+|---|---|---|---|
+| 1 | **Girdi eziliyordu.** Giriş tamponu aktivasyon belleğinin içinde (rapor: *"input/output buffers are included in activations"*); `0x34270000`+[0,27648) aralığına sonraki katmanlar da yazıyor (ör. `Conv2D_21` çıktısı [0,36864)). Firmware girdiyi yalnızca bir kez dolduruyordu. | `network.c` buffer tablosu | `FillStaticInput()` her inference'tan önce |
+| 2 | **Çıktı yanlış okunuyordu, ilk günden beri.** Ağ Softmax + DequantizeLinear ile bitiyor → çıktı **5 × float32** (`DataType_FLOAT`, 20 bayt). Firmware 20 baytı `uint8` sanıp argmax alıyordu: "sınıf 10" float dizisindeki bir bayt indeksiydi. | `network.c` çıktı tanımı + ham bellek okuması | `ReadClassification()` float argmax |
+| 3 | **Ağırlıkların sonu D-cache'te kirli kalıyordu.** `memcpy` ile `0x342E0000`'a kopyalanan blob CPU cache'inden geçiyor, NPU ise RAM'i doğrudan okuyor. Blob'un sonunda katman başına nicemleme vektörleri (`A_vector`/`C_vector`, +228480…+229040) var → NPU önceki açılıştan kalan baytları okuyordu. **Belirti: açılış içinde sabit, açılıştan açılışa farklı sınıf** (üç açılışta 1/%44, 4/%92, 0/%43). | Açılış-arası karşılaştırma | `memcpy` sonrası `mcu_cache_clean_range()` |
+
+**Yanıltıcı ipucu (kayda değer):** ağırlık bölgesinin debugger dökümü
+referans dosyayla bayt bayt aynı çıktı ve 3 numaralı hipotez bir kez yanlışlıkla
+elendi. Sebep: **Cortex-M55'te debugger okumaları D-cache ile tutarlıdır** —
+debugger CPU'nun gördüğünü gösterir, NPU'nun gördüğünü değil. Bu, aracımızın da
+sınırıdır: İzleyici/Register Inspector cache'teki değeri görür; DMA/NPU gibi
+cache dışı ustaların gördüğü RAM'i doğrudan gösteremez.
+
+Aynı turda denenip **işe yaramadığı ölçülen**: aktivasyon bölgesini açılışta
+sıfırlamak (sonuç yine açılıştan açılışa değişti) — geri alındı.
+
+**Doğrulama:**
+
+- 4 ayrı açılışta birebir aynı çıktı: `[0.2383 0.4727 0.0547 0.0000 0.2383]`
+  → sınıf 1, %47.
+- PC referansı (orijinal `.tflite`, LiteRT, aynı girdi `buf[i]=i&0xFF`, uint8
+  ölçek 0.0078431 / sıfır 127): **`0.2383 0.4727 0.0547 0.0000 0.2383`**, sınıf 1,
+  %47.3 — **dört ondalığa kadar aynı.**
+- İzleyici'de 15 s boyunca sınıf ve güven min = max.
+- Inference süresi 3.70 → **3.76 ms** oldu (+60 µs). Zamanlanan bölge değişmedi;
+  fark büyük ihtimalle artık gerçek girdiyle hesap yapılmasından (önceki ölçüm
+  bozuk girdi üzerindeydi). Ayrıca ölçülmedi.
+
+**Stack boyama da eklendi (§6 kesişim 1):** `stack_paint.c` şablondan kopyalandı,
+`main()`'in ilk satırında çağrılıyor. Sonuç — N6'da ilk kez:
+
+- `stackWatermark` preset'i artık otomatik geliyor (ELF'te `StackPaint_Init` var).
+- **Stack: 2048 B'nin 1448'i kullanılıyor, 600 B boş** — `watch_rules.json`'daki
+  512 B uyarı eşiğine çok yakın. ST'nin şablonundaki 2 KB stack bu uygulama
+  için dar; gerçek bir bulgu.
+- RAM bütçesi N6'da ilk kez hesaplanıyor (%53).
+
+**Yan bulgu — harici flash'a yazma:** firmware çalışırken HOTPLUG ile yazmak
+`failed to erase memory` veriyor (Appli XSPI2'yi elinde tutuyor). **Harici
+flash'a daima `mode=UR` ile yaz.** Silme hiç başlamadığı için eski image zarar
+görmedi.
+
+**Eskimiş dosya:** `AI/generated/network_generate_report.txt` ve
+`network_c_info.json` 16 Eylül'deki (ağırlıklar harici flash'ta) derlemeden
+kalma; derlenen `network.c` ise 17 Eylül'deki RAM-ağırlıklı derleme. Rapordaki
+bellek yerleşimi güncel değil — yanıltıcı, model yeniden üretildiğinde tazelenmeli.
+
+---
+
 ## 9. Sıradaki somut adım
 
 1. ~~FW_N6 sürümünü çöz~~ ✅ v1.4.0 kuruldu (2026-09-16).
 2. ~~Regresyon kontrolü~~ ✅ Bayt bayt aynı binary — risk yok (§1).
 3. ~~`Template_FSBL_LRUN`'ı derle ve karta at, LED yanıp sönsün~~ ✅ **Tamam**
    (§8.5) — FSBL → harici flash → Appli → LED zinciri kartta doğrulandı.
-4. **Sıradaki:** CubeMX'te `.ioc` üzerine X-CUBE-AI ekle,
-   `mobilenet_v1_0.25_96` ile tek bir inference çalıştır.
-5. Sonra: telemetri bloğu, BME280, ağır model, hata enjeksiyonu.
+4. ~~NPU'da tek inference~~ ✅ (§8.8) · ~~telemetri + İzleyici~~ ✅ (§8.9) ·
+   ~~BME280~~ ✅ (§8.10) · ~~doğru ve deterministik sonuç~~ ✅ (§8.11) ·
+   ~~stack boyama~~ ✅ (§8.11)
+5. **Sıradaki: hata enjeksiyonu** (§6) — kasıtlı bozuk bir derleme (ör. I2C1
+   clock'u kapalı, ya da NPU RIF izolasyonu eksik) + Register Inspector ile
+   snapshot/reset-farkı teşhisi. Aracın asıl iddiası.
+6. Ağır model (efficientnet) — xSPI2 okuma sorunu çözülmeden bloke.
 
 **Yan iş (açık):** kendi uygulamamızın `N6RamImage::armArgs()` yolu HOTPLUG
 kullanıyor; §8.5 Engel 3'teki bulgu ışığında UR'ye geçmesi gerekip

@@ -41,7 +41,7 @@ verir — önce Görev Yöneticisi'nden kapatın.
 
 1. ~~**Döngüyü kapat**~~ ✅ **Tamam (2026-09-17)** — çalışan NPU'nun metrikleri
    İzleyici'de canlı: 200.4 Hz / 0 kaçırılan, inference **3.69 ms**,
-   ~8 inference/s, class 10 / %78–87; 30 s rol etiketli kayıt + oynatma +
+   ~8 inference/s, class 10 / %78–87 (**geçersiz** — bayt indeksiydi, bkz. adım 3); 30 s rol etiketli kayıt + oynatma +
    profil. Yolda AI preset'i (`NN_Instance_network`) ve donuk ELF yolu
    etiketi düzeltildi. Kayıt/ekran görüntüleri `out/n6_npu_watch/`.
    Detay: [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md) §8.9
@@ -57,9 +57,21 @@ verir — önce Görev Yöneticisi'nden kapatın.
    ✅ **Firmware'e eklendi, canlı:** İzleyici'de 23.0 °C / %46.3 / 1001.2 hPa
    + NPU 3.70 ms aynı ekranda, 200 Hz. Sensör kalemleri artık
    "BME280 sicaklik °C" vb. adlarla görünüyor (preset `relabels`). Açık
-   kalanlar (sınıf salınımı, `readErrors`'un seqlock atmalarını sayması): [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md) §8.10
-3. **Ağır model / NPU-CPU karşılaştırması** — tek bloke iş. Önce NPU'nun
+   kalan: `readErrors`'un seqlock atmalarını sayması — [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md) §8.10
+3. ~~**Sınıf salınımı**~~ ✅ **Çözüldü (2026-09-18) — üç ayrı hata:** girdi
+   aktivasyon belleğinde eziliyordu (her inference'ta yeniden doldur), çıktı
+   5×float32 iken bayt bayt okunuyordu ("sınıf 10" bir bayt indeksiydi),
+   ağırlıkların sonu (nicemleme vektörleri) `memcpy` sonrası D-cache'te kirli
+   kalıyordu (NPU RAM'i okur → açılıştan açılışa farklı sonuç). Sonuç artık
+   **PC referansıyla birebir** (LiteRT, orijinal `.tflite`): sınıf 1, %47.
+   Stack boyama da eklendi: N6'da 2 KB stack'in **yalnızca 600 B'ı boş**.
+   Detay: [`docs/n6_ai_reference_project.md`](docs/n6_ai_reference_project.md) §8.11
+4. **Sıradaki N6 işi: hata enjeksiyonu** — kasıtlı bozuk derleme + Register
+   Inspector teşhisi (referans projenin §6'sı, "aracın asıl iddiası").
+5. **Ağır model / NPU-CPU karşılaştırması** — tek bloke iş. Önce NPU'nun
    xSPI2'den okuyamaması çözülmeli (efficientnet ağırlıkları iç RAM'e sığmaz).
+6. ⚠ **N6'da harici flash'a daima `mode=UR` ile yaz** — firmware çalışırken
+   HOTPLUG yazması `failed to erase memory` veriyor.
 
 ### İzleyici ekranı iyileştirmeleri (2026-09-17, canlı doğrulandı N6 + H7)
 
